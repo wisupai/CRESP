@@ -474,7 +474,8 @@ package_manager = {{ type = "{}", config_file = "{}", lock_file = "{}" }}
 2. Use notebooks in `notebooks/` for interactive analysis
 3. Save experiment outputs to `output/`
 4. Store configuration in `config/`
-"#.to_string();
+"#
+        .to_string();
         std::fs::write(project_dir.join("README.md"), readme)?;
 
         Ok(())
@@ -546,7 +547,8 @@ package_manager = {{ type = "{}", config_file = "{}", lock_file = "{}" }}
 3. Use `notebooks/analysis/` for detailed analysis
 4. Save processed data to `data/processed/`
 5. Generate outputs in respective `output/` subdirectories
-"#.to_string();
+"#
+        .to_string();
         std::fs::write(project_dir.join("README.md"), readme)?;
 
         Ok(())
@@ -624,7 +626,8 @@ package_manager = {{ type = "{}", config_file = "{}", lock_file = "{}" }}
 3. Use `notebooks/experiments/` for model experiments
 4. Save trained models in `models/`
 5. Generate predictions and metrics in respective `output/` subdirectories
-"#.to_string();
+"#
+        .to_string();
         std::fs::write(project_dir.join("README.md"), readme)?;
 
         Ok(())
@@ -696,7 +699,8 @@ package_manager = {{ type = "{}", config_file = "{}", lock_file = "{}" }}
 3. Use `notebooks/visualization/` for result visualization
 4. Run simulations using scripts in `scripts/simulation/`
 5. Save results and outputs in respective `output/` subdirectories
-"#.to_string();
+"#
+        .to_string();
         std::fs::write(project_dir.join("README.md"), readme)?;
 
         Ok(())
@@ -1635,9 +1639,7 @@ logs/
 
                     fs::write(dev_environment_file, dev_env_content)?;
                 }
-                PackageManager::Poetry {
-                    pyproject_file,
-                } => {
+                PackageManager::Poetry { pyproject_file } => {
                     // 创建 pyproject.toml
                     let project_name = project_dir
                         .file_name()
@@ -1699,9 +1701,11 @@ logs/
                         config.python_version
                     );
                     if config.use_cuda && !has_conda {
-                        req_content.push_str("torch>=2.0.0\n\
+                        req_content.push_str(
+                            "torch>=2.0.0\n\
                             torchvision>=0.15.0\n\
-                            torchaudio>=2.0.0\n");
+                            torchaudio>=2.0.0\n",
+                        );
                     }
                     fs::write(requirements_file, req_content)?;
 
