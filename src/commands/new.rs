@@ -67,7 +67,6 @@ enum PackageManager {
     },
     Poetry {
         pyproject_file: String,
-        lock_file: String,
     },
     Pip {
         requirements_file: String,
@@ -392,17 +391,17 @@ package_manager = {{ type = "{}", config_file = "{}", lock_file = "{}" }}
                 _ => "none",
             },
             if user_config.use_cuda {
-                format!("conda_fallback = {{ enabled = true, environment_file = \"environment.yml\", dev_environment_file = \"environment-dev.yml\" }}")
+                "conda_fallback = { enabled = true, environment_file = \"environment.yml\", dev_environment_file = \"environment-dev.yml\" }".to_string()
             } else {
                 String::new()
             },
             if !user_config.use_cuda {
-                format!("pip_fallback = {{ enabled = true, requirements_file = \"requirements.txt\", dev_requirements_file = \"requirements-dev.txt\" }}")
+                "pip_fallback = { enabled = true, requirements_file = \"requirements.txt\", dev_requirements_file = \"requirements-dev.txt\" }".to_string()
             } else {
                 String::new()
             },
             if !user_config.use_cuda {
-                format!("uv_fallback = {{ enabled = true, requirements_file = \"requirements.txt\", dev_requirements_file = \"requirements-dev.txt\" }}")
+                "uv_fallback = { enabled = true, requirements_file = \"requirements.txt\", dev_requirements_file = \"requirements-dev.txt\" }".to_string()
             } else {
                 String::new()
             }
@@ -435,7 +434,7 @@ package_manager = {{ type = "{}", config_file = "{}", lock_file = "{}" }}
         Ok(())
     }
 
-    fn create_basic_structure(&self, project_dir: &PathBuf, _language: &str) -> Result<()> {
+    fn create_basic_structure(&self, project_dir: &Path, _language: &str) -> Result<()> {
         // Basic flat structure for simple experiments
         let dirs = vec![
             "data",      // Raw and processed data
@@ -450,8 +449,7 @@ package_manager = {{ type = "{}", config_file = "{}", lock_file = "{}" }}
         }
 
         // Create README with basic structure explanation
-        let readme = format!(
-            r#"# Project Structure
+        let readme = r#"# Project Structure
 
 ```
 .
@@ -476,14 +474,13 @@ package_manager = {{ type = "{}", config_file = "{}", lock_file = "{}" }}
 2. Use notebooks in `notebooks/` for interactive analysis
 3. Save experiment outputs to `output/`
 4. Store configuration in `config/`
-"#
-        );
+"#.to_string();
         std::fs::write(project_dir.join("README.md"), readme)?;
 
         Ok(())
     }
 
-    fn create_data_analysis_structure(&self, project_dir: &PathBuf, _language: &str) -> Result<()> {
+    fn create_data_analysis_structure(&self, project_dir: &Path, _language: &str) -> Result<()> {
         // Structure for data analysis projects
         let dirs = vec![
             "data/raw",              // Raw data
@@ -505,8 +502,7 @@ package_manager = {{ type = "{}", config_file = "{}", lock_file = "{}" }}
         }
 
         // Create README with data analysis structure explanation
-        let readme = format!(
-            r#"# Data Analysis Project Structure
+        let readme = r#"# Data Analysis Project Structure
 
 ```
 .
@@ -550,14 +546,13 @@ package_manager = {{ type = "{}", config_file = "{}", lock_file = "{}" }}
 3. Use `notebooks/analysis/` for detailed analysis
 4. Save processed data to `data/processed/`
 5. Generate outputs in respective `output/` subdirectories
-"#
-        );
+"#.to_string();
         std::fs::write(project_dir.join("README.md"), readme)?;
 
         Ok(())
     }
 
-    fn create_ml_structure(&self, project_dir: &PathBuf, _language: &str) -> Result<()> {
+    fn create_ml_structure(&self, project_dir: &Path, _language: &str) -> Result<()> {
         // Structure for machine learning projects
         let dirs = vec![
             "data/raw",              // Raw data
@@ -581,8 +576,7 @@ package_manager = {{ type = "{}", config_file = "{}", lock_file = "{}" }}
         }
 
         // Create README with ML structure explanation
-        let readme = format!(
-            r#"# Machine Learning Project Structure
+        let readme = r#"# Machine Learning Project Structure
 
 ```
 .
@@ -630,14 +624,13 @@ package_manager = {{ type = "{}", config_file = "{}", lock_file = "{}" }}
 3. Use `notebooks/experiments/` for model experiments
 4. Save trained models in `models/`
 5. Generate predictions and metrics in respective `output/` subdirectories
-"#
-        );
+"#.to_string();
         std::fs::write(project_dir.join("README.md"), readme)?;
 
         Ok(())
     }
 
-    fn create_scientific_structure(&self, project_dir: &PathBuf, _language: &str) -> Result<()> {
+    fn create_scientific_structure(&self, project_dir: &Path, _language: &str) -> Result<()> {
         // Structure for scientific computing projects
         let dirs = vec![
             "data/raw",                // Raw data
@@ -659,8 +652,7 @@ package_manager = {{ type = "{}", config_file = "{}", lock_file = "{}" }}
         }
 
         // Create README with scientific computing structure explanation
-        let readme = format!(
-            r#"# Scientific Computing Project Structure
+        let readme = r#"# Scientific Computing Project Structure
 
 ```
 .
@@ -704,8 +696,7 @@ package_manager = {{ type = "{}", config_file = "{}", lock_file = "{}" }}
 3. Use `notebooks/visualization/` for result visualization
 4. Run simulations using scripts in `scripts/simulation/`
 5. Save results and outputs in respective `output/` subdirectories
-"#
-        );
+"#.to_string();
         std::fs::write(project_dir.join("README.md"), readme)?;
 
         Ok(())
@@ -739,7 +730,7 @@ package_manager = {{ type = "{}", config_file = "{}", lock_file = "{}" }}
                 // Create README with custom structure
                 let mut readme = String::from("# Custom Project Structure\n\n");
                 readme.push_str("```\n");
-                readme.push_str(&format!(".\n"));
+                readme.push_str(".\n");
                 for dir in dirs {
                     readme.push_str(&format!("└── {}/\n", dir));
                 }
@@ -1086,7 +1077,6 @@ package_manager = {{ type = "{}", config_file = "{}", lock_file = "{}" }}
                 _ => {
                     config.package_managers.push(PackageManager::Poetry {
                         pyproject_file: "pyproject.toml".to_string(),
-                        lock_file: "poetry.lock".to_string(),
                     });
                 }
             }
@@ -1211,7 +1201,6 @@ package_manager = {{ type = "{}", config_file = "{}", lock_file = "{}" }}
         match output {
             Ok(output) if output.status.success() => {
                 let version = String::from_utf8_lossy(&output.stdout)
-                    .trim()
                     .split_whitespace()
                     .nth(1)
                     .map(|s| s.to_string());
@@ -1338,10 +1327,8 @@ package_manager = {{ type = "{}", config_file = "{}", lock_file = "{}" }}
         }
 
         // Check if CUDA libraries are available
-        if cfg!(target_os = "linux") {
-            if !std::path::Path::new("/usr/local/cuda").exists() {
-                return Ok(false);
-            }
+        if cfg!(target_os = "linux") && !std::path::Path::new("/usr/local/cuda").exists() {
+            return Ok(false);
         }
 
         Ok(true)
@@ -1410,7 +1397,7 @@ package_manager = {{ type = "{}", config_file = "{}", lock_file = "{}" }}
             ```\n\n\
             ## 许可证\n\
             MIT\n",
-            project_dir.display().to_string(),
+            project_dir.display(),
             config.python_version,
             config.python_version,
             if config.use_conda {
@@ -1423,7 +1410,7 @@ package_manager = {{ type = "{}", config_file = "{}", lock_file = "{}" }}
                 }
             },
             package_managers_desc,
-            project_dir.display().to_string(),
+            project_dir.display(),
             self.get_install_command(config),
             self.get_dev_install_command(config),
             self.get_test_command(config)
@@ -1650,7 +1637,6 @@ logs/
                 }
                 PackageManager::Poetry {
                     pyproject_file,
-                    lock_file: _,
                 } => {
                     // 创建 pyproject.toml
                     let project_name = project_dir
@@ -1713,11 +1699,9 @@ logs/
                         config.python_version
                     );
                     if config.use_cuda && !has_conda {
-                        req_content.push_str(&format!(
-                            "torch>=2.0.0\n\
+                        req_content.push_str("torch>=2.0.0\n\
                             torchvision>=0.15.0\n\
-                            torchaudio>=2.0.0\n"
-                        ));
+                            torchaudio>=2.0.0\n");
                     }
                     fs::write(requirements_file, req_content)?;
 
@@ -2380,13 +2364,17 @@ runtests('tests')
         if cfg!(target_os = "linux") {
             let limits = Command::new("ulimit").arg("-n").output()?.stdout;
             info.limits.max_open_files = String::from_utf8_lossy(&limits)
-                .trim()
+                .split_whitespace()
+                .next()
+                .unwrap_or("65535")
                 .parse()
                 .unwrap_or(65535);
 
             let limits = Command::new("ulimit").arg("-u").output()?.stdout;
             info.limits.max_processes = String::from_utf8_lossy(&limits)
-                .trim()
+                .split_whitespace()
+                .next()
+                .unwrap_or("32768")
                 .parse()
                 .unwrap_or(32768);
 
@@ -2394,7 +2382,9 @@ runtests('tests')
             info.limits.stack_size = format!(
                 "{}K",
                 String::from_utf8_lossy(&limits)
-                    .trim()
+                    .split_whitespace()
+                    .next()
+                    .unwrap_or("8192")
                     .parse::<u64>()
                     .unwrap_or(8192)
             );
@@ -2437,7 +2427,6 @@ runtests('tests')
             info.software.insert(
                 "python".to_string(),
                 String::from_utf8_lossy(&python_version.stdout)
-                    .trim()
                     .split_whitespace()
                     .nth(1)
                     .unwrap_or("latest")
@@ -2463,7 +2452,6 @@ runtests('tests')
             info.software.insert(
                 "matlab".to_string(),
                 String::from_utf8_lossy(&matlab_version.stdout)
-                    .trim()
                     .split_whitespace()
                     .last()
                     .unwrap_or("latest")
@@ -2475,7 +2463,6 @@ runtests('tests')
             info.software.insert(
                 "conda".to_string(),
                 String::from_utf8_lossy(&conda_version.stdout)
-                    .trim()
                     .split_whitespace()
                     .last()
                     .unwrap_or("4.10.3")
@@ -2519,7 +2506,6 @@ runtests('tests')
             info.software.insert(
                 "container_version".to_string(),
                 String::from_utf8_lossy(&singularity_version.stdout)
-                    .trim()
                     .split_whitespace()
                     .last()
                     .unwrap_or("3.8.0")
@@ -2530,7 +2516,6 @@ runtests('tests')
         // Get CUDA paths
         if let Ok(cuda_path) = Command::new("which").arg("nvcc").output() {
             if let Some(cuda_home) = String::from_utf8_lossy(&cuda_path.stdout)
-                .trim()
                 .split("/bin")
                 .next()
             {
