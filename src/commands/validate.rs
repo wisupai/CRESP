@@ -94,7 +94,7 @@ impl ValidateCommand {
                 if let Some(author) = author.as_table() {
                     let required_fields = ["name", "email"];
                     for field in required_fields {
-                        if author.contains_key(field).is_none() {
+                        if !author.contains_key(field) {
                             return Err(crate::error::Error::Validation(format!(
                                 "Missing required field in author: {}",
                                 field
@@ -179,7 +179,7 @@ impl ValidateCommand {
                     if let Some(dataset) = dataset.as_table() {
                         let required_fields = ["name", "source", "description"];
                         for field in required_fields {
-                            if dataset.contains_key(field).is_none() {
+                            if !dataset.contains_key(field) {
                                 return Err(crate::error::Error::Validation(format!(
                                     "Missing required field in dataset: {}",
                                     field
