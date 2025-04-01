@@ -42,10 +42,12 @@ impl DiffCommand {
         match self.format.to_lowercase().as_str() {
             "text" => self.output_text_diff(&differences)?,
             "json" => self.output_json_diff(&differences)?,
-            _ => return Err(crate::error::Error::Config(format!(
-                "Unsupported output format: {}",
-                self.format
-            ))),
+            _ => {
+                return Err(crate::error::Error::Config(format!(
+                    "Unsupported output format: {}",
+                    self.format
+                )))
+            }
         }
 
         Ok(())
@@ -156,10 +158,10 @@ impl DiffCommand {
         match (value1, value2) {
             (Value::Table(_table1), Value::Table(_table2)) => {
                 self.compare_section(value1, value2, path, differences)?;
-            },
+            }
             (Value::Array(_arr1), Value::Array(_arr2)) => {
                 self.compare_section(value1, value2, path, differences)?;
-            },
+            }
             (value1, value2) => {
                 let str1 = value1.to_string();
                 let str2 = value2.to_string();
@@ -187,18 +189,32 @@ impl DiffCommand {
         for diff in differences {
             match diff.type_ {
                 DifferenceType::Value => {
-                    println!("  {}: {} -> {}", diff.path, diff.old_value.as_deref().unwrap_or(""), diff.new_value.as_deref().unwrap_or(""));
+                    println!(
+                        "  {}: {} -> {}",
+                        diff.path,
+                        diff.old_value.as_deref().unwrap_or(""),
+                        diff.new_value.as_deref().unwrap_or("")
+                    );
                 }
                 DifferenceType::Missing => {
-                    println!("  - {}: {}", diff.path, diff.old_value.as_deref().unwrap_or(""));
+                    println!(
+                        "  - {}: {}",
+                        diff.path,
+                        diff.old_value.as_deref().unwrap_or("")
+                    );
                 }
                 DifferenceType::Added => {
-                    println!("  + {}: {}", diff.path, diff.new_value.as_deref().unwrap_or(""));
+                    println!(
+                        "  + {}: {}",
+                        diff.path,
+                        diff.new_value.as_deref().unwrap_or("")
+                    );
                 }
                 DifferenceType::Length => {
-                    println!("  {}: Array length changed from {} to {}", 
-                        diff.path, 
-                        diff.old_value.as_deref().unwrap_or(""), 
+                    println!(
+                        "  {}: Array length changed from {} to {}",
+                        diff.path,
+                        diff.old_value.as_deref().unwrap_or(""),
                         diff.new_value.as_deref().unwrap_or("")
                     );
                 }
@@ -230,4 +246,4 @@ enum DifferenceType {
     Missing,
     Added,
     Length,
-} 
+}

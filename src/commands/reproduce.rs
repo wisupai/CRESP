@@ -1,8 +1,8 @@
+use crate::error::Result;
 use clap::Parser;
 use log::info;
 use std::path::PathBuf;
 use toml::Value;
-use crate::error::Result;
 
 #[derive(Parser, Debug)]
 pub struct ReproduceCommand {
@@ -92,25 +92,34 @@ impl ReproduceCommand {
     }
 
     fn verify_cpu(&self, cpu: &Value) -> Result<()> {
-        let model = cpu.get("model")
+        let model = cpu
+            .get("model")
             .and_then(|v| v.as_str())
             .ok_or_else(|| crate::error::Error::Environment("Missing CPU model".to_string()))?;
 
-        let architecture = cpu.get("architecture")
+        let architecture = cpu
+            .get("architecture")
             .and_then(|v| v.as_str())
-            .ok_or_else(|| crate::error::Error::Environment("Missing CPU architecture".to_string()))?;
+            .ok_or_else(|| {
+                crate::error::Error::Environment("Missing CPU architecture".to_string())
+            })?;
 
-        let cores = cpu.get("cores")
+        let cores = cpu
+            .get("cores")
             .and_then(|v| v.as_integer())
             .ok_or_else(|| crate::error::Error::Environment("Missing CPU cores".to_string()))?;
 
         // TODO: Implement actual CPU verification
-        info!("✅ CPU requirements met: {} ({}, {} cores)", model, architecture, cores);
+        info!(
+            "✅ CPU requirements met: {} ({}, {} cores)",
+            model, architecture, cores
+        );
         Ok(())
     }
 
     fn verify_memory(&self, memory: &Value) -> Result<()> {
-        let size = memory.get("size")
+        let size = memory
+            .get("size")
             .and_then(|v| v.as_str())
             .ok_or_else(|| crate::error::Error::Environment("Missing memory size".to_string()))?;
 
@@ -121,13 +130,17 @@ impl ReproduceCommand {
 
     fn verify_gpu(&self, gpu: &Value) -> Result<()> {
         if let Some(default_model) = gpu.get("default_model") {
-            let model = default_model.get("model")
+            let model = default_model
+                .get("model")
                 .and_then(|v| v.as_str())
                 .ok_or_else(|| crate::error::Error::Environment("Missing GPU model".to_string()))?;
 
-            let memory = default_model.get("memory")
+            let memory = default_model
+                .get("memory")
                 .and_then(|v| v.as_str())
-                .ok_or_else(|| crate::error::Error::Environment("Missing GPU memory".to_string()))?;
+                .ok_or_else(|| {
+                    crate::error::Error::Environment("Missing GPU memory".to_string())
+                })?;
 
             // TODO: Implement actual GPU verification
             info!("✅ GPU requirements met: {} ({})", model, memory);
@@ -156,9 +169,12 @@ impl ReproduceCommand {
     }
 
     fn verify_python(&self, python: &Value) -> Result<()> {
-        let version = python.get("version")
+        let version = python
+            .get("version")
             .and_then(|v| v.as_str())
-            .ok_or_else(|| crate::error::Error::Environment("Missing Python version".to_string()))?;
+            .ok_or_else(|| {
+                crate::error::Error::Environment("Missing Python version".to_string())
+            })?;
 
         // TODO: Implement actual Python verification
         info!("✅ Python requirements met: {}", version);
@@ -166,7 +182,8 @@ impl ReproduceCommand {
     }
 
     fn verify_r(&self, r: &Value) -> Result<()> {
-        let version = r.get("version")
+        let version = r
+            .get("version")
             .and_then(|v| v.as_str())
             .ok_or_else(|| crate::error::Error::Environment("Missing R version".to_string()))?;
 
@@ -176,9 +193,12 @@ impl ReproduceCommand {
     }
 
     fn verify_matlab(&self, matlab: &Value) -> Result<()> {
-        let version = matlab.get("version")
+        let version = matlab
+            .get("version")
             .and_then(|v| v.as_str())
-            .ok_or_else(|| crate::error::Error::Environment("Missing MATLAB version".to_string()))?;
+            .ok_or_else(|| {
+                crate::error::Error::Environment("Missing MATLAB version".to_string())
+            })?;
 
         // TODO: Implement actual MATLAB verification
         info!("✅ MATLAB requirements met: {}", version);
@@ -206,4 +226,4 @@ impl ReproduceCommand {
 
         Ok(())
     }
-} 
+}

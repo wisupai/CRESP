@@ -1,13 +1,13 @@
-use clap::Subcommand;
 use crate::error::Result;
+use clap::Subcommand;
 
+pub mod diff;
+pub mod export;
 pub mod new;
+pub mod reproduce;
+pub mod update;
 pub mod validate;
 pub mod verify;
-pub mod export;
-pub mod reproduce;
-pub mod diff;
-pub mod update;
 
 #[derive(Subcommand, Debug)]
 pub enum Command {
@@ -32,4 +32,4 @@ impl Command {
             Command::Update(cmd) => cmd.execute().await,
         }
     }
-} 
+}

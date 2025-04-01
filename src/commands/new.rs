@@ -1,11 +1,11 @@
+use crate::error::Result;
 use clap::Parser;
 use log::{info, warn};
-use std::path::PathBuf;
-use std::io::{self, Write};
-use std::process::Command;
-use crate::error::Result;
 use std::fs;
+use std::io::{self, Write};
 use std::path::Path;
+use std::path::PathBuf;
+use std::process::Command;
 
 #[derive(Parser, Debug)]
 pub struct NewCommand {
@@ -114,7 +114,8 @@ impl NewCommand {
                 "2" => "r",
                 "3" => "matlab",
                 _ => "python",
-            }.to_string()
+            }
+            .to_string()
         });
 
         // Select project template
@@ -152,7 +153,10 @@ impl NewCommand {
         // Create project directory
         let project_dir = self.output.join(&name);
         if project_dir.exists() {
-            warn!("⚠️ Project directory already exists: {}", project_dir.display());
+            warn!(
+                "⚠️ Project directory already exists: {}",
+                project_dir.display()
+            );
             print!("Do you want to overwrite it? (y/N): ");
             io::stdout().flush().unwrap();
             let mut input = String::new();
@@ -279,10 +283,15 @@ package_manager = {{ type = "{}", config_file = "{}", lock_file = "{}" }}
                 if user_config.virtual_env_type == VirtualEnvType::Conda {
                     // 修复临时值问题：使用let绑定创建持久值
                     let default_conda_version = "4.10.3".to_string();
-                    let conda_version = system_info.software.get("conda").unwrap_or(&default_conda_version);
-                    
+                    let conda_version = system_info
+                        .software
+                        .get("conda")
+                        .unwrap_or(&default_conda_version);
+
                     // 获取所有conda渠道
-                    let channels = user_config.package_managers.iter()
+                    let channels = user_config
+                        .package_managers
+                        .iter()
                         .filter_map(|pm| {
                             if let PackageManager::Conda { channels, .. } = pm {
                                 Some(channels.clone())
@@ -292,16 +301,17 @@ package_manager = {{ type = "{}", config_file = "{}", lock_file = "{}" }}
                         })
                         .next()
                         .unwrap_or_else(|| vec!["conda-forge".to_string()]);
-                    
+
                     // 格式化渠道字符串
-                    let channels_str = channels.iter()
+                    let channels_str = channels
+                        .iter()
                         .map(|ch| format!("\"{}\"", ch))
                         .collect::<Vec<_>>()
                         .join(", ");
-                    
-                    software_config.push_str(&format!("conda = {{ version = \"{}\", channels = [{}] }}\n", 
-                        conda_version, 
-                        channels_str
+
+                    software_config.push_str(&format!(
+                        "conda = {{ version = \"{}\", channels = [{}] }}\n",
+                        conda_version, channels_str
                     ));
                 }
 
@@ -309,31 +319,41 @@ package_manager = {{ type = "{}", config_file = "{}", lock_file = "{}" }}
                 if user_config.use_cuda {
                     // 修复临时值问题：使用let绑定创建持久值
                     let default_cuda_version = "11.8".to_string();
-                    let cuda_version = user_config.cuda_version.as_ref().unwrap_or(&default_cuda_version);
-                    
-                    software_config.push_str(&format!("cuda = {{ version = \"{}\", toolkit = \"cuda_{}_linux\" }}\n", 
-                        cuda_version, 
+                    let cuda_version = user_config
+                        .cuda_version
+                        .as_ref()
+                        .unwrap_or(&default_cuda_version);
+
+                    software_config.push_str(&format!(
+                        "cuda = {{ version = \"{}\", toolkit = \"cuda_{}_linux\" }}\n",
+                        cuda_version,
                         cuda_version.replace(".", "_")
                     ));
-                    
+
                     // cuDNN 配置
                     // 修复临时值问题：使用let绑定创建持久值
                     let default_cudnn_version = "8.9".to_string();
-                    let cudnn_version = user_config.cudnn_version.as_ref().unwrap_or(&default_cudnn_version);
-                    
-                    software_config.push_str(&format!("cudnn = {{ version = \"{}\", toolkit = \"cudnn-{}-linux-x64-v{}\" }}\n", 
-                        cudnn_version,
-                        cuda_version,
-                        cudnn_version
+                    let cudnn_version = user_config
+                        .cudnn_version
+                        .as_ref()
+                        .unwrap_or(&default_cudnn_version);
+
+                    software_config.push_str(&format!(
+                        "cudnn = {{ version = \"{}\", toolkit = \"cudnn-{}-linux-x64-v{}\" }}\n",
+                        cudnn_version, cuda_version, cudnn_version
                     ));
                 }
-                
+
                 // 移除容器平台配置
                 software_config
             } else {
-                format!("{} = {{ version = \"{}\" }}", 
-                    language, 
-                    system_info.software.get(&language).unwrap_or(&"latest".to_string())
+                format!(
+                    "{} = {{ version = \"{}\" }}",
+                    language,
+                    system_info
+                        .software
+                        .get(&language)
+                        .unwrap_or(&"latest".to_string())
                 )
             },
             system_info.os.locale,
@@ -408,18 +428,21 @@ package_manager = {{ type = "{}", config_file = "{}", lock_file = "{}" }}
             _ => unreachable!(),
         }
 
-        info!("✨ Project created successfully at: {}", project_dir.display());
+        info!(
+            "✨ Project created successfully at: {}",
+            project_dir.display()
+        );
         Ok(())
     }
 
     fn create_basic_structure(&self, project_dir: &PathBuf, _language: &str) -> Result<()> {
         // Basic flat structure for simple experiments
         let dirs = vec![
-            "data",           // Raw and processed data
-            "output",         // Experiment outputs
-            "notebooks",      // Jupyter notebooks
-            "scripts",        // Utility scripts
-            "config",         // Configuration files
+            "data",      // Raw and processed data
+            "output",    // Experiment outputs
+            "notebooks", // Jupyter notebooks
+            "scripts",   // Utility scripts
+            "config",    // Configuration files
         ];
 
         for dir in dirs {
@@ -463,18 +486,18 @@ package_manager = {{ type = "{}", config_file = "{}", lock_file = "{}" }}
     fn create_data_analysis_structure(&self, project_dir: &PathBuf, _language: &str) -> Result<()> {
         // Structure for data analysis projects
         let dirs = vec![
-            "data/raw",           // Raw data
-            "data/processed",     // Processed data
-            "data/external",      // External data sources
-            "output/figures",     // Generated figures
-            "output/tables",      // Generated tables
-            "output/reports",     // Generated reports
-            "notebooks/analysis", // Analysis notebooks
+            "data/raw",              // Raw data
+            "data/processed",        // Processed data
+            "data/external",         // External data sources
+            "output/figures",        // Generated figures
+            "output/tables",         // Generated tables
+            "output/reports",        // Generated reports
+            "notebooks/analysis",    // Analysis notebooks
             "notebooks/exploration", // Data exploration notebooks
-            "scripts/data",       // Data processing scripts
-            "scripts/analysis",   // Analysis scripts
+            "scripts/data",          // Data processing scripts
+            "scripts/analysis",      // Analysis scripts
             "scripts/visualization", // Visualization scripts
-            "config",            // Configuration files
+            "config",                // Configuration files
         ];
 
         for dir in dirs {
@@ -537,20 +560,20 @@ package_manager = {{ type = "{}", config_file = "{}", lock_file = "{}" }}
     fn create_ml_structure(&self, project_dir: &PathBuf, _language: &str) -> Result<()> {
         // Structure for machine learning projects
         let dirs = vec![
-            "data/raw",           // Raw data
-            "data/processed",     // Processed data
-            "data/external",      // External data sources
-            "models",            // Trained models
-            "output/predictions", // Model predictions
-            "output/figures",     // Generated figures
-            "output/metrics",     // Model metrics
+            "data/raw",              // Raw data
+            "data/processed",        // Processed data
+            "data/external",         // External data sources
+            "models",                // Trained models
+            "output/predictions",    // Model predictions
+            "output/figures",        // Generated figures
+            "output/metrics",        // Model metrics
             "notebooks/exploration", // Data exploration
             "notebooks/experiments", // Experiment notebooks
-            "scripts/data",       // Data processing scripts
-            "scripts/models",     // Model scripts
-            "scripts/training",   // Training scripts
-            "scripts/evaluation", // Evaluation scripts
-            "config",            // Configuration files
+            "scripts/data",          // Data processing scripts
+            "scripts/models",        // Model scripts
+            "scripts/training",      // Training scripts
+            "scripts/evaluation",    // Evaluation scripts
+            "config",                // Configuration files
         ];
 
         for dir in dirs {
@@ -617,18 +640,18 @@ package_manager = {{ type = "{}", config_file = "{}", lock_file = "{}" }}
     fn create_scientific_structure(&self, project_dir: &PathBuf, _language: &str) -> Result<()> {
         // Structure for scientific computing projects
         let dirs = vec![
-            "data/raw",           // Raw data
-            "data/processed",     // Processed data
-            "data/external",      // External data sources
-            "output/results",     // Simulation results
-            "output/figures",     // Generated figures
-            "output/tables",      // Generated tables
-            "notebooks/analysis", // Analysis notebooks
+            "data/raw",                // Raw data
+            "data/processed",          // Processed data
+            "data/external",           // External data sources
+            "output/results",          // Simulation results
+            "output/figures",          // Generated figures
+            "output/tables",           // Generated tables
+            "notebooks/analysis",      // Analysis notebooks
             "notebooks/visualization", // Visualization notebooks
-            "scripts/simulation", // Simulation scripts
-            "scripts/analysis",   // Analysis scripts
-            "scripts/visualization", // Visualization scripts
-            "config",            // Configuration files
+            "scripts/simulation",      // Simulation scripts
+            "scripts/analysis",        // Analysis scripts
+            "scripts/visualization",   // Visualization scripts
+            "config",                  // Configuration files
         ];
 
         for dir in dirs {
@@ -707,7 +730,7 @@ package_manager = {{ type = "{}", config_file = "{}", lock_file = "{}" }}
 
                 let dirs: Vec<&str> = dirs_input.trim().split(',').map(|s| s.trim()).collect();
                 let dirs_clone = dirs.clone();
-                
+
                 // Create directories
                 for dir in &dirs {
                     std::fs::create_dir_all(project_dir.join(dir))?;
@@ -733,15 +756,15 @@ package_manager = {{ type = "{}", config_file = "{}", lock_file = "{}" }}
                 readme.push_str("3. [Add usage instructions]\n");
 
                 std::fs::write(project_dir.join("README.md"), readme)?;
-            },
+            }
             _ => {
                 // Create basic directories
                 let dirs = vec![
-                    "data",           // Data directory
-                    "output",         // Output directory
-                    "notebooks",      // Notebooks directory
-                    "scripts",        // Scripts directory
-                    "config",         // Configuration directory
+                    "data",      // Data directory
+                    "output",    // Output directory
+                    "notebooks", // Notebooks directory
+                    "scripts",   // Scripts directory
+                    "config",    // Configuration directory
                 ];
 
                 for dir in dirs {
@@ -808,7 +831,10 @@ package_manager = {{ type = "{}", config_file = "{}", lock_file = "{}" }}
         if let Some(ver) = &system_python {
             println!("6. Use system Python (version {})", ver);
         }
-        print!("Choice (1-{}) [1]: ", if system_python.is_some() { "6" } else { "5" });
+        print!(
+            "Choice (1-{}) [1]: ",
+            if system_python.is_some() { "6" } else { "5" }
+        );
         io::stdout().flush()?;
         let mut input = String::new();
         io::stdin().read_line(&mut input)?;
@@ -824,13 +850,15 @@ package_manager = {{ type = "{}", config_file = "{}", lock_file = "{}" }}
                 let mut custom_version = String::new();
                 io::stdin().read_line(&mut custom_version)?;
                 let version = custom_version.trim();
-                if version.matches('.').count() == 1 && version.split('.').all(|n| n.parse::<u32>().is_ok()) {
+                if version.matches('.').count() == 1
+                    && version.split('.').all(|n| n.parse::<u32>().is_ok())
+                {
                     version.to_string()
                 } else {
                     warn!("⚠️ Invalid version format, using default Python 3.12");
                     "3.12".to_string()
                 }
-            },
+            }
             "6" if system_python.is_some() => system_python.clone().unwrap(),
             _ => "3.12".to_string(),
         };
@@ -857,30 +885,37 @@ package_manager = {{ type = "{}", config_file = "{}", lock_file = "{}" }}
             print!("Choice (1-2) [1]: ");
         } else {
             // 系统没有所选版本，只提供Conda选项
-            println!("1. Use Conda to install Python {} (recommended)", config.python_version);
+            println!(
+                "1. Use Conda to install Python {} (recommended)",
+                config.python_version
+            );
             if !conda_available {
                 println!("   Note: Conda will be installed first");
             }
             println!("2. Cancel and select a different Python version");
             print!("Choice (1-2) [1]: ");
         }
-        
-        let choice_range = if input.trim() == "6" && system_python.is_some() { "1-3" } else { "1-2" };
+
+        let choice_range = if input.trim() == "6" && system_python.is_some() {
+            "1-3"
+        } else {
+            "1-2"
+        };
         print!("Choice ({}) [1]: ", choice_range);
         io::stdout().flush()?;
         input.clear();
         io::stdin().read_line(&mut input)?;
-        
+
         if input.trim() == "3" && system_python.is_some() {
             // 直接使用系统Python，不使用虚拟环境
             config.use_conda = false;
             config.virtual_env_type = VirtualEnvType::None;
         } else {
             config.use_conda = input.trim() != "2";
-            
+
             if config.use_conda {
                 config.virtual_env_type = VirtualEnvType::Conda;
-                
+
                 // 如果 Conda 未安装，提示安装
                 if !conda_available {
                     println!("\n🔧 Conda is not installed. Would you like to install it now?");
@@ -891,7 +926,7 @@ package_manager = {{ type = "{}", config_file = "{}", lock_file = "{}" }}
                     io::stdout().flush()?;
                     input.clear();
                     io::stdin().read_line(&mut input)?;
-                    
+
                     let distribution = match input.trim() {
                         "2" => CondaDistribution::Anaconda,
                         "3" => CondaDistribution::CondaForge,
@@ -903,7 +938,7 @@ package_manager = {{ type = "{}", config_file = "{}", lock_file = "{}" }}
                 // 询问Conda渠道选择
                 println!("\n📦 Conda channel selection:");
                 println!("You can select multiple channels. Conda will search packages in the order specified.");
-                println!("1. conda-forge (recommended general channel)");  
+                println!("1. conda-forge (recommended general channel)");
                 println!("2. defaults (Anaconda default channel)");
                 println!("3. bioconda (for bioinformatics packages)");
                 println!("4. pytorch (for PyTorch and related packages)");
@@ -911,14 +946,14 @@ package_manager = {{ type = "{}", config_file = "{}", lock_file = "{}" }}
                 println!("6. r (for R programming language packages)");
                 println!("7. Add custom channel");
                 println!("\nEnter channel numbers separated by commas (e.g., '1,3,5'), or 'done' when finished");
-                
+
                 let mut selected_channels: Vec<String> = Vec::new();
                 loop {
                     print!("> ");
                     io::stdout().flush()?;
                     input.clear();
                     io::stdin().read_line(&mut input)?;
-                    
+
                     let trimmed = input.trim();
                     if trimmed.to_lowercase() == "done" || trimmed.is_empty() {
                         // 如果没有选择任何渠道，默认添加conda-forge
@@ -928,7 +963,7 @@ package_manager = {{ type = "{}", config_file = "{}", lock_file = "{}" }}
                         }
                         break;
                     }
-                    
+
                     // 解析选择的渠道号
                     for choice in trimmed.split(',') {
                         let choice = choice.trim();
@@ -938,56 +973,61 @@ package_manager = {{ type = "{}", config_file = "{}", lock_file = "{}" }}
                                     selected_channels.push("conda-forge".to_string());
                                     println!("Added conda-forge channel");
                                 }
-                            },
+                            }
                             "2" => {
                                 if !selected_channels.contains(&"defaults".to_string()) {
                                     selected_channels.push("defaults".to_string());
                                     println!("Added defaults channel");
                                 }
-                            },
+                            }
                             "3" => {
                                 if !selected_channels.contains(&"bioconda".to_string()) {
                                     selected_channels.push("bioconda".to_string());
                                     println!("Added bioconda channel");
                                 }
-                            },
+                            }
                             "4" => {
                                 if !selected_channels.contains(&"pytorch".to_string()) {
                                     selected_channels.push("pytorch".to_string());
                                     println!("Added pytorch channel");
                                 }
-                            },
+                            }
                             "5" => {
                                 if !selected_channels.contains(&"nvidia".to_string()) {
                                     selected_channels.push("nvidia".to_string());
                                     println!("Added nvidia channel");
                                 }
-                            },
+                            }
                             "6" => {
                                 if !selected_channels.contains(&"r".to_string()) {
                                     selected_channels.push("r".to_string());
                                     println!("Added r channel");
                                 }
-                            },
+                            }
                             "7" => {
                                 print!("Enter custom channel name: ");
                                 io::stdout().flush()?;
                                 let mut custom_input = String::new();
                                 io::stdin().read_line(&mut custom_input)?;
                                 let custom_channel = custom_input.trim().to_string();
-                                if !custom_channel.is_empty() && !selected_channels.contains(&custom_channel) {
+                                if !custom_channel.is_empty()
+                                    && !selected_channels.contains(&custom_channel)
+                                {
                                     selected_channels.push(custom_channel.clone());
                                     println!("Added custom channel: {}", custom_channel);
                                 }
-                            },
+                            }
                             _ => println!("Invalid choice: {}", choice),
                         }
                     }
-                    
-                    println!("Currently selected channels: {}", selected_channels.join(", "));
+
+                    println!(
+                        "Currently selected channels: {}",
+                        selected_channels.join(", ")
+                    );
                     println!("Enter more channels or type 'done' to finish selection");
                 }
-                
+
                 config.package_managers.push(PackageManager::Conda {
                     channels: selected_channels,
                     environment_file: "environment.yml".to_string(),
@@ -1002,7 +1042,7 @@ package_manager = {{ type = "{}", config_file = "{}", lock_file = "{}" }}
                 io::stdout().flush()?;
                 input.clear();
                 io::stdin().read_line(&mut input)?;
-                
+
                 config.virtual_env_type = match input.trim() {
                     "2" => VirtualEnvType::Virtualenv,
                     _ => VirtualEnvType::Venv,
@@ -1016,9 +1056,14 @@ package_manager = {{ type = "{}", config_file = "{}", lock_file = "{}" }}
         println!("2. uv (recommended for fast dependency resolution)");
         println!("3. pip (traditional, recommended for simple projects)");
         if config.use_conda {
-            println!("4. Only use conda for package management (no additional Python package manager)");
+            println!(
+                "4. Only use conda for package management (no additional Python package manager)"
+            );
         }
-        print!("Choice (1-{}) [1]: ", if config.use_conda { "4" } else { "3" });
+        print!(
+            "Choice (1-{}) [1]: ",
+            if config.use_conda { "4" } else { "3" }
+        );
         io::stdout().flush()?;
         input.clear();
         io::stdin().read_line(&mut input)?;
@@ -1031,13 +1076,13 @@ package_manager = {{ type = "{}", config_file = "{}", lock_file = "{}" }}
                         requirements_file: "requirements.txt".to_string(),
                         dev_requirements_file: "requirements-dev.txt".to_string(),
                     });
-                },
+                }
                 "3" => {
                     config.package_managers.push(PackageManager::Pip {
                         requirements_file: "requirements.txt".to_string(),
                         dev_requirements_file: "requirements-dev.txt".to_string(),
                     });
-                },
+                }
                 _ => {
                     config.package_managers.push(PackageManager::Poetry {
                         pyproject_file: "pyproject.toml".to_string(),
@@ -1048,7 +1093,11 @@ package_manager = {{ type = "{}", config_file = "{}", lock_file = "{}" }}
         }
 
         // 4. 选择 pip/uv/poetry 的包源 (如果选择了这些管理器)
-        if !config.package_managers.iter().all(|pm| matches!(pm, PackageManager::Conda { .. })) {
+        if !config
+            .package_managers
+            .iter()
+            .all(|pm| matches!(pm, PackageManager::Conda { .. }))
+        {
             println!("\n📦 Package Index Configuration:");
             println!("1. PyPI (default)");
             println!("2. Tsinghua Mirror (faster in China)");
@@ -1061,28 +1110,36 @@ package_manager = {{ type = "{}", config_file = "{}", lock_file = "{}" }}
 
             match input.trim() {
                 "2" => {
-                    config.pip_index_url = Some("https://pypi.tuna.tsinghua.edu.cn/simple".to_string());
+                    config.pip_index_url =
+                        Some("https://pypi.tuna.tsinghua.edu.cn/simple".to_string());
                     config.pip_trusted_hosts = Some(vec!["pypi.tuna.tsinghua.edu.cn".to_string()]);
-                },
+                }
                 "3" => {
-                    config.pip_index_url = Some("https://mirrors.aliyun.com/pypi/simple".to_string());
+                    config.pip_index_url =
+                        Some("https://mirrors.aliyun.com/pypi/simple".to_string());
                     config.pip_trusted_hosts = Some(vec!["mirrors.aliyun.com".to_string()]);
-                },
+                }
                 "4" => {
                     print!("Enter custom index URL: ");
                     io::stdout().flush()?;
                     input.clear();
                     io::stdin().read_line(&mut input)?;
                     let index_url = input.trim().to_string();
-                    
+
                     // 从URL中提取host部分
-                    let host = index_url.replace("http://", "").replace("https://", "").split('/').next().unwrap_or("").to_string();
-                    
+                    let host = index_url
+                        .replace("http://", "")
+                        .replace("https://", "")
+                        .split('/')
+                        .next()
+                        .unwrap_or("")
+                        .to_string();
+
                     config.pip_index_url = Some(index_url);
                     if !host.is_empty() {
                         config.pip_trusted_hosts = Some(vec![host]);
                     }
-                },
+                }
                 _ => {
                     config.pip_index_url = None;
                     config.pip_trusted_hosts = None;
@@ -1100,28 +1157,40 @@ package_manager = {{ type = "{}", config_file = "{}", lock_file = "{}" }}
         // 6. 显示配置摘要
         println!("\n📋 Configuration Summary:");
         println!("Python Version: {}", config.python_version);
-        println!("Environment Management: {}", if config.use_conda { "Conda" } else { "System Python" });
-        println!("Virtual Environment: {}", match config.virtual_env_type {
-            VirtualEnvType::Venv => "venv",
-            VirtualEnvType::Virtualenv => "virtualenv",
-            VirtualEnvType::Conda => "Conda",
-            VirtualEnvType::None => "None",
-        });
+        println!(
+            "Environment Management: {}",
+            if config.use_conda {
+                "Conda"
+            } else {
+                "System Python"
+            }
+        );
+        println!(
+            "Virtual Environment: {}",
+            match config.virtual_env_type {
+                VirtualEnvType::Venv => "venv",
+                VirtualEnvType::Virtualenv => "virtualenv",
+                VirtualEnvType::Conda => "Conda",
+                VirtualEnvType::None => "None",
+            }
+        );
         println!("Package Managers:");
         for pm in &config.package_managers {
             match pm {
                 PackageManager::Conda { channels, .. } => {
                     println!("  - Conda (channels: {})", channels.join(", "));
-                },
+                }
                 PackageManager::Poetry { .. } => println!("  - Poetry"),
                 PackageManager::Uv { .. } => println!("  - uv"),
                 PackageManager::Pip { .. } => println!("  - pip"),
             }
         }
         if config.use_cuda {
-            println!("CUDA Support: Yes (CUDA {}, cuDNN {})",
+            println!(
+                "CUDA Support: Yes (CUDA {}, cuDNN {})",
                 config.cuda_version.as_ref().unwrap(),
-                config.cudnn_version.as_ref().unwrap());
+                config.cudnn_version.as_ref().unwrap()
+            );
         }
 
         // 7. 询问是否继续安装
@@ -1137,9 +1206,7 @@ package_manager = {{ type = "{}", config_file = "{}", lock_file = "{}" }}
     }
 
     fn check_system_python(&self) -> Result<Option<String>> {
-        let output = Command::new("python3")
-            .arg("--version")
-            .output();
+        let output = Command::new("python3").arg("--version").output();
 
         match output {
             Ok(output) if output.status.success() => {
@@ -1149,15 +1216,13 @@ package_manager = {{ type = "{}", config_file = "{}", lock_file = "{}" }}
                     .nth(1)
                     .map(|s| s.to_string());
                 Ok(version)
-            },
-            _ => Ok(None)
+            }
+            _ => Ok(None),
         }
     }
 
     fn check_conda_available(&self) -> Result<bool> {
-        let output = Command::new("conda")
-            .arg("--version")
-            .output();
+        let output = Command::new("conda").arg("--version").output();
 
         Ok(output.is_ok() && output.unwrap().status.success())
     }
@@ -1176,11 +1241,12 @@ package_manager = {{ type = "{}", config_file = "{}", lock_file = "{}" }}
                 } else {
                     return Err(std::io::Error::new(
                         std::io::ErrorKind::Other,
-                        "Unsupported operating system"
-                    ).into());
+                        "Unsupported operating system",
+                    )
+                    .into());
                 };
                 (script, "https://repo.anaconda.com/miniconda/")
-            },
+            }
             CondaDistribution::Anaconda => {
                 let script = if cfg!(target_os = "linux") {
                     "Anaconda3-latest-Linux-x86_64.sh"
@@ -1193,11 +1259,12 @@ package_manager = {{ type = "{}", config_file = "{}", lock_file = "{}" }}
                 } else {
                     return Err(std::io::Error::new(
                         std::io::ErrorKind::Other,
-                        "Unsupported operating system"
-                    ).into());
+                        "Unsupported operating system",
+                    )
+                    .into());
                 };
                 (script, "https://repo.anaconda.com/archive/")
-            },
+            }
             CondaDistribution::CondaForge => {
                 let script = if cfg!(target_os = "linux") {
                     "Miniforge3-Linux-x86_64.sh"
@@ -1210,10 +1277,14 @@ package_manager = {{ type = "{}", config_file = "{}", lock_file = "{}" }}
                 } else {
                     return Err(std::io::Error::new(
                         std::io::ErrorKind::Other,
-                        "Unsupported operating system"
-                    ).into());
+                        "Unsupported operating system",
+                    )
+                    .into());
                 };
-                (script, "https://github.com/conda-forge/miniforge/releases/latest/download/")
+                (
+                    script,
+                    "https://github.com/conda-forge/miniforge/releases/latest/download/",
+                )
             }
         };
 
@@ -1235,9 +1306,7 @@ package_manager = {{ type = "{}", config_file = "{}", lock_file = "{}" }}
         std::fs::remove_file(install_script)?;
 
         // 初始化 conda
-        Command::new("conda")
-            .arg("init")
-            .status()?;
+        Command::new("conda").arg("init").status()?;
 
         // 如果是 conda-forge，设置默认 channel
         if let CondaDistribution::CondaForge = distribution {
@@ -1255,7 +1324,11 @@ package_manager = {{ type = "{}", config_file = "{}", lock_file = "{}" }}
 
     fn check_cuda_availability(&self) -> Result<bool> {
         // Check if nvidia-smi is available
-        if Command::new("nvidia-smi").arg("--query-gpu=gpu_name").output().is_err() {
+        if Command::new("nvidia-smi")
+            .arg("--query-gpu=gpu_name")
+            .output()
+            .is_err()
+        {
             return Ok(false);
         }
 
@@ -1295,7 +1368,9 @@ package_manager = {{ type = "{}", config_file = "{}", lock_file = "{}" }}
 
         // 创建 README.md
         // 获取包管理器信息
-        let package_managers_desc = config.package_managers.iter()
+        let package_managers_desc = config
+            .package_managers
+            .iter()
             .map(|pm| match pm {
                 PackageManager::Conda { .. } => "Conda",
                 PackageManager::Poetry { .. } => "Poetry",
@@ -1338,7 +1413,9 @@ package_manager = {{ type = "{}", config_file = "{}", lock_file = "{}" }}
             project_dir.display().to_string(),
             config.python_version,
             config.python_version,
-            if config.use_conda { "Conda" } else { 
+            if config.use_conda {
+                "Conda"
+            } else {
                 match config.virtual_env_type {
                     VirtualEnvType::Venv => "venv",
                     VirtualEnvType::Virtualenv => "virtualenv",
@@ -1431,16 +1508,20 @@ logs/
         fs::write(".gitignore", gitignore_content)?;
 
         // 创建主模块
-        let src_dir = Path::new("src").join(project_dir.file_name()
-            .and_then(|name| name.to_str())
-            .unwrap_or("my-project"));
+        let src_dir = Path::new("src").join(
+            project_dir
+                .file_name()
+                .and_then(|name| name.to_str())
+                .unwrap_or("my-project"),
+        );
         fs::create_dir_all(&src_dir)?;
         fs::write(
             src_dir.join("__init__.py"),
             format!(
                 "\"\"\"{} package.\"\"\"\n\n\
                 __version__ = \"0.1.0\"\n",
-                project_dir.file_name()
+                project_dir
+                    .file_name()
                     .and_then(|name| name.to_str())
                     .unwrap_or("my-project")
             ),
@@ -1457,10 +1538,7 @@ logs/
 
         // 创建测试文件
         let tests_dir = Path::new("tests");
-        fs::write(
-            tests_dir.join("__init__.py"),
-            "\"\"\"Test package.\"\"\"\n",
-        )?;
+        fs::write(tests_dir.join("__init__.py"), "\"\"\"Test package.\"\"\"\n")?;
         fs::write(
             tests_dir.join("test_main.py"),
             "\"\"\"Test main module.\"\"\"\n\n\
@@ -1470,13 +1548,21 @@ logs/
         )?;
 
         // 根据用户选择创建环境配置文件
-        let has_conda = config.package_managers.iter().any(|pm| matches!(pm, PackageManager::Conda { .. }));
-        
+        let has_conda = config
+            .package_managers
+            .iter()
+            .any(|pm| matches!(pm, PackageManager::Conda { .. }));
+
         for package_manager in &config.package_managers {
             match package_manager {
-                PackageManager::Conda { channels, environment_file, dev_environment_file } => {
+                PackageManager::Conda {
+                    channels,
+                    environment_file,
+                    dev_environment_file,
+                } => {
                     // 创建 environment.yml
-                    let project_name = project_dir.file_name()
+                    let project_name = project_dir
+                        .file_name()
                         .and_then(|name| name.to_str())
                         .unwrap_or("my-project");
                     let mut env_content = format!(
@@ -1501,18 +1587,22 @@ logs/
                         env_content.push_str(&format!("  - python={}\n", config.python_version));
                     }
                     env_content.push_str("  - pip\n");
-                    
+
                     // 添加需要通过conda安装的包
                     if config.use_cuda {
                         env_content.push_str("  - numpy\n  - scipy\n  - matplotlib\n  - pandas\n");
                     }
-                    
+
                     // 如果有Poetry/pip/uv，添加pip部分
-                    if config.package_managers.iter().any(|pm| !matches!(pm, PackageManager::Conda { .. })) {
+                    if config
+                        .package_managers
+                        .iter()
+                        .any(|pm| !matches!(pm, PackageManager::Conda { .. }))
+                    {
                         env_content.push_str("  - pip:\n");
-                        env_content.push_str("    - -e .\n");  // 安装当前项目
+                        env_content.push_str("    - -e .\n"); // 安装当前项目
                     }
-                    
+
                     fs::write(environment_file, env_content)?;
 
                     // 创建 dev-environment.yml
@@ -1535,7 +1625,8 @@ logs/
                             config.cudnn_version.as_ref().unwrap()
                         ));
                     } else {
-                        dev_env_content.push_str(&format!("  - python={}\n", config.python_version));
+                        dev_env_content
+                            .push_str(&format!("  - python={}\n", config.python_version));
                     }
                     dev_env_content.push_str(
                         "  - pip\n\
@@ -1544,18 +1635,26 @@ logs/
                          - isort\n\
                          - flake8\n",
                     );
-                    
+
                     // 如果有Poetry/pip/uv，添加pip部分
-                    if config.package_managers.iter().any(|pm| !matches!(pm, PackageManager::Conda { .. })) {
+                    if config
+                        .package_managers
+                        .iter()
+                        .any(|pm| !matches!(pm, PackageManager::Conda { .. }))
+                    {
                         dev_env_content.push_str("  - pip:\n");
-                        dev_env_content.push_str("    - -e .\n");  // 安装当前项目
+                        dev_env_content.push_str("    - -e .\n"); // 安装当前项目
                     }
-                    
+
                     fs::write(dev_environment_file, dev_env_content)?;
                 }
-                PackageManager::Poetry { pyproject_file, lock_file: _ } => {
+                PackageManager::Poetry {
+                    pyproject_file,
+                    lock_file: _,
+                } => {
                     // 创建 pyproject.toml
-                    let project_name = project_dir.file_name()
+                    let project_name = project_dir
+                        .file_name()
                         .and_then(|name| name.to_str())
                         .unwrap_or("my-project");
                     let pyproject_content = format!(
@@ -1576,13 +1675,10 @@ logs/
                         [build-system]\n\
                         requires = [\"poetry-core\"]\n\
                         build-backend = \"poetry.core.masonry.api\"\n",
-                        project_name,
-                        project_name,
-                        project_name,
-                        config.python_version
+                        project_name, project_name, project_name, config.python_version
                     );
                     fs::write(pyproject_file, pyproject_content)?;
-                    
+
                     // 如果同时使用conda，创建.envrc文件用于自动切换环境
                     if has_conda {
                         let envrc_content = format!(
@@ -1596,14 +1692,20 @@ logs/
                             project_name
                         );
                         fs::write(".envrc", envrc_content)?;
-                        
+
                         // 创建poetry配置文件，禁用虚拟环境创建
                         fs::create_dir_all(".poetry")?;
                         fs::write(".poetry/config.toml", "virtualenvs.create = false\n")?;
                     }
                 }
-                PackageManager::Pip { requirements_file, dev_requirements_file } |
-                PackageManager::Uv { requirements_file, dev_requirements_file } => {
+                PackageManager::Pip {
+                    requirements_file,
+                    dev_requirements_file,
+                }
+                | PackageManager::Uv {
+                    requirements_file,
+                    dev_requirements_file,
+                } => {
                     // 创建 requirements.txt
                     let mut req_content = format!(
                         "# Python {}\n\
@@ -1627,13 +1729,14 @@ logs/
                         isort>=5.0.0\n\
                         flake8>=6.0.0\n";
                     fs::write(dev_requirements_file, dev_req_content)?;
-                    
+
                     // 如果同时使用conda和pip/uv，创建.envrc文件
                     if has_conda {
-                        let project_name = project_dir.file_name()
+                        let project_name = project_dir
+                            .file_name()
                             .and_then(|name| name.to_str())
                             .unwrap_or("my-project");
-                        
+
                         let envrc_content = format!(
                             "# 自动激活conda环境\n\
                             if [ -e ${{HOME}}/.conda/etc/profile.d/conda.sh ]; then\n\
@@ -1663,13 +1766,12 @@ logs/
                     .status()?;
             }
             VirtualEnvType::Virtualenv => {
-                Command::new("virtualenv")
-                    .arg(".venv")
-                    .status()?;
+                Command::new("virtualenv").arg(".venv").status()?;
             }
             VirtualEnvType::Conda => {
                 if config.use_conda {
-                    let project_name = project_dir.file_name()
+                    let project_name = project_dir
+                        .file_name()
                         .and_then(|name| name.to_str())
                         .unwrap_or("my-project");
                     Command::new("conda")
@@ -1689,15 +1791,21 @@ logs/
 
     fn get_install_command(&self, config: &UserConfig) -> String {
         let mut commands = Vec::new();
-        
+
         // 如果有Conda环境，先激活环境
-        let has_conda = config.package_managers.iter().any(|pm| matches!(pm, PackageManager::Conda { .. }));
+        let has_conda = config
+            .package_managers
+            .iter()
+            .any(|pm| matches!(pm, PackageManager::Conda { .. }));
         if has_conda {
             commands.push("# 创建并激活Conda环境".to_string());
             for pm in &config.package_managers {
-                if let PackageManager::Conda { environment_file, .. } = pm {
+                if let PackageManager::Conda {
+                    environment_file, ..
+                } = pm
+                {
                     commands.push(format!("conda env create -f {}", environment_file));
-                    
+
                     // 修复：使用多步获取项目名称，避免临时值问题
                     let canonical_path = Path::new(".").canonicalize().unwrap();
                     let file_name = canonical_path.file_name().unwrap();
@@ -1706,13 +1814,13 @@ logs/
                 }
             }
         }
-        
+
         // 添加其他包管理器的安装命令
         for package_manager in &config.package_managers {
             match package_manager {
                 PackageManager::Conda { .. } => {
                     // 已经处理过了
-                },
+                }
                 PackageManager::Poetry { .. } => {
                     commands.push("# 安装Poetry依赖".to_string());
                     if has_conda {
@@ -1720,12 +1828,16 @@ logs/
                     } else {
                         commands.push("poetry install".to_string());
                     }
-                },
-                PackageManager::Pip { requirements_file, .. } => {
+                }
+                PackageManager::Pip {
+                    requirements_file, ..
+                } => {
                     commands.push("# 安装pip依赖".to_string());
                     commands.push(format!("pip install -r {}", requirements_file));
-                },
-                PackageManager::Uv { requirements_file, .. } => {
+                }
+                PackageManager::Uv {
+                    requirements_file, ..
+                } => {
                     commands.push("# 安装uv依赖".to_string());
                     commands.push(format!("uv pip install -r {}", requirements_file));
                 }
@@ -1737,15 +1849,22 @@ logs/
 
     fn get_dev_install_command(&self, config: &UserConfig) -> String {
         let mut commands = Vec::new();
-        
+
         // 如果有Conda环境，先激活环境
-        let has_conda = config.package_managers.iter().any(|pm| matches!(pm, PackageManager::Conda { .. }));
+        let has_conda = config
+            .package_managers
+            .iter()
+            .any(|pm| matches!(pm, PackageManager::Conda { .. }));
         if has_conda {
             commands.push("# 创建并激活Conda开发环境".to_string());
             for pm in &config.package_managers {
-                if let PackageManager::Conda { dev_environment_file, .. } = pm {
+                if let PackageManager::Conda {
+                    dev_environment_file,
+                    ..
+                } = pm
+                {
                     commands.push(format!("conda env create -f {}", dev_environment_file));
-                    
+
                     // 修复：使用多步获取项目名称，避免临时值问题
                     let canonical_path = Path::new(".").canonicalize().unwrap();
                     let file_name = canonical_path.file_name().unwrap();
@@ -1754,13 +1873,13 @@ logs/
                 }
             }
         }
-        
+
         // 添加其他包管理器的开发依赖安装命令
         for package_manager in &config.package_managers {
             match package_manager {
                 PackageManager::Conda { .. } => {
                     // 已经处理过了
-                },
+                }
                 PackageManager::Poetry { .. } => {
                     commands.push("# 安装Poetry开发依赖".to_string());
                     if has_conda {
@@ -1768,12 +1887,18 @@ logs/
                     } else {
                         commands.push("poetry install --with dev".to_string());
                     }
-                },
-                PackageManager::Pip { dev_requirements_file, .. } => {
+                }
+                PackageManager::Pip {
+                    dev_requirements_file,
+                    ..
+                } => {
                     commands.push("# 安装pip开发依赖".to_string());
                     commands.push(format!("pip install -r {}", dev_requirements_file));
-                },
-                PackageManager::Uv { dev_requirements_file, .. } => {
+                }
+                PackageManager::Uv {
+                    dev_requirements_file,
+                    ..
+                } => {
                     commands.push("# 安装uv开发依赖".to_string());
                     commands.push(format!("uv pip install -r {}", dev_requirements_file));
                 }
@@ -1785,7 +1910,7 @@ logs/
 
     fn get_test_command(&self, config: &UserConfig) -> String {
         let mut commands = Vec::new();
-        
+
         for package_manager in &config.package_managers {
             match package_manager {
                 PackageManager::Conda { .. } => {
@@ -1946,60 +2071,65 @@ runtests('tests')
 
         // Get CPU info
         if cfg!(target_os = "linux") {
-            let cpu_info = Command::new("lscpu")
-                .output()?
-                .stdout;
+            let cpu_info = Command::new("lscpu").output()?.stdout;
             let cpu_info = String::from_utf8_lossy(&cpu_info);
-            
-            info.cpu.model = cpu_info.lines()
+
+            info.cpu.model = cpu_info
+                .lines()
                 .find(|line| line.starts_with("Model name:"))
                 .map(|line| line.split(":").nth(1).unwrap().trim().to_string())
                 .unwrap_or_else(|| "Unknown".to_string());
-            
-            info.cpu.architecture = cpu_info.lines()
+
+            info.cpu.architecture = cpu_info
+                .lines()
                 .find(|line| line.starts_with("Architecture:"))
                 .map(|line| line.split(":").nth(1).unwrap().trim().to_string())
                 .unwrap_or_else(|| "Unknown".to_string());
-            
-            info.cpu.cores = cpu_info.lines()
+
+            info.cpu.cores = cpu_info
+                .lines()
                 .find(|line| line.starts_with("CPU(s):"))
                 .and_then(|line| line.split(":").nth(1).unwrap().trim().parse().ok())
                 .unwrap_or(1);
-            
-            info.cpu.threads = cpu_info.lines()
+
+            info.cpu.threads = cpu_info
+                .lines()
                 .find(|line| line.starts_with("Thread(s) per core:"))
                 .and_then(|line| line.split(":").nth(1).unwrap().trim().parse().ok())
-                .unwrap_or(1) * info.cpu.cores;
-            
-            info.cpu.frequency = cpu_info.lines()
+                .unwrap_or(1)
+                * info.cpu.cores;
+
+            info.cpu.frequency = cpu_info
+                .lines()
                 .find(|line| line.starts_with("CPU MHz:"))
                 .map(|line| format!("{}MHz", line.split(":").nth(1).unwrap().trim()))
                 .unwrap_or_else(|| "Unknown".to_string());
         } else if cfg!(target_os = "macos") {
-            let cpu_info = Command::new("sysctl")
-                .arg("machdep.cpu")
-                .output()?
-                .stdout;
+            let cpu_info = Command::new("sysctl").arg("machdep.cpu").output()?.stdout;
             let cpu_info = String::from_utf8_lossy(&cpu_info);
-            
-            info.cpu.model = cpu_info.lines()
+
+            info.cpu.model = cpu_info
+                .lines()
                 .find(|line| line.starts_with("machdep.cpu.brand_string:"))
                 .map(|line| line.split(":").nth(1).unwrap().trim().to_string())
                 .unwrap_or_else(|| "Unknown".to_string());
-            
+
             info.cpu.architecture = "x86_64".to_string();
-            
-            info.cpu.cores = cpu_info.lines()
+
+            info.cpu.cores = cpu_info
+                .lines()
                 .find(|line| line.starts_with("machdep.cpu.core_count:"))
                 .and_then(|line| line.split(":").nth(1).unwrap().trim().parse().ok())
                 .unwrap_or(1);
-            
-            info.cpu.threads = cpu_info.lines()
+
+            info.cpu.threads = cpu_info
+                .lines()
                 .find(|line| line.starts_with("machdep.cpu.thread_count:"))
                 .and_then(|line| line.split(":").nth(1).unwrap().trim().parse().ok())
                 .unwrap_or(1);
-            
-            info.cpu.frequency = cpu_info.lines()
+
+            info.cpu.frequency = cpu_info
+                .lines()
                 .find(|line| line.starts_with("machdep.cpu.maxspeed:"))
                 .map(|line| format!("{}MHz", line.split(":").nth(1).unwrap().trim()))
                 .unwrap_or_else(|| "Unknown".to_string());
@@ -2007,25 +2137,21 @@ runtests('tests')
 
         // Get memory info
         if cfg!(target_os = "linux") {
-            let mem_info = Command::new("free")
-                .arg("-h")
-                .output()?
-                .stdout;
+            let mem_info = Command::new("free").arg("-h").output()?.stdout;
             let mem_info = String::from_utf8_lossy(&mem_info);
-            
-            info.memory.size = mem_info.lines()
+
+            info.memory.size = mem_info
+                .lines()
                 .nth(1)
                 .and_then(|line| line.split_whitespace().nth(1))
                 .unwrap_or("Unknown")
                 .to_string();
-            
+
             info.memory.memory_type = "DDR4/DDR5".to_string(); // This is hard to detect
         } else if cfg!(target_os = "macos") {
-            let _mem_info = Command::new("vm_stat")
-                .output()?
-                .stdout;
+            let _mem_info = Command::new("vm_stat").output()?.stdout;
             let _mem_info = String::from_utf8_lossy(&_mem_info);
-            
+
             info.memory.size = Command::new("sysctl")
                 .arg("hw.memsize")
                 .output()?
@@ -2038,7 +2164,7 @@ runtests('tests')
                 .unwrap_or("Unknown")
                 .trim()
                 .to_string();
-            
+
             info.memory.memory_type = "DDR4/DDR5".to_string(); // This is hard to detect
         }
 
@@ -2047,7 +2173,8 @@ runtests('tests')
             if let Ok(nvidia_smi) = Command::new("nvidia-smi")
                 .arg("--query-gpu=gpu_name,memory.total,compute_cap,driver_version")
                 .arg("--format=csv,noheader")
-                .output() {
+                .output()
+            {
                 let gpu_info = String::from_utf8_lossy(&nvidia_smi.stdout);
                 if let Some(line) = gpu_info.lines().next() {
                     let parts: Vec<&str> = line.split(", ").collect();
@@ -2062,9 +2189,11 @@ runtests('tests')
         } else if cfg!(target_os = "macos") {
             if let Ok(system_profiler) = Command::new("system_profiler")
                 .arg("SPDisplaysDataType")
-                .output() {
+                .output()
+            {
                 let gpu_info = String::from_utf8_lossy(&system_profiler.stdout);
-                info.gpu.model = gpu_info.lines()
+                info.gpu.model = gpu_info
+                    .lines()
                     .find(|line| line.contains("Chipset Model:"))
                     .map(|line| line.split(":").nth(1).unwrap().trim().to_string())
                     .unwrap_or_else(|| "Unknown".to_string());
@@ -2083,8 +2212,9 @@ runtests('tests')
                 .output()?
                 .stdout;
             let storage_info = String::from_utf8_lossy(&storage_info);
-            
-            info.storage.storage_type = storage_info.lines()
+
+            info.storage.storage_type = storage_info
+                .lines()
                 .nth(1)
                 .and_then(|line| line.split_whitespace().nth(2))
                 .unwrap_or("Unknown")
@@ -2096,8 +2226,9 @@ runtests('tests')
                 .output()?
                 .stdout;
             let storage_info = String::from_utf8_lossy(&storage_info);
-            
-            info.storage.storage_type = storage_info.lines()
+
+            info.storage.storage_type = storage_info
+                .lines()
                 .find(|line| line.contains("Media Type:"))
                 .map(|line| line.split(":").nth(1).unwrap().trim().to_string())
                 .unwrap_or_else(|| "Unknown".to_string());
@@ -2110,13 +2241,16 @@ runtests('tests')
                 .output()
                 .ok()
                 .map(|output| String::from_utf8_lossy(&output.stdout).to_string());
-            
+
             info.network.network_type = network_info
                 .as_ref()
-                .and_then(|info| info.lines().find(|line| line.contains("Supported link modes")))
+                .and_then(|info| {
+                    info.lines()
+                        .find(|line| line.contains("Supported link modes"))
+                })
                 .map(|line| line.split(":").nth(1).unwrap().trim().to_string())
                 .unwrap_or_else(|| "Unknown".to_string());
-            
+
             info.network.bandwidth = network_info
                 .as_ref()
                 .and_then(|info| info.lines().find(|line| line.contains("Speed:")))
@@ -2129,7 +2263,7 @@ runtests('tests')
                 .output()
                 .ok()
                 .map(|output| String::from_utf8_lossy(&output.stdout).to_string());
-            
+
             info.network.network_type = "Wi-Fi".to_string();
             info.network.bandwidth = network_info
                 .as_ref()
@@ -2140,22 +2274,33 @@ runtests('tests')
 
         // Get OS info
         if cfg!(target_os = "linux") {
-            let os_info = Command::new("cat")
-                .arg("/etc/os-release")
-                .output()?
-                .stdout;
+            let os_info = Command::new("cat").arg("/etc/os-release").output()?.stdout;
             let os_info = String::from_utf8_lossy(&os_info);
-            
-            info.os.name = os_info.lines()
+
+            info.os.name = os_info
+                .lines()
                 .find(|line| line.starts_with("NAME="))
-                .map(|line| line.split("=").nth(1).unwrap().trim_matches('"').to_string())
+                .map(|line| {
+                    line.split("=")
+                        .nth(1)
+                        .unwrap()
+                        .trim_matches('"')
+                        .to_string()
+                })
                 .unwrap_or_else(|| "Unknown".to_string());
-            
-            info.os.version = os_info.lines()
+
+            info.os.version = os_info
+                .lines()
                 .find(|line| line.starts_with("VERSION="))
-                .map(|line| line.split("=").nth(1).unwrap().trim_matches('"').to_string())
+                .map(|line| {
+                    line.split("=")
+                        .nth(1)
+                        .unwrap()
+                        .trim_matches('"')
+                        .to_string()
+                })
                 .unwrap_or_else(|| "Unknown".to_string());
-            
+
             info.os.kernel = Command::new("uname")
                 .arg("-r")
                 .output()?
@@ -2165,7 +2310,7 @@ runtests('tests')
                 .collect::<String>()
                 .trim()
                 .to_string();
-            
+
             info.os.architecture = Command::new("uname")
                 .arg("-m")
                 .output()?
@@ -2176,21 +2321,21 @@ runtests('tests')
                 .trim()
                 .to_string();
         } else if cfg!(target_os = "macos") {
-            let os_info = Command::new("sw_vers")
-                .output()?
-                .stdout;
+            let os_info = Command::new("sw_vers").output()?.stdout;
             let os_info = String::from_utf8_lossy(&os_info);
-            
-            info.os.name = os_info.lines()
+
+            info.os.name = os_info
+                .lines()
                 .find(|line| line.starts_with("ProductName:"))
                 .map(|line| line.split(":").nth(1).unwrap().trim().to_string())
                 .unwrap_or_else(|| "Unknown".to_string());
-            
-            info.os.version = os_info.lines()
+
+            info.os.version = os_info
+                .lines()
                 .find(|line| line.starts_with("ProductVersion:"))
                 .map(|line| line.split(":").nth(1).unwrap().trim().to_string())
                 .unwrap_or_else(|| "Unknown".to_string());
-            
+
             info.os.kernel = Command::new("uname")
                 .arg("-r")
                 .output()?
@@ -2200,7 +2345,7 @@ runtests('tests')
                 .collect::<String>()
                 .trim()
                 .to_string();
-            
+
             info.os.architecture = Command::new("uname")
                 .arg("-m")
                 .output()?
@@ -2233,45 +2378,37 @@ runtests('tests')
 
         // Get system limits
         if cfg!(target_os = "linux") {
-            let limits = Command::new("ulimit")
-                .arg("-n")
-                .output()?
-                .stdout;
+            let limits = Command::new("ulimit").arg("-n").output()?.stdout;
             info.limits.max_open_files = String::from_utf8_lossy(&limits)
                 .trim()
                 .parse()
                 .unwrap_or(65535);
 
-            let limits = Command::new("ulimit")
-                .arg("-u")
-                .output()?
-                .stdout;
+            let limits = Command::new("ulimit").arg("-u").output()?.stdout;
             info.limits.max_processes = String::from_utf8_lossy(&limits)
                 .trim()
                 .parse()
                 .unwrap_or(32768);
 
-            let limits = Command::new("ulimit")
-                .arg("-s")
-                .output()?
-                .stdout;
-            info.limits.stack_size = format!("{}K", String::from_utf8_lossy(&limits)
-                .trim()
-                .parse::<u64>()
-                .unwrap_or(8192));
+            let limits = Command::new("ulimit").arg("-s").output()?.stdout;
+            info.limits.stack_size = format!(
+                "{}K",
+                String::from_utf8_lossy(&limits)
+                    .trim()
+                    .parse::<u64>()
+                    .unwrap_or(8192)
+            );
 
             info.limits.virtual_memory = "unlimited".to_string();
         }
 
         // Get installed packages
         if cfg!(target_os = "linux") {
-            let packages = Command::new("dpkg")
-                .arg("-l")
-                .output()?
-                .stdout;
+            let packages = Command::new("dpkg").arg("-l").output()?.stdout;
             let packages = String::from_utf8_lossy(&packages);
-            
-            info.packages = packages.lines()
+
+            info.packages = packages
+                .lines()
                 .filter(|line| line.starts_with("ii"))
                 .map(|line| {
                     let parts: Vec<&str> = line.split_whitespace().collect();
@@ -2285,8 +2422,9 @@ runtests('tests')
                 .output()?
                 .stdout;
             let packages = String::from_utf8_lossy(&packages);
-            
-            info.packages = packages.lines()
+
+            info.packages = packages
+                .lines()
                 .map(|line| {
                     let parts: Vec<&str> = line.split_whitespace().collect();
                     format!("{{ name = \"{}\", version = \"{}\" }}", parts[0], parts[1])
@@ -2295,22 +2433,21 @@ runtests('tests')
         }
 
         // Get software versions
-        if let Ok(python_version) = Command::new("python3")
-            .arg("--version")
-            .output() {
-            info.software.insert("python".to_string(), 
+        if let Ok(python_version) = Command::new("python3").arg("--version").output() {
+            info.software.insert(
+                "python".to_string(),
                 String::from_utf8_lossy(&python_version.stdout)
                     .trim()
                     .split_whitespace()
                     .nth(1)
                     .unwrap_or("latest")
-                    .to_string());
+                    .to_string(),
+            );
         }
 
-        if let Ok(r_version) = Command::new("R")
-            .arg("--version")
-            .output() {
-            info.software.insert("r".to_string(), 
+        if let Ok(r_version) = Command::new("R").arg("--version").output() {
+            info.software.insert(
+                "r".to_string(),
                 String::from_utf8_lossy(&r_version.stdout)
                     .lines()
                     .next()
@@ -2318,38 +2455,37 @@ runtests('tests')
                     .split_whitespace()
                     .nth(2)
                     .unwrap_or("latest")
-                    .to_string());
+                    .to_string(),
+            );
         }
 
-        if let Ok(matlab_version) = Command::new("matlab")
-            .arg("-batch")
-            .arg("version")
-            .output() {
-            info.software.insert("matlab".to_string(), 
+        if let Ok(matlab_version) = Command::new("matlab").arg("-batch").arg("version").output() {
+            info.software.insert(
+                "matlab".to_string(),
                 String::from_utf8_lossy(&matlab_version.stdout)
                     .trim()
                     .split_whitespace()
                     .last()
                     .unwrap_or("latest")
-                    .to_string());
+                    .to_string(),
+            );
         }
 
-        if let Ok(conda_version) = Command::new("conda")
-            .arg("--version")
-            .output() {
-            info.software.insert("conda".to_string(), 
+        if let Ok(conda_version) = Command::new("conda").arg("--version").output() {
+            info.software.insert(
+                "conda".to_string(),
                 String::from_utf8_lossy(&conda_version.stdout)
                     .trim()
                     .split_whitespace()
                     .last()
                     .unwrap_or("4.10.3")
-                    .to_string());
+                    .to_string(),
+            );
         }
 
-        if let Ok(cuda_version) = Command::new("nvcc")
-            .arg("--version")
-            .output() {
-            info.software.insert("cuda".to_string(), 
+        if let Ok(cuda_version) = Command::new("nvcc").arg("--version").output() {
+            info.software.insert(
+                "cuda".to_string(),
                 String::from_utf8_lossy(&cuda_version.stdout)
                     .lines()
                     .nth(3)
@@ -2357,44 +2493,51 @@ runtests('tests')
                     .split_whitespace()
                     .nth(4)
                     .unwrap_or("11.3")
-                    .to_string());
+                    .to_string(),
+            );
         }
 
         if let Ok(cudnn_version) = Command::new("cat")
             .arg("/usr/include/cudnn_version.h")
-            .output() {
+            .output()
+        {
             let cudnn_info = String::from_utf8_lossy(&cudnn_version.stdout);
-            info.software.insert("cudnn".to_string(), 
-                cudnn_info.lines()
+            info.software.insert(
+                "cudnn".to_string(),
+                cudnn_info
+                    .lines()
                     .find(|line| line.contains("CUDNN_MAJOR"))
                     .and_then(|line| line.split_whitespace().nth(2))
                     .unwrap_or("8.2.0")
-                    .to_string());
+                    .to_string(),
+            );
         }
 
-        if let Ok(singularity_version) = Command::new("singularity")
-            .arg("--version")
-            .output() {
-            info.software.insert("container".to_string(), "Singularity".to_string());
-            info.software.insert("container_version".to_string(), 
+        if let Ok(singularity_version) = Command::new("singularity").arg("--version").output() {
+            info.software
+                .insert("container".to_string(), "Singularity".to_string());
+            info.software.insert(
+                "container_version".to_string(),
                 String::from_utf8_lossy(&singularity_version.stdout)
                     .trim()
                     .split_whitespace()
                     .last()
                     .unwrap_or("3.8.0")
-                    .to_string());
+                    .to_string(),
+            );
         }
 
         // Get CUDA paths
-        if let Ok(cuda_path) = Command::new("which")
-            .arg("nvcc")
-            .output() {
+        if let Ok(cuda_path) = Command::new("which").arg("nvcc").output() {
             if let Some(cuda_home) = String::from_utf8_lossy(&cuda_path.stdout)
                 .trim()
                 .split("/bin")
-                .next() {
+                .next()
+            {
                 info.cuda.cuda_home = cuda_home.to_string();
-                info.cuda.ld_library_path.push(format!("{}/lib64", cuda_home));
+                info.cuda
+                    .ld_library_path
+                    .push(format!("{}/lib64", cuda_home));
                 info.cuda.cupti_path = format!("{}/extras/CUPTI/lib64", cuda_home);
             }
         }
@@ -2474,4 +2617,4 @@ struct CudaInfo {
     cuda_home: String,
     ld_library_path: Vec<String>,
     cupti_path: String,
-} 
+}

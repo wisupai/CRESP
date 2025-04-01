@@ -55,10 +55,10 @@ impl ExportCommand {
             "authors".to_string(),
             Value::Array(vec![Value::Table(toml::map::Map::new())]),
         );
-        config.as_table_mut().unwrap().insert(
-            "experiment".to_string(),
-            Value::Table(experiment),
-        );
+        config
+            .as_table_mut()
+            .unwrap()
+            .insert("experiment".to_string(), Value::Table(experiment));
 
         // Add environment section
         let mut environment = toml::map::Map::new();
@@ -81,18 +81,26 @@ impl ExportCommand {
             }
         }
 
-        config.as_table_mut().unwrap().get_mut("experiment").unwrap().as_table_mut().unwrap().insert(
-            "environment".to_string(),
-            Value::Table(environment),
-        );
+        config
+            .as_table_mut()
+            .unwrap()
+            .get_mut("experiment")
+            .unwrap()
+            .as_table_mut()
+            .unwrap()
+            .insert("environment".to_string(), Value::Table(environment));
 
         // Add data information if requested
         if self.include_data {
             if let Some(data) = self.get_data_info()? {
-                config.as_table_mut().unwrap().get_mut("experiment").unwrap().as_table_mut().unwrap().insert(
-                    "data".to_string(),
-                    data,
-                );
+                config
+                    .as_table_mut()
+                    .unwrap()
+                    .get_mut("experiment")
+                    .unwrap()
+                    .as_table_mut()
+                    .unwrap()
+                    .insert("data".to_string(), data);
             }
         }
 
@@ -100,14 +108,19 @@ impl ExportCommand {
         let output = match self.format.to_lowercase().as_str() {
             "toml" => toml::to_string_pretty(&config)?,
             "json" => serde_json::to_string_pretty(&config)?,
-            _ => return Err(crate::error::Error::Config(format!(
-                "Unsupported output format: {}",
-                self.format
-            ))),
+            _ => {
+                return Err(crate::error::Error::Config(format!(
+                    "Unsupported output format: {}",
+                    self.format
+                )))
+            }
         };
 
         std::fs::write(&self.output, output)?;
-        info!("✅ Environment configuration exported to: {}", self.output.display());
+        info!(
+            "✅ Environment configuration exported to: {}",
+            self.output.display()
+        );
         Ok(())
     }
 
@@ -140,7 +153,10 @@ impl ExportCommand {
         let mut cpu = toml::map::Map::new();
         // TODO: Implement actual CPU info gathering
         cpu.insert("model".to_string(), Value::String("Unknown".to_string()));
-        cpu.insert("architecture".to_string(), Value::String("Unknown".to_string()));
+        cpu.insert(
+            "architecture".to_string(),
+            Value::String("Unknown".to_string()),
+        );
         cpu.insert("cores".to_string(), Value::Integer(0));
         Ok(Value::Table(cpu))
     }
@@ -217,4 +233,4 @@ impl ExportCommand {
         data.insert("datasets".to_string(), Value::Array(vec![]));
         Ok(Some(Value::Table(data)))
     }
-} 
+}

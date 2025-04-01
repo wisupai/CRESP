@@ -1,6 +1,6 @@
+use crate::error::Result;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
-use crate::error::Result;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Config {
@@ -57,4 +57,4 @@ impl Config {
         std::fs::write(path, content)?;
         Ok(())
     }
-} 
+}

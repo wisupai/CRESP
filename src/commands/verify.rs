@@ -30,7 +30,10 @@ pub struct VerifyCommand {
 
 impl VerifyCommand {
     pub async fn execute(&self) -> Result<()> {
-        info!("🔍 Verifying environment against CRESP configuration: {}", self.path.display());
+        info!(
+            "🔍 Verifying environment against CRESP configuration: {}",
+            self.path.display()
+        );
 
         // Read and parse TOML file
         let contents = std::fs::read_to_string(&self.path)?;
@@ -99,25 +102,34 @@ impl VerifyCommand {
     }
 
     fn verify_cpu(&self, cpu: &Value) -> Result<()> {
-        let model = cpu.get("model")
+        let model = cpu
+            .get("model")
             .and_then(|v| v.as_str())
             .ok_or_else(|| crate::error::Error::Environment("Missing CPU model".to_string()))?;
 
-        let architecture = cpu.get("architecture")
+        let architecture = cpu
+            .get("architecture")
             .and_then(|v| v.as_str())
-            .ok_or_else(|| crate::error::Error::Environment("Missing CPU architecture".to_string()))?;
+            .ok_or_else(|| {
+                crate::error::Error::Environment("Missing CPU architecture".to_string())
+            })?;
 
-        let cores = cpu.get("cores")
+        let cores = cpu
+            .get("cores")
             .and_then(|v| v.as_integer())
             .ok_or_else(|| crate::error::Error::Environment("Missing CPU cores".to_string()))?;
 
         // TODO: Implement actual CPU verification
-        info!("✅ CPU requirements met: {} ({}, {} cores)", model, architecture, cores);
+        info!(
+            "✅ CPU requirements met: {} ({}, {} cores)",
+            model, architecture, cores
+        );
         Ok(())
     }
 
     fn verify_memory(&self, memory: &Value) -> Result<()> {
-        let size = memory.get("size")
+        let size = memory
+            .get("size")
             .and_then(|v| v.as_str())
             .ok_or_else(|| crate::error::Error::Environment("Missing memory size".to_string()))?;
 
@@ -128,13 +140,17 @@ impl VerifyCommand {
 
     fn verify_gpu(&self, gpu: &Value) -> Result<()> {
         if let Some(default_model) = gpu.get("default_model") {
-            let model = default_model.get("model")
+            let model = default_model
+                .get("model")
                 .and_then(|v| v.as_str())
                 .ok_or_else(|| crate::error::Error::Environment("Missing GPU model".to_string()))?;
 
-            let memory = default_model.get("memory")
+            let memory = default_model
+                .get("memory")
                 .and_then(|v| v.as_str())
-                .ok_or_else(|| crate::error::Error::Environment("Missing GPU memory".to_string()))?;
+                .ok_or_else(|| {
+                    crate::error::Error::Environment("Missing GPU memory".to_string())
+                })?;
 
             // TODO: Implement actual GPU verification
             info!("✅ GPU requirements met: {} ({})", model, memory);
@@ -165,9 +181,12 @@ impl VerifyCommand {
     }
 
     fn verify_python(&self, python: &Value) -> Result<()> {
-        let version = python.get("version")
+        let version = python
+            .get("version")
             .and_then(|v| v.as_str())
-            .ok_or_else(|| crate::error::Error::Environment("Missing Python version".to_string()))?;
+            .ok_or_else(|| {
+                crate::error::Error::Environment("Missing Python version".to_string())
+            })?;
 
         // TODO: Implement actual Python verification
         info!("✅ Python requirements met: {}", version);
@@ -175,7 +194,8 @@ impl VerifyCommand {
     }
 
     fn verify_r(&self, r: &Value) -> Result<()> {
-        let version = r.get("version")
+        let version = r
+            .get("version")
             .and_then(|v| v.as_str())
             .ok_or_else(|| crate::error::Error::Environment("Missing R version".to_string()))?;
 
@@ -185,9 +205,12 @@ impl VerifyCommand {
     }
 
     fn verify_matlab(&self, matlab: &Value) -> Result<()> {
-        let version = matlab.get("version")
+        let version = matlab
+            .get("version")
             .and_then(|v| v.as_str())
-            .ok_or_else(|| crate::error::Error::Environment("Missing MATLAB version".to_string()))?;
+            .ok_or_else(|| {
+                crate::error::Error::Environment("Missing MATLAB version".to_string())
+            })?;
 
         // TODO: Implement actual MATLAB verification
         info!("✅ MATLAB requirements met: {}", version);
@@ -200,16 +223,22 @@ impl VerifyCommand {
         if let Some(datasets) = data.get("datasets").and_then(|v| v.as_array()) {
             for dataset in datasets {
                 if let Some(dataset) = dataset.as_table() {
-                    let name = dataset.get("name")
+                    let name = dataset
+                        .get("name")
                         .and_then(|v| v.as_str())
-                        .ok_or_else(|| crate::error::Error::Data("Missing dataset name".to_string()))?;
+                        .ok_or_else(|| {
+                            crate::error::Error::Data("Missing dataset name".to_string())
+                        })?;
 
-                    let source = dataset.get("source")
-                        .and_then(|v| v.as_str())
-                        .ok_or_else(|| crate::error::Error::Data("Missing dataset source".to_string()))?;
+                    let source =
+                        dataset
+                            .get("source")
+                            .and_then(|v| v.as_str())
+                            .ok_or_else(|| {
+                                crate::error::Error::Data("Missing dataset source".to_string())
+                            })?;
 
-                    let _sha256 = dataset.get("sha256")
-                        .and_then(|v| v.as_str());
+                    let _sha256 = dataset.get("sha256").and_then(|v| v.as_str());
 
                     // TODO: Implement actual dataset verification
                     info!("✅ Dataset requirements met: {} ({})", name, source);
@@ -219,4 +248,4 @@ impl VerifyCommand {
 
         Ok(())
     }
-} 
+}

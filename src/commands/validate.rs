@@ -156,7 +156,9 @@ impl ValidateCommand {
 
     fn validate_software_section(&self, software: &Value) -> Result<()> {
         // Check for at least one language configuration
-        let has_language = ["python", "r", "matlab"].iter().any(|lang| software.get(lang).is_some());
+        let has_language = ["python", "r", "matlab"]
+            .iter()
+            .any(|lang| software.get(lang).is_some());
         if !has_language {
             return Err(crate::error::Error::Validation(
                 "No language configuration found in software section".to_string(),
@@ -214,4 +216,4 @@ impl ValidateCommand {
 
         Ok(())
     }
-} 
+}

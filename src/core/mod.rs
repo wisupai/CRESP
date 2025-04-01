@@ -27,4 +27,4 @@ impl Core {
     pub fn save(&self) -> Result<()> {
         self.config.save(&self.config_path)
     }
-} 
+}

@@ -42,4 +42,4 @@ pub enum Error {
 
     #[error("Unknown error: {0}")]
     Unknown(String),
-} 
+}

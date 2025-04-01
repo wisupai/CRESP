@@ -1,8 +1,8 @@
 use crate::error::Result;
-use sha2::{Sha256, Digest};
-use std::path::Path;
+use sha2::{Digest, Sha256};
 use std::fs::File;
 use std::io::Read;
+use std::path::Path;
 
 pub fn calculate_sha256<P: AsRef<Path>>(path: P) -> Result<String> {
     let mut file = File::open(path)?;
@@ -40,10 +40,10 @@ pub fn is_executable<P: AsRef<Path>>(path: P) -> bool {
         {
             let path = path.as_ref();
             let extension = path.extension().and_then(|s| s.to_str()).unwrap_or("");
-            return extension.eq_ignore_ascii_case("exe") || 
-                   extension.eq_ignore_ascii_case("cmd") || 
-                   extension.eq_ignore_ascii_case("bat");
+            return extension.eq_ignore_ascii_case("exe")
+                || extension.eq_ignore_ascii_case("cmd")
+                || extension.eq_ignore_ascii_case("bat");
         }
     }
     false
-} 
+}

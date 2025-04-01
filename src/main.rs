@@ -49,4 +49,4 @@ async fn main() -> Result<()> {
 
     info!("✨ CRESP CLI completed successfully");
     Ok(())
-} 
+}

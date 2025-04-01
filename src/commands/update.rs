@@ -29,7 +29,8 @@ impl UpdateCommand {
         let mut config: Value = toml::from_str(&contents)?;
 
         // Get current version
-        let current_version = config.get("cresp_version")
+        let current_version = config
+            .get("cresp_version")
             .and_then(|v| v.as_str())
             .ok_or_else(|| crate::error::Error::Config("Missing cresp_version".to_string()))?;
 
@@ -83,7 +84,11 @@ impl UpdateCommand {
         Ok(changes)
     }
 
-    fn update_experiment_section(&self, experiment: &mut Value, changes: &mut Vec<String>) -> Result<()> {
+    fn update_experiment_section(
+        &self,
+        experiment: &mut Value,
+        changes: &mut Vec<String>,
+    ) -> Result<()> {
         // Update environment section
         if let Some(environment) = experiment.get_mut("environment") {
             self.update_environment_section(environment, changes)?;
@@ -102,7 +107,11 @@ impl UpdateCommand {
         Ok(())
     }
 
-    fn update_environment_section(&self, environment: &mut Value, changes: &mut Vec<String>) -> Result<()> {
+    fn update_environment_section(
+        &self,
+        environment: &mut Value,
+        changes: &mut Vec<String>,
+    ) -> Result<()> {
         // Update hardware section
         if let Some(hardware) = environment.get_mut("hardware") {
             self.update_hardware_section(hardware, changes)?;
@@ -116,7 +125,11 @@ impl UpdateCommand {
         Ok(())
     }
 
-    fn update_hardware_section(&self, hardware: &mut Value, changes: &mut Vec<String>) -> Result<()> {
+    fn update_hardware_section(
+        &self,
+        hardware: &mut Value,
+        changes: &mut Vec<String>,
+    ) -> Result<()> {
         // Update CPU section
         if let Some(cpu) = hardware.get_mut("cpu") {
             self.update_cpu_section(cpu, changes)?;
@@ -140,11 +153,13 @@ impl UpdateCommand {
         let required_fields = ["model", "architecture", "cores"];
         for field in required_fields {
             if !cpu.get(field).is_some() {
-                changes.push(format!("Add missing field '{}' to CPU configuration", field));
-                cpu.as_table_mut().unwrap().insert(
-                    field.to_string(),
-                    Value::String("Unknown".to_string()),
-                );
+                changes.push(format!(
+                    "Add missing field '{}' to CPU configuration",
+                    field
+                ));
+                cpu.as_table_mut()
+                    .unwrap()
+                    .insert(field.to_string(), Value::String("Unknown".to_string()));
             }
         }
 
@@ -155,10 +170,10 @@ impl UpdateCommand {
         // Add missing fields
         if !memory.get("size").is_some() {
             changes.push("Add missing field 'size' to memory configuration".to_string());
-            memory.as_table_mut().unwrap().insert(
-                "size".to_string(),
-                Value::String("Unknown".to_string()),
-            );
+            memory
+                .as_table_mut()
+                .unwrap()
+                .insert("size".to_string(), Value::String("Unknown".to_string()));
         }
 
         Ok(())
@@ -171,16 +186,19 @@ impl UpdateCommand {
             let mut default_model = toml::map::Map::new();
             default_model.insert("model".to_string(), Value::String("Unknown".to_string()));
             default_model.insert("memory".to_string(), Value::String("Unknown".to_string()));
-            gpu.as_table_mut().unwrap().insert(
-                "default_model".to_string(),
-                Value::Table(default_model),
-            );
+            gpu.as_table_mut()
+                .unwrap()
+                .insert("default_model".to_string(), Value::Table(default_model));
         }
 
         Ok(())
     }
 
-    fn update_software_section(&self, software: &mut Value, changes: &mut Vec<String>) -> Result<()> {
+    fn update_software_section(
+        &self,
+        software: &mut Value,
+        changes: &mut Vec<String>,
+    ) -> Result<()> {
         // Update Python section
         if let Some(python) = software.get_mut("python") {
             self.update_python_section(python, changes)?;
@@ -203,10 +221,10 @@ impl UpdateCommand {
         // Add missing fields
         if !python.get("version").is_some() {
             changes.push("Add missing field 'version' to Python configuration".to_string());
-            python.as_table_mut().unwrap().insert(
-                "version".to_string(),
-                Value::String("Unknown".to_string()),
-            );
+            python
+                .as_table_mut()
+                .unwrap()
+                .insert("version".to_string(), Value::String("Unknown".to_string()));
         }
 
         Ok(())
@@ -216,10 +234,9 @@ impl UpdateCommand {
         // Add missing fields
         if !r.get("version").is_some() {
             changes.push("Add missing field 'version' to R configuration".to_string());
-            r.as_table_mut().unwrap().insert(
-                "version".to_string(),
-                Value::String("Unknown".to_string()),
-            );
+            r.as_table_mut()
+                .unwrap()
+                .insert("version".to_string(), Value::String("Unknown".to_string()));
         }
 
         Ok(())
@@ -229,10 +246,10 @@ impl UpdateCommand {
         // Add missing fields
         if !matlab.get("version").is_some() {
             changes.push("Add missing field 'version' to MATLAB configuration".to_string());
-            matlab.as_table_mut().unwrap().insert(
-                "version".to_string(),
-                Value::String("Unknown".to_string()),
-            );
+            matlab
+                .as_table_mut()
+                .unwrap()
+                .insert("version".to_string(), Value::String("Unknown".to_string()));
         }
 
         Ok(())
@@ -250,16 +267,19 @@ impl UpdateCommand {
 
         if !data.get("datasets").is_some() {
             changes.push("Add missing field 'datasets' to data section".to_string());
-            data.as_table_mut().unwrap().insert(
-                "datasets".to_string(),
-                Value::Array(vec![]),
-            );
+            data.as_table_mut()
+                .unwrap()
+                .insert("datasets".to_string(), Value::Array(vec![]));
         }
 
         Ok(())
     }
 
-    fn update_execution_section(&self, execution: &mut Value, changes: &mut Vec<String>) -> Result<()> {
+    fn update_execution_section(
+        &self,
+        execution: &mut Value,
+        changes: &mut Vec<String>,
+    ) -> Result<()> {
         // Add missing fields
         if !execution.get("description").is_some() {
             changes.push("Add missing field 'description' to execution section".to_string());
@@ -271,12 +291,12 @@ impl UpdateCommand {
 
         if !execution.get("steps").is_some() {
             changes.push("Add missing field 'steps' to execution section".to_string());
-            execution.as_table_mut().unwrap().insert(
-                "steps".to_string(),
-                Value::Table(toml::map::Map::new()),
-            );
+            execution
+                .as_table_mut()
+                .unwrap()
+                .insert("steps".to_string(), Value::Table(toml::map::Map::new()));
         }
 
         Ok(())
     }
-} 
+}
