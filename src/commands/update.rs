@@ -152,7 +152,7 @@ impl UpdateCommand {
         // Add missing fields
         let required_fields = ["model", "architecture", "cores"];
         for field in required_fields {
-            if !cpu.get(field).is_some() {
+            if cpu.get(field).is_none() {
                 changes.push(format!(
                     "Add missing field '{}' to CPU configuration",
                     field
@@ -168,7 +168,7 @@ impl UpdateCommand {
 
     fn update_memory_section(&self, memory: &mut Value, changes: &mut Vec<String>) -> Result<()> {
         // Add missing fields
-        if !memory.get("size").is_some() {
+        if memory.get("size").is_none() {
             changes.push("Add missing field 'size' to memory configuration".to_string());
             memory
                 .as_table_mut()
@@ -181,7 +181,7 @@ impl UpdateCommand {
 
     fn update_gpu_section(&self, gpu: &mut Value, changes: &mut Vec<String>) -> Result<()> {
         // Add default_model section if missing
-        if !gpu.get("default_model").is_some() {
+        if gpu.get("default_model").is_none() {
             changes.push("Add missing 'default_model' section to GPU configuration".to_string());
             let mut default_model = toml::map::Map::new();
             default_model.insert("model".to_string(), Value::String("Unknown".to_string()));
@@ -219,7 +219,7 @@ impl UpdateCommand {
 
     fn update_python_section(&self, python: &mut Value, changes: &mut Vec<String>) -> Result<()> {
         // Add missing fields
-        if !python.get("version").is_some() {
+        if python.get("version").is_none() {
             changes.push("Add missing field 'version' to Python configuration".to_string());
             python
                 .as_table_mut()
@@ -232,7 +232,7 @@ impl UpdateCommand {
 
     fn update_r_section(&self, r: &mut Value, changes: &mut Vec<String>) -> Result<()> {
         // Add missing fields
-        if !r.get("version").is_some() {
+        if r.get("version").is_none() {
             changes.push("Add missing field 'version' to R configuration".to_string());
             r.as_table_mut()
                 .unwrap()
@@ -244,7 +244,7 @@ impl UpdateCommand {
 
     fn update_matlab_section(&self, matlab: &mut Value, changes: &mut Vec<String>) -> Result<()> {
         // Add missing fields
-        if !matlab.get("version").is_some() {
+        if matlab.get("version").is_none() {
             changes.push("Add missing field 'version' to MATLAB configuration".to_string());
             matlab
                 .as_table_mut()
@@ -257,7 +257,7 @@ impl UpdateCommand {
 
     fn update_data_section(&self, data: &mut Value, changes: &mut Vec<String>) -> Result<()> {
         // Add missing fields
-        if !data.get("description").is_some() {
+        if data.get("description").is_none() {
             changes.push("Add missing field 'description' to data section".to_string());
             data.as_table_mut().unwrap().insert(
                 "description".to_string(),
@@ -265,7 +265,7 @@ impl UpdateCommand {
             );
         }
 
-        if !data.get("datasets").is_some() {
+        if data.get("datasets").is_none() {
             changes.push("Add missing field 'datasets' to data section".to_string());
             data.as_table_mut()
                 .unwrap()
@@ -281,7 +281,7 @@ impl UpdateCommand {
         changes: &mut Vec<String>,
     ) -> Result<()> {
         // Add missing fields
-        if !execution.get("description").is_some() {
+        if execution.get("description").is_none() {
             changes.push("Add missing field 'description' to execution section".to_string());
             execution.as_table_mut().unwrap().insert(
                 "description".to_string(),
@@ -289,7 +289,7 @@ impl UpdateCommand {
             );
         }
 
-        if !execution.get("steps").is_some() {
+        if execution.get("steps").is_none() {
             changes.push("Add missing field 'steps' to execution section".to_string());
             execution
                 .as_table_mut()

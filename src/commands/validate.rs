@@ -51,7 +51,7 @@ impl ValidateCommand {
         // Check required top-level fields
         let required_fields = ["cresp_version", "experiment"];
         for field in required_fields {
-            if !config.get(field).is_some() {
+            if config.get(field).is_none() {
                 return Err(crate::error::Error::Validation(format!(
                     "Missing required field: {}",
                     field
@@ -80,7 +80,7 @@ impl ValidateCommand {
         // Check required fields
         let required_fields = ["name", "description", "authors"];
         for field in required_fields {
-            if !experiment.get(field).is_some() {
+            if experiment.get(field).is_none() {
                 return Err(crate::error::Error::Validation(format!(
                     "Missing required field in experiment section: {}",
                     field
@@ -94,7 +94,7 @@ impl ValidateCommand {
                 if let Some(author) = author.as_table() {
                     let required_fields = ["name", "email"];
                     for field in required_fields {
-                        if !author.contains_key(field) {
+                        if author.contains_key(field).is_none() {
                             return Err(crate::error::Error::Validation(format!(
                                 "Missing required field in author: {}",
                                 field
@@ -134,7 +134,7 @@ impl ValidateCommand {
         if let Some(cpu) = hardware.get("cpu") {
             let required_fields = ["model", "architecture", "cores"];
             for field in required_fields {
-                if !cpu.get(field).is_some() {
+                if cpu.get(field).is_none() {
                     return Err(crate::error::Error::Validation(format!(
                         "Missing required field in CPU configuration: {}",
                         field
@@ -144,7 +144,7 @@ impl ValidateCommand {
         }
 
         if let Some(memory) = hardware.get("memory") {
-            if !memory.get("size").is_some() {
+            if memory.get("size").is_none() {
                 return Err(crate::error::Error::Validation(
                     "Missing size field in memory configuration".to_string(),
                 ));
@@ -179,7 +179,7 @@ impl ValidateCommand {
                     if let Some(dataset) = dataset.as_table() {
                         let required_fields = ["name", "source", "description"];
                         for field in required_fields {
-                            if !dataset.contains_key(field) {
+                            if dataset.contains_key(field).is_none() {
                                 return Err(crate::error::Error::Validation(format!(
                                     "Missing required field in dataset: {}",
                                     field

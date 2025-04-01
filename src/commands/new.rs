@@ -711,7 +711,7 @@ package_manager = {{ type = "{}", config_file = "{}", lock_file = "{}" }}
         Ok(())
     }
 
-    fn create_custom_structure(&self, project_dir: &PathBuf, _language: &str) -> Result<()> {
+    fn create_custom_structure(&self, project_dir: &Path, _language: &str) -> Result<()> {
         println!("🔧 Custom project structure setup:");
         println!("1. Create basic directories");
         println!("2. Create detailed structure");
@@ -1928,7 +1928,7 @@ logs/
         commands.join(" && ")
     }
 
-    fn create_r_project(&self, project_dir: &PathBuf) -> Result<()> {
+    fn create_r_project(&self, project_dir: &Path) -> Result<()> {
         // Create DESCRIPTION
         let description = r#"Package: myresearch
 Title: My Research Project
@@ -2012,7 +2012,7 @@ devtools::test()
         Ok(())
     }
 
-    fn create_matlab_project(&self, project_dir: &PathBuf) -> Result<()> {
+    fn create_matlab_project(&self, project_dir: &Path) -> Result<()> {
         // Create matlab directory and main.m
         std::fs::create_dir_all(project_dir.join("matlab"))?;
         std::fs::write(
