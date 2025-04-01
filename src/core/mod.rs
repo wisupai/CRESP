@@ -2,11 +2,13 @@ use crate::config::Config;
 use crate::error::Result;
 use std::path::PathBuf;
 
+#[allow(dead_code)]
 pub struct Core {
     config: Config,
     config_path: PathBuf,
 }
 
+#[allow(dead_code)]
 impl Core {
     pub fn new(config_path: PathBuf) -> Result<Self> {
         let config = Config::load(&config_path)?;

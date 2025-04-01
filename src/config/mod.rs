@@ -45,6 +45,7 @@ pub struct DatasetConfig {
     pub sha256: Option<String>,
 }
 
+#[allow(dead_code)]
 impl Config {
     pub fn load(path: &PathBuf) -> Result<Self> {
         let content = std::fs::read_to_string(path)?;

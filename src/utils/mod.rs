@@ -4,6 +4,7 @@ use std::fs::File;
 use std::io::Read;
 use std::path::Path;
 
+#[allow(dead_code)]
 pub fn calculate_sha256<P: AsRef<Path>>(path: P) -> Result<String> {
     let mut file = File::open(path)?;
     let mut hasher = Sha256::new();
@@ -20,6 +21,7 @@ pub fn calculate_sha256<P: AsRef<Path>>(path: P) -> Result<String> {
     Ok(format!("{:x}", hasher.finalize()))
 }
 
+#[allow(dead_code)]
 pub fn ensure_directory<P: AsRef<Path>>(path: P) -> Result<()> {
     if let Some(parent) = path.as_ref().parent() {
         if !parent.exists() {
@@ -29,6 +31,7 @@ pub fn ensure_directory<P: AsRef<Path>>(path: P) -> Result<()> {
     Ok(())
 }
 
+#[allow(dead_code)]
 pub fn is_executable<P: AsRef<Path>>(path: P) -> bool {
     if let Ok(metadata) = std::fs::metadata(path) {
         #[cfg(unix)]

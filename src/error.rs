@@ -16,12 +16,14 @@ pub enum Error {
     #[error("Environment error: {0}")]
     Environment(String),
 
+    #[allow(dead_code)]
     #[error("Dependency error: {0}")]
     Dependency(String),
 
     #[error("Data error: {0}")]
     Data(String),
 
+    #[allow(dead_code)]
     #[error("Container error: {0}")]
     Container(String),
 
@@ -37,9 +39,11 @@ pub enum Error {
     #[error("TOML serialization error: {0}")]
     TomlSer(#[from] toml::ser::Error),
 
+    #[allow(dead_code)]
     #[error("Command execution error: {0}")]
     Command(String),
 
+    #[allow(dead_code)]
     #[error("Unknown error: {0}")]
     Unknown(String),
 }
