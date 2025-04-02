@@ -57,9 +57,7 @@ async fn main() -> Result<()> {
     // Execute command
     match cli.command.execute().await {
         Ok(_) => {
-            if !cli.quiet {
-                cli_ui::display_success("Command completed successfully");
-            }
+            // 成功消息已由各子命令显示，这里不再重复
             Ok(())
         }
         Err(e) => {

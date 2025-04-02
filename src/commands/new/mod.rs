@@ -177,7 +177,6 @@ impl NewCommand {
             );
         }
 
-        cli_ui::display_success("Command completed successfully");
         Ok(())
     }
 }
