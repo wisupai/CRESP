@@ -35,7 +35,7 @@ pub fn ensure_directory<P: AsRef<Path>>(path: P) -> Result<()> {
 
 #[allow(dead_code)]
 pub fn is_executable<P: AsRef<Path>>(path: P) -> bool {
-    if let Ok(metadata) = std::fs::metadata(path) {
+    if let Ok(metadata) = std::fs::metadata(&path) {
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
