@@ -48,7 +48,10 @@ impl NewCommand {
 
         let description = match &self.description {
             Some(desc) => desc.clone(),
-            None => cli_ui::prompt_input("Project description", None::<String>)?,
+            None => cli_ui::prompt_input(
+                "Project description (press Enter to skip)",
+                Some(String::new()),
+            )?,
         };
 
         // Select programming language
