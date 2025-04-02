@@ -1,24 +1,18 @@
-use std::path::Path;
+use super::super::utils::write_file;
 use crate::error::Result;
 use crate::utils::cli_ui;
-use super::super::utils::write_file;
+use std::path::Path;
 
 /// Create R project with the specified configuration
 pub fn create_r_project(project_dir: &Path) -> Result<()> {
     cli_ui::display_info("Creating R project structure...");
-    // Create basic R project structure 
-    let dirs = &[
-        "R",
-        "data",
-        "output",
-        "tests/testthat",
-        "docs",
-    ];
-    
+    // Create basic R project structure
+    let dirs = &["R", "data", "output", "tests/testthat", "docs"];
+
     for dir in dirs {
         std::fs::create_dir_all(project_dir.join(dir))?;
     }
-    
+
     cli_ui::display_info("Generating R project files...");
     // Create DESCRIPTION file
     let description = r#"Package: myresearch
@@ -41,7 +35,7 @@ RdMacros: lifecycle
 Config/testthat/edition: 3
 "#;
     write_file(&project_dir.join("DESCRIPTION"), description)?;
-    
+
     // Create main.R file
     let main_r = r#"#' Main function
 #' 
@@ -63,14 +57,15 @@ if (interactive()) {
 }
 "#;
     write_file(&project_dir.join("R/main.R"), main_r)?;
-    
+
     // Create README.md
     let project_name = project_dir
         .file_name()
         .and_then(|n| n.to_str())
         .unwrap_or("myresearch");
-        
-    let readme = format!(r#"# {}: R Research Project
+
+    let readme = format!(
+        r#"# {}: R Research Project
 
 This is an R research project using CRESP protocol.
 
@@ -116,9 +111,11 @@ Run tests with:
 ```r
 testthat::test_package("{}")
 ```
-"#, project_name, project_name);
+"#,
+        project_name, project_name
+    );
     write_file(&project_dir.join("README.md"), &readme)?;
-    
+
     // Create .gitignore
     let gitignore = r#"# R specific
 .Rproj.user
@@ -147,7 +144,7 @@ data/**/*.xlsx
 data/**/*.rds
 "#;
     write_file(&project_dir.join(".gitignore"), gitignore)?;
-    
+
     // Create basic test file
     let test_file = r#"test_that("main function works", {
   # Setup test environment
@@ -160,7 +157,7 @@ data/**/*.rds
 })
 "#;
     write_file(&project_dir.join("tests/testthat/test-main.R"), test_file)?;
-    
+
     // Create test runner
     let test_runner = r#"library(testthat)
 library(myresearch)
@@ -168,6 +165,6 @@ library(myresearch)
 test_check("myresearch")
 "#;
     write_file(&project_dir.join("tests/testthat.R"), test_runner)?;
-    
+
     Ok(())
-} 
+}

@@ -8,9 +8,9 @@ mod templates;
 mod utils;
 
 use crate::utils::cli_ui;
-use config::{UserConfig, get_python_config};
+use config::{get_python_config, UserConfig};
 use system_info::collect_system_info;
-use templates::{TemplateType, create_project_structure};
+use templates::{create_project_structure, TemplateType};
 use utils::ensure_directory;
 
 #[derive(Parser, Debug)]
@@ -43,12 +43,12 @@ impl NewCommand {
         // Interactive prompts for basic project information
         let name = match &self.name {
             Some(name) => name.clone(),
-            None => cli_ui::prompt_input("Project name", None::<String>)?
+            None => cli_ui::prompt_input("Project name", None::<String>)?,
         };
 
         let description = match &self.description {
             Some(desc) => desc.clone(),
-            None => cli_ui::prompt_input("Project description", None::<String>)?
+            None => cli_ui::prompt_input("Project description", None::<String>)?,
         };
 
         // Select programming language
@@ -59,14 +59,17 @@ impl NewCommand {
                 "r" => 1,
                 "matlab" => 2,
                 _ => {
-                    cli_ui::display_warning(&format!("Unknown language: {}. Defaulting to Python.", lang));
+                    cli_ui::display_warning(&format!(
+                        "Unknown language: {}. Defaulting to Python.",
+                        lang
+                    ));
                     0
                 }
             }
         } else {
             cli_ui::prompt_select("Select primary programming language", &language_options)?
         };
-        
+
         let language = language_options[language_idx].to_lowercase();
 
         // Select project template
@@ -77,7 +80,7 @@ impl NewCommand {
             "Scientific Computing (for numerical simulations)",
             "Custom (select your own structure)",
         ];
-        
+
         let template_idx = if let Some(tmpl) = &self.template {
             match tmpl.as_str() {
                 "1" | "basic" => 0,
@@ -86,14 +89,17 @@ impl NewCommand {
                 "4" | "scientific" => 3,
                 "5" | "custom" => 4,
                 _ => {
-                    cli_ui::display_warning(&format!("Unknown template: {}. Defaulting to Basic.", tmpl));
+                    cli_ui::display_warning(&format!(
+                        "Unknown template: {}. Defaulting to Basic.",
+                        tmpl
+                    ));
                     0
                 }
             }
         } else {
             cli_ui::prompt_select("Select project template", &template_options)?
         };
-        
+
         let template = (template_idx + 1).to_string();
 
         // Get language-specific user configuration
@@ -113,9 +119,19 @@ impl NewCommand {
         let system_info = collect_system_info()?;
 
         cli_ui::display_info("Creating CRESP configuration file...");
-        create_cresp_toml(&project_dir, &name, &description, &language, &system_info, &user_config)?;
+        create_cresp_toml(
+            &project_dir,
+            &name,
+            &description,
+            &language,
+            &system_info,
+            &user_config,
+        )?;
 
-        cli_ui::display_info(&format!("Creating project structure using {} template...", template_options[template_idx]));
+        cli_ui::display_info(&format!(
+            "Creating project structure using {} template...",
+            template_options[template_idx]
+        ));
         let template_type = TemplateType::from(template.as_str());
         create_project_structure(&project_dir, template_type, &language)?;
 
@@ -128,8 +144,11 @@ impl NewCommand {
             _ => unreachable!(),
         }
 
-        cli_ui::display_success(&format!("Project created successfully at: {}", project_dir.display()));
-        
+        cli_ui::display_success(&format!(
+            "Project created successfully at: {}",
+            project_dir.display()
+        ));
+
         // Output package manager installation reminders if needed
         if user_config.use_conda {
             // For Conda projects, remind user to activate the environment
@@ -137,8 +156,10 @@ impl NewCommand {
                 .file_name()
                 .and_then(|name| name.to_str())
                 .unwrap_or("my-project");
-                
-            cli_ui::display_info(&format!("To use this project, activate the Conda environment:"));
+
+            cli_ui::display_info(&format!(
+                "To use this project, activate the Conda environment:"
+            ));
             cli_ui::display_info(&format!("   conda activate {}", project_name));
         } else if user_config.uv_installed {
             // Only show this for non-Conda projects
@@ -147,11 +168,13 @@ impl NewCommand {
             cli_ui::display_info("  source $HOME/.local/bin/env");
             cli_ui::display_info("Or restart your terminal before running UV commands.");
         }
-        
+
         if user_config.poetry_installed && !user_config.use_conda {
             // Only show this for non-Conda projects
             cli_ui::display_info("Poetry package manager was installed during project creation.");
-            cli_ui::display_info("If Poetry commands are not working, check if it was properly added to your PATH.");
+            cli_ui::display_info(
+                "If Poetry commands are not working, check if it was properly added to your PATH.",
+            );
         }
 
         cli_ui::display_success("Command completed successfully");
@@ -402,4 +425,4 @@ package_manager = {{ type = "{}", config_file = "{}", lock_file = "{}" }}
 
     utils::write_file(&project_dir.join("cresp.toml"), &cresp_toml)?;
     Ok(())
-} 
+}

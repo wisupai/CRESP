@@ -46,7 +46,7 @@ pub enum Error {
     #[allow(dead_code)]
     #[error("Unknown error: {0}")]
     Unknown(String),
-    
+
     #[error("Anyhow error: {0}")]
     Anyhow(String),
 }

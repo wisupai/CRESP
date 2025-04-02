@@ -1,7 +1,7 @@
-use std::io::{self};
-use std::process::Command;
 use crate::error::Result;
 use crate::utils::cli_ui;
+use std::io::{self};
+use std::process::Command;
 
 #[derive(Debug, Clone)]
 pub struct UserConfig {
@@ -82,11 +82,8 @@ pub fn check_system_python() -> Result<Option<String>> {
             } else {
                 String::from_utf8_lossy(&output.stderr)
             };
-            
-            let version = version_str
-                .split_whitespace()
-                .nth(1)
-                .map(|s| s.to_string());
+
+            let version = version_str.split_whitespace().nth(1).map(|s| s.to_string());
             Ok(version)
         }
         _ => Ok(None),
@@ -132,12 +129,17 @@ pub fn check_uv_available() -> Result<bool> {
 /// Install UV package manager based on operating system
 pub fn install_uv() -> Result<bool> {
     cli_ui::display_info("Attempting to install UV package manager...");
-    
+
     if cfg!(target_os = "windows") {
         let install_cmd = Command::new("powershell")
-            .args(["-ExecutionPolicy", "ByPass", "-c", "irm https://astral.sh/uv/install.ps1 | iex"])
+            .args([
+                "-ExecutionPolicy",
+                "ByPass",
+                "-c",
+                "irm https://astral.sh/uv/install.ps1 | iex",
+            ])
             .status();
-            
+
         if let Ok(status) = install_cmd {
             if status.success() {
                 cli_ui::display_success("UV installation completed successfully.");
@@ -157,42 +159,45 @@ pub fn install_uv() -> Result<bool> {
             .arg("-c")
             .arg("curl -LsSf https://astral.sh/uv/install.sh | sh")
             .status();
-            
+
         if let Ok(status) = install_cmd {
             if status.success() {
                 cli_ui::display_success("UV installation completed successfully.");
-                
+
                 // Source the environment file to make UV available in current session
                 if cfg!(target_os = "macos") || cfg!(target_os = "linux") {
                     cli_ui::display_info("Making UV available in current session...");
-                    
+
                     // Try to source the environment file
                     let source_cmd = Command::new("sh")
                         .arg("-c")
                         .arg("source $HOME/.local/bin/env || true")
                         .status();
-                        
+
                     if source_cmd.is_err() || !source_cmd.unwrap().success() {
-                        cli_ui::display_warning("Could not automatically make UV available in current session.");
+                        cli_ui::display_warning(
+                            "Could not automatically make UV available in current session.",
+                        );
                     }
-                    
+
                     // Check if UV is now in PATH after sourcing
-                    let uv_check = Command::new("sh")
-                        .arg("-c")
-                        .arg("command -v uv")
-                        .output();
-                        
+                    let uv_check = Command::new("sh").arg("-c").arg("command -v uv").output();
+
                     if uv_check.is_err() || !uv_check.unwrap().status.success() {
-                        cli_ui::display_warning("UV is installed but not available in current PATH.");
+                        cli_ui::display_warning(
+                            "UV is installed but not available in current PATH.",
+                        );
                         cli_ui::display_info("To use UV immediately, run one of these commands:");
                         cli_ui::display_info("  source $HOME/.local/bin/env");
                         cli_ui::display_info("  export PATH=\"$HOME/.local/bin:$PATH\"");
                         cli_ui::display_info("Or restart your terminal session.");
                     } else {
-                        cli_ui::display_success("UV is now available in your current terminal session.");
+                        cli_ui::display_success(
+                            "UV is now available in your current terminal session.",
+                        );
                     }
                 }
-                
+
                 return Ok(true);
             } else {
                 cli_ui::display_error("UV installation script failed with non-zero exit code.");
@@ -214,7 +219,7 @@ pub fn check_poetry_available() -> Result<bool> {
 /// Install Poetry package manager
 pub fn install_poetry() -> Result<bool> {
     cli_ui::display_info("Attempting to install Poetry package manager...");
-    
+
     let installer_cmd = if cfg!(target_os = "windows") {
         Command::new("powershell")
             .arg("-Command")
@@ -226,11 +231,11 @@ pub fn install_poetry() -> Result<bool> {
             .arg("curl -sSL https://install.python-poetry.org | python3 -")
             .status()
     };
-    
+
     if let Ok(status) = installer_cmd {
         return Ok(status.success());
     }
-    
+
     Ok(false)
 }
 
@@ -252,18 +257,22 @@ pub fn get_python_config() -> Result<UserConfig> {
         "Python 3.9 (stable)",
         "Custom version (e.g., 3.13, 3.14)",
     ];
-    
+
     // Add system Python option if available
     let system_python_option;
     if let Some(ver) = &system_python {
         system_python_option = format!("Use system Python (version {})", ver);
         python_options.push(&system_python_option[..]);
     }
-    
+
     let selection = cli_ui::prompt_select("Select Python version", &python_options)?;
 
     // Adjust selection index based on whether system Python is present
-    let base_selection = if system_python.is_some() && selection == 5 { 5 } else { selection };
+    let base_selection = if system_python.is_some() && selection == 5 {
+        5
+    } else {
+        selection
+    };
 
     // Set the selected Python version
     config.python_version = match base_selection {
@@ -298,13 +307,22 @@ pub fn get_python_config() -> Result<UserConfig> {
     if system_has_selected_version {
         // System has selected version, provide all options
         let env_options = if conda_available {
-            &["Use Conda (recommended for scientific computing)", "Use virtual environment", "Use system Python directly"]
+            &[
+                "Use Conda (recommended for scientific computing)",
+                "Use virtual environment",
+                "Use system Python directly",
+            ]
         } else {
-            &["Install and use Conda (recommended for scientific computing)", "Use virtual environment", "Use system Python directly"]
+            &[
+                "Install and use Conda (recommended for scientific computing)",
+                "Use virtual environment",
+                "Use system Python directly",
+            ]
         };
-        
-        let selection = cli_ui::prompt_select("Choose environment management method:", env_options)?;
-        
+
+        let selection =
+            cli_ui::prompt_select("Choose environment management method:", env_options)?;
+
         if selection == 2 {
             // Use system Python directly
             config.use_conda = false;
@@ -320,14 +338,18 @@ pub fn get_python_config() -> Result<UserConfig> {
         }
     } else {
         // System doesn't have selected version, only provide Conda option
-        let python_version_option = format!("Use Conda to install Python {} (recommended)", config.python_version);
+        let python_version_option = format!(
+            "Use Conda to install Python {} (recommended)",
+            config.python_version
+        );
         let env_options = vec![
             &python_version_option[..],
             "Cancel and select a different Python version",
         ];
-        
-        let selection = cli_ui::prompt_select("Choose environment management method:", &env_options)?;
-        
+
+        let selection =
+            cli_ui::prompt_select("Choose environment management method:", &env_options)?;
+
         if selection == 0 {
             config.use_conda = true;
             config.virtual_env_type = VirtualEnvType::Conda;
@@ -345,11 +367,12 @@ pub fn get_python_config() -> Result<UserConfig> {
         "uv (fastest package manager with optimized dependency resolution)",
         "pip (traditional, recommended for simple projects)",
     ];
-    
+
     if config.use_conda {
-        pkg_options.push("Only use conda for package management (no additional Python package manager)");
+        pkg_options
+            .push("Only use conda for package management (no additional Python package manager)");
     }
-    
+
     let selection = cli_ui::prompt_select("Select package management tool:", &pkg_options)?;
 
     // If using conda but choosing other package managers, keep conda and add other package managers
@@ -361,33 +384,44 @@ pub fn get_python_config() -> Result<UserConfig> {
                 let poetry_available = check_poetry_available()?;
                 if !poetry_available {
                     cli_ui::display_warning("Poetry package manager not found on your system.");
-                    
+
                     // Offer to install Poetry automatically
-                    let install_now = cli_ui::prompt_confirm("Would you like to install Poetry now?", true)?;
-                    
+                    let install_now =
+                        cli_ui::prompt_confirm("Would you like to install Poetry now?", true)?;
+
                     if install_now {
                         let install_success = install_poetry()?;
-                        
+
                         if install_success {
                             cli_ui::display_success("Poetry was successfully installed!");
                             config.poetry_installed = true;
                         } else {
                             cli_ui::display_error("Failed to install Poetry automatically.");
-                            cli_ui::display_warning("To install Poetry manually, run the following command:");
+                            cli_ui::display_warning(
+                                "To install Poetry manually, run the following command:",
+                            );
                             if cfg!(target_os = "windows") {
                                 cli_ui::display_info("(Invoke-WebRequest -Uri https://install.python-poetry.org -UseBasicParsing).Content | py -");
                             } else {
-                                cli_ui::display_info("curl -sSL https://install.python-poetry.org | python3 -");
+                                cli_ui::display_info(
+                                    "curl -sSL https://install.python-poetry.org | python3 -",
+                                );
                             }
-                            
-                            let proceed_without_poetry = cli_ui::prompt_confirm("Continue without Poetry? (You'll need to install it later)", true)?;
+
+                            let proceed_without_poetry = cli_ui::prompt_confirm(
+                                "Continue without Poetry? (You'll need to install it later)",
+                                true,
+                            )?;
                             if !proceed_without_poetry {
                                 return get_python_config(); // Restart the configuration process
                             }
                         }
                     } else {
                         // User chose not to install now
-                        let proceed_without_poetry = cli_ui::prompt_confirm("Continue without Poetry? (You'll need to install it later)", true)?;
+                        let proceed_without_poetry = cli_ui::prompt_confirm(
+                            "Continue without Poetry? (You'll need to install it later)",
+                            true,
+                        )?;
                         if !proceed_without_poetry {
                             return get_python_config(); // Restart the configuration process
                         }
@@ -395,59 +429,76 @@ pub fn get_python_config() -> Result<UserConfig> {
                 } else {
                     config.poetry_installed = true;
                 }
-                
+
                 config.package_managers.push(PackageManager::Poetry {
                     pyproject_file: "pyproject.toml".to_string(),
                 });
-            },
+            }
             1 => {
                 // Check if UV is installed
                 let uv_available = check_uv_available()?;
-                
+
                 // For Conda+UV combination, we'll install UV in the Conda environment later
                 if config.use_conda {
-                    cli_ui::display_info("UV will be installed in your Conda environment during project setup.");
-                    config.uv_installed = true;  // Mark as installed so we can handle it during conda env creation
+                    cli_ui::display_info(
+                        "UV will be installed in your Conda environment during project setup.",
+                    );
+                    config.uv_installed = true; // Mark as installed so we can handle it during conda env creation
                 } else if !uv_available {
-                    // For non-Conda environments, offer to install UV globally 
+                    // For non-Conda environments, offer to install UV globally
                     cli_ui::display_warning("UV package manager not found on your system.");
-                    
+
                     // Offer to install UV automatically
-                    let install_now = cli_ui::prompt_confirm("Would you like to install UV now?", true)?;
-                    
+                    let install_now =
+                        cli_ui::prompt_confirm("Would you like to install UV now?", true)?;
+
                     if install_now {
                         let install_success = install_uv()?;
-                        
+
                         if install_success {
                             cli_ui::display_success("UV was successfully installed!");
                             config.uv_installed = true;
-                            
+
                             // 添加关于PATH的重要提示
                             cli_ui::display_warning("⚠️ Important: UV is installed but you may need to restart your terminal or update your PATH to use it.");
                             if cfg!(target_os = "windows") {
                                 cli_ui::display_info("The UV installer should have added it to your PATH automatically.");
                             } else {
-                                cli_ui::display_info("To use UV immediately in this terminal session, run:");
+                                cli_ui::display_info(
+                                    "To use UV immediately in this terminal session, run:",
+                                );
                                 cli_ui::display_info("  source $HOME/.local/bin/env");
-                                cli_ui::display_info("Or restart your terminal to use it in a new session.");
+                                cli_ui::display_info(
+                                    "Or restart your terminal to use it in a new session.",
+                                );
                             }
                         } else {
                             cli_ui::display_error("Failed to install UV automatically.");
-                            cli_ui::display_warning("To install UV manually, run the following command:");
+                            cli_ui::display_warning(
+                                "To install UV manually, run the following command:",
+                            );
                             if cfg!(target_os = "windows") {
                                 cli_ui::display_info("powershell -ExecutionPolicy ByPass -c \"irm https://astral.sh/uv/install.ps1 | iex\"");
                             } else {
-                                cli_ui::display_info("curl -LsSf https://astral.sh/uv/install.sh | sh");
+                                cli_ui::display_info(
+                                    "curl -LsSf https://astral.sh/uv/install.sh | sh",
+                                );
                             }
-                            
-                            let proceed_without_uv = cli_ui::prompt_confirm("Continue without UV? (You'll need to install it later)", true)?;
+
+                            let proceed_without_uv = cli_ui::prompt_confirm(
+                                "Continue without UV? (You'll need to install it later)",
+                                true,
+                            )?;
                             if !proceed_without_uv {
                                 return get_python_config(); // Restart the configuration process
                             }
                         }
                     } else {
                         // User chose not to install now
-                        let proceed_without_uv = cli_ui::prompt_confirm("Continue without UV? (You'll need to install it later)", true)?;
+                        let proceed_without_uv = cli_ui::prompt_confirm(
+                            "Continue without UV? (You'll need to install it later)",
+                            true,
+                        )?;
                         if !proceed_without_uv {
                             return get_python_config(); // Restart the configuration process
                         }
@@ -456,18 +507,18 @@ pub fn get_python_config() -> Result<UserConfig> {
                     // UV is already available
                     config.uv_installed = true;
                 }
-                
+
                 config.package_managers.push(PackageManager::Uv {
                     requirements_file: "requirements.txt".to_string(),
                     dev_requirements_file: "requirements-dev.txt".to_string(),
                 });
-            },
+            }
             2 => {
                 config.package_managers.push(PackageManager::Pip {
                     requirements_file: "requirements.txt".to_string(),
                     dev_requirements_file: "requirements-dev.txt".to_string(),
                 });
-            },
+            }
             _ => {}
         }
     }
@@ -485,18 +536,16 @@ pub fn get_python_config() -> Result<UserConfig> {
             "Aliyun Mirror (faster in China)",
             "Custom index URL",
         ];
-        
+
         let selection = cli_ui::prompt_select("Select package index:", index_options)?;
 
         match selection {
             1 => {
-                config.pip_index_url =
-                    Some("https://pypi.tuna.tsinghua.edu.cn/simple".to_string());
+                config.pip_index_url = Some("https://pypi.tuna.tsinghua.edu.cn/simple".to_string());
                 config.pip_trusted_hosts = Some(vec!["pypi.tuna.tsinghua.edu.cn".to_string()]);
             }
             2 => {
-                config.pip_index_url =
-                    Some("https://mirrors.aliyun.com/pypi/simple".to_string());
+                config.pip_index_url = Some("https://mirrors.aliyun.com/pypi/simple".to_string());
                 config.pip_trusted_hosts = Some(vec!["mirrors.aliyun.com".to_string()]);
             }
             3 => {
@@ -591,7 +640,7 @@ fn setup_conda_environment(config: &mut UserConfig, conda_available: bool) -> Re
             "Install Anaconda (full installation)",
             "Install Conda-forge",
         ];
-        
+
         let selection = cli_ui::prompt_select("Select Conda distribution:", conda_options)?;
 
         let distribution = match selection {
@@ -599,13 +648,15 @@ fn setup_conda_environment(config: &mut UserConfig, conda_available: bool) -> Re
             2 => CondaDistribution::CondaForge,
             _ => CondaDistribution::Miniconda,
         };
-        
+
         install_conda(distribution)?;
     }
 
     // Ask for Conda channel selection
     println!("\n📦 Conda channel selection:");
-    println!("You can select multiple channels. Conda will search packages in the order specified.");
+    println!(
+        "You can select multiple channels. Conda will search packages in the order specified."
+    );
     let channel_options = &[
         "conda-forge (recommended general channel)",
         "defaults (Anaconda default channel)",
@@ -615,7 +666,7 @@ fn setup_conda_environment(config: &mut UserConfig, conda_available: bool) -> Re
         "r (for R programming language packages)",
         "Add custom channel",
     ];
-    
+
     println!("Select channels (enter numbers separated by commas, e.g., '1,3,5'):");
     for (i, option) in channel_options.iter().enumerate() {
         println!("{}. {}", i + 1, option);
@@ -624,7 +675,7 @@ fn setup_conda_environment(config: &mut UserConfig, conda_available: bool) -> Re
     let mut selected_channels: Vec<String> = Vec::new();
     loop {
         let input: String = cli_ui::prompt_input("> ", None)?;
-        
+
         let trimmed = input.trim();
         if trimmed.to_lowercase() == "done" || trimmed.is_empty() {
             // If no channels selected, add conda-forge by default
@@ -677,7 +728,8 @@ fn setup_conda_environment(config: &mut UserConfig, conda_available: bool) -> Re
                         }
                     }
                     7 => {
-                        let custom_channel: String = cli_ui::prompt_input("Enter custom channel name:", None)?;
+                        let custom_channel: String =
+                            cli_ui::prompt_input("Enter custom channel name:", None)?;
                         if !custom_channel.is_empty()
                             && !selected_channels.contains(&custom_channel)
                         {
@@ -704,7 +756,7 @@ fn setup_conda_environment(config: &mut UserConfig, conda_available: bool) -> Re
         environment_file: "environment.yml".to_string(),
         dev_environment_file: "environment-dev.yml".to_string(),
     });
-    
+
     Ok(())
 }
 
@@ -713,14 +765,14 @@ fn setup_virtualenv(config: &mut UserConfig) -> Result<()> {
     // Choose virtual environment type
     println!("\n🔧 Virtual environment type:");
     let venv_options = &["venv (recommended, built-in)", "virtualenv (third-party)"];
-    
+
     let selection = cli_ui::prompt_select("Select virtual environment type:", venv_options)?;
 
     config.virtual_env_type = match selection {
         1 => VirtualEnvType::Virtualenv,
         _ => VirtualEnvType::Venv,
     };
-    
+
     Ok(())
 }
 
@@ -828,15 +880,12 @@ pub fn check_system_r() -> Result<Option<String>> {
         Ok(output) if output.status.success() => {
             let version_output = String::from_utf8_lossy(&output.stdout);
             // R typically outputs version info in the first line, e.g. "R version 4.2.1 (2022-06-23) -- "Bird Hippie""
-            let version = version_output
-                .lines()
-                .next()
-                .and_then(|line| {
-                    line.split("R version ")
-                        .nth(1)
-                        .and_then(|v| v.split(' ').next())
-                        .map(|s| s.to_string())
-                });
+            let version = version_output.lines().next().and_then(|line| {
+                line.split("R version ")
+                    .nth(1)
+                    .and_then(|v| v.split(' ').next())
+                    .map(|s| s.to_string())
+            });
             Ok(version)
         }
         _ => Ok(None),
@@ -847,4 +896,4 @@ pub fn check_system_r() -> Result<Option<String>> {
 pub fn check_rig_available() -> Result<bool> {
     let output = Command::new("rig").arg("--version").output();
     Ok(output.is_ok() && output.unwrap().status.success())
-} 
+}

@@ -1,15 +1,15 @@
-use std::path::Path;
+use super::utils::{create_directories, write_file};
 use crate::error::Result;
 use crate::utils::cli_ui;
-use super::utils::{create_directories, write_file};
+use std::path::Path;
 
+mod matlab;
 mod python;
 mod r;
-mod matlab;
 
+pub use matlab::create_matlab_project;
 pub use python::create_python_project;
 pub use r::create_r_project;
-pub use matlab::create_matlab_project;
 
 /// Template type for project structure
 #[derive(Debug, Clone, Copy)]
@@ -44,23 +44,23 @@ pub fn create_project_structure(
         TemplateType::Basic => {
             cli_ui::display_info("Creating basic project structure...");
             create_basic_structure(project_dir, language)
-        },
+        }
         TemplateType::DataAnalysis => {
             cli_ui::display_info("Creating data analysis project structure...");
             create_data_analysis_structure(project_dir, language)
-        },
+        }
         TemplateType::MachineLearning => {
             cli_ui::display_info("Creating machine learning project structure...");
             create_ml_structure(project_dir, language)
-        },
+        }
         TemplateType::ScientificComputing => {
             cli_ui::display_info("Creating scientific computing project structure...");
             create_scientific_structure(project_dir, language)
-        },
+        }
         TemplateType::Custom => {
             cli_ui::display_info("Creating custom project structure...");
             create_custom_structure(project_dir, language)
-        },
+        }
     }
 }
 
@@ -331,11 +331,8 @@ fn create_scientific_structure(project_dir: &Path, _language: &str) -> Result<()
 /// Create custom project structure
 fn create_custom_structure(project_dir: &Path, _language: &str) -> Result<()> {
     cli_ui::display_info("Custom project structure setup:");
-    let options = vec![
-        "Create basic directories",
-        "Create detailed structure",
-    ];
-    
+    let options = vec!["Create basic directories", "Create detailed structure"];
+
     let selection = cli_ui::prompt_select("Choose structure type", &options)?;
 
     if selection == 1 {
@@ -411,4 +408,4 @@ fn create_custom_structure(project_dir: &Path, _language: &str) -> Result<()> {
     }
 
     Ok(())
-} 
+}

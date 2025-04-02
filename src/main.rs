@@ -7,9 +7,9 @@ mod core;
 mod error;
 mod utils;
 
+use console::Term;
 use error::Result;
 use utils::cli_ui;
-use console::Term;
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
@@ -48,7 +48,10 @@ async fn main() -> Result<()> {
     if !cli.quiet {
         let term = Term::stdout();
         let _ = term.clear_screen();
-        cli_ui::display_header("CRESP - Computational Research Environment Standardization Protocol", "🧪");
+        cli_ui::display_header(
+            "CRESP - Computational Research Environment Standardization Protocol",
+            "🧪",
+        );
     }
 
     // Execute command
@@ -58,7 +61,7 @@ async fn main() -> Result<()> {
                 cli_ui::display_success("Command completed successfully");
             }
             Ok(())
-        },
+        }
         Err(e) => {
             cli_ui::display_error(&format!("Error: {}", e));
             Err(e)

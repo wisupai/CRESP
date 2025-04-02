@@ -1,7 +1,7 @@
-use std::collections::HashMap;
-use std::process::Command;
-use std::path::Path;
 use crate::error::Result;
+use std::collections::HashMap;
+use std::path::Path;
+use std::process::Command;
 
 #[derive(Default)]
 pub struct SystemInfo {
@@ -82,31 +82,31 @@ pub fn collect_system_info() -> Result<SystemInfo> {
 
     // 获取 CPU 信息
     collect_cpu_info(&mut info)?;
-    
+
     // 获取内存信息
     collect_memory_info(&mut info)?;
-    
+
     // 获取 GPU 信息
     collect_gpu_info(&mut info)?;
-    
+
     // 获取存储信息
     collect_storage_info(&mut info)?;
-    
+
     // 获取网络信息
     collect_network_info(&mut info)?;
-    
+
     // 获取操作系统信息
     collect_os_info(&mut info)?;
-    
+
     // 获取系统限制
     collect_system_limits(&mut info)?;
-    
+
     // 获取已安装的包
     collect_installed_packages(&mut info)?;
-    
+
     // 获取软件版本
     collect_software_versions(&mut info)?;
-    
+
     // 获取 CUDA 路径
     collect_cuda_paths(&mut info)?;
 
@@ -178,7 +178,7 @@ fn collect_cpu_info(info: &mut SystemInfo) -> Result<()> {
             .map(|line| format!("{}MHz", line.split(":").nth(1).unwrap_or("").trim()))
             .unwrap_or_else(|| "Unknown".to_string());
     }
-    
+
     Ok(())
 }
 
@@ -208,7 +208,7 @@ fn collect_memory_info(info: &mut SystemInfo) -> Result<()> {
 
         info.memory.memory_type = "DDR4/DDR5".to_string(); // This is hard to detect
     }
-    
+
     Ok(())
 }
 
@@ -246,7 +246,7 @@ fn collect_gpu_info(info: &mut SystemInfo) -> Result<()> {
             info.gpu.driver_version = "Unknown".to_string();
         }
     }
-    
+
     Ok(())
 }
 
@@ -280,7 +280,7 @@ fn collect_storage_info(info: &mut SystemInfo) -> Result<()> {
             .map(|line| line.split(":").nth(1).unwrap_or("").trim().to_string())
             .unwrap_or_else(|| "Unknown".to_string());
     }
-    
+
     Ok(())
 }
 
@@ -321,7 +321,7 @@ fn collect_network_info(info: &mut SystemInfo) -> Result<()> {
             .map(|line| line.split(":").nth(1).unwrap_or("").trim().to_string())
             .unwrap_or_else(|| "Unknown".to_string());
     }
-    
+
     Ok(())
 }
 
@@ -428,7 +428,7 @@ fn collect_os_info(info: &mut SystemInfo) -> Result<()> {
         .unwrap_or_else(|| "UTC".to_string())
         .trim()
         .to_string();
-    
+
     Ok(())
 }
 
@@ -469,7 +469,7 @@ fn collect_system_limits(info: &mut SystemInfo) -> Result<()> {
         info.limits.stack_size = "8192K".to_string();
         info.limits.virtual_memory = "unlimited".to_string();
     }
-    
+
     Ok(())
 }
 
@@ -510,7 +510,7 @@ fn collect_installed_packages(info: &mut SystemInfo) -> Result<()> {
                 .collect();
         }
     }
-    
+
     Ok(())
 }
 
@@ -562,13 +562,14 @@ fn collect_software_versions(info: &mut SystemInfo) -> Result<()> {
             if line.contains("release") {
                 let words: Vec<&str> = line.split_whitespace().collect();
                 if words.len() > 5 {
-                    info.software.insert("cuda".to_string(), words[4].to_string());
+                    info.software
+                        .insert("cuda".to_string(), words[4].to_string());
                     break;
                 }
             }
         }
     }
-    
+
     Ok(())
 }
 
@@ -576,16 +577,18 @@ fn collect_cuda_paths(info: &mut SystemInfo) -> Result<()> {
     if let Ok(output) = Command::new("which").arg("nvcc").output() {
         let path = String::from_utf8_lossy(&output.stdout);
         let nvcc_path = path.trim();
-        
+
         if !nvcc_path.is_empty() {
             if let Some(cuda_home) = Path::new(nvcc_path).parent().and_then(|p| p.parent()) {
                 let cuda_home_str = cuda_home.to_string_lossy().to_string();
                 info.cuda.cuda_home = cuda_home_str.clone();
-                info.cuda.ld_library_path.push(format!("{}/lib64", cuda_home_str));
+                info.cuda
+                    .ld_library_path
+                    .push(format!("{}/lib64", cuda_home_str));
                 info.cuda.cupti_path = format!("{}/extras/CUPTI/lib64", cuda_home_str);
             }
         }
     }
-    
+
     Ok(())
-} 
+}

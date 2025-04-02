@@ -1,20 +1,14 @@
-use std::path::Path;
+use super::super::utils::write_file;
 use crate::error::Result;
 use crate::utils::cli_ui;
-use super::super::utils::write_file;
+use std::path::Path;
 
 /// Create MATLAB project with the specified configuration
 pub fn create_matlab_project(project_dir: &Path) -> Result<()> {
     cli_ui::display_info("Creating MATLAB project structure...");
     // Create project structure for MATLAB
-    let dirs = &[
-        "src",
-        "test",
-        "data",
-        "results", 
-        "docs",
-    ];
-    
+    let dirs = &["src", "test", "data", "results", "docs"];
+
     for dir in dirs {
         std::fs::create_dir_all(project_dir.join(dir))?;
     }
@@ -73,7 +67,7 @@ end
 end
 "#;
     write_file(&project_dir.join("src/processData.m"), process_data_m)?;
-    
+
     // Create analyzeResults.m helper function
     let analyze_results_m = r#"function results = analyzeResults(data)
 % ANALYZERESULTS Analyze the processed data
@@ -262,4 +256,4 @@ data/**/*.xlsx
     write_file(&project_dir.join(".gitignore"), gitignore)?;
 
     Ok(())
-} 
+}
