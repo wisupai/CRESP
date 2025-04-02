@@ -264,7 +264,7 @@ package_manager = {{ type = "{}", config_file = "{}", lock_file = "{}" }}
             system_info.limits.virtual_memory,
             if language == "python" {
                 let mut software_config = String::new();
-                // Python 配置
+                // Python configuration
                 software_config.push_str(&format!("python = {{\n    version = \"{}\", \n    interpreter = \"python{}\",\n    compile_flags = \"--enable-shared --enable-optimizations\",\n    pip_config = {{\n        index_url = \"{}\",\n        trusted_hosts = [\"{}\"]\n    }},\n    virtual_env = {{\n        type = \"{}\",\n        path = \".venv\",\n        activation_script = \".venv/bin/activate\"\n    }}\n}}\n",
                     user_config.python_version,
                     user_config.python_version,
@@ -278,16 +278,16 @@ package_manager = {{ type = "{}", config_file = "{}", lock_file = "{}" }}
                     }
                 ));
 
-                // Conda 配置 (如果使用)
+                // Conda configuration (if used)
                 if user_config.virtual_env_type == VirtualEnvType::Conda {
-                    // 修复临时值问题：使用let绑定创建持久值
+                    // Fix temporary value issue: use let binding to create persistent value
                     let default_conda_version = "4.10.3".to_string();
                     let conda_version = system_info
                         .software
                         .get("conda")
                         .unwrap_or(&default_conda_version);
 
-                    // 获取所有conda渠道
+                    // Get all conda channels
                     let channels = user_config
                         .package_managers
                         .iter()
@@ -301,7 +301,7 @@ package_manager = {{ type = "{}", config_file = "{}", lock_file = "{}" }}
                         .next()
                         .unwrap_or_else(|| vec!["conda-forge".to_string()]);
 
-                    // 格式化渠道字符串
+                    // Format channel string
                     let channels_str = channels
                         .iter()
                         .map(|ch| format!("\"{}\"", ch))
@@ -314,9 +314,9 @@ package_manager = {{ type = "{}", config_file = "{}", lock_file = "{}" }}
                     ));
                 }
 
-                // CUDA 配置 (如果使用)
+                // CUDA configuration (if used)
                 if user_config.use_cuda {
-                    // 修复临时值问题：使用let绑定创建持久值
+                    // Fix temporary value issue: use let binding to create persistent value
                     let default_cuda_version = "11.8".to_string();
                     let cuda_version = user_config
                         .cuda_version
@@ -329,8 +329,8 @@ package_manager = {{ type = "{}", config_file = "{}", lock_file = "{}" }}
                         cuda_version.replace(".", "_")
                     ));
 
-                    // cuDNN 配置
-                    // 修复临时值问题：使用let绑定创建持久值
+                    // cuDNN configuration
+                    // Fix temporary value issue: use let binding to create persistent value
                     let default_cudnn_version = "8.9".to_string();
                     let cudnn_version = user_config
                         .cudnn_version
@@ -343,7 +343,7 @@ package_manager = {{ type = "{}", config_file = "{}", lock_file = "{}" }}
                     ));
                 }
 
-                // 移除容器平台配置
+                // Remove container platform configuration
                 software_config
             } else {
                 format!(
@@ -812,11 +812,11 @@ package_manager = {{ type = "{}", config_file = "{}", lock_file = "{}" }}
             pip_trusted_hosts: None,
         };
 
-        // 检查系统 Python 可用性和 Conda 可用性
+        // Check system Python availability and Conda availability
         let system_python = self.check_system_python()?;
         let conda_available = self.check_conda_available()?;
 
-        // 1. 选择 Python 版本
+        // 1. Select Python version
         println!("\n📦 Python version selection:");
         println!("1. Python 3.12 (latest, recommended)");
         println!("2. Python 3.11 (stable)");
@@ -834,7 +834,7 @@ package_manager = {{ type = "{}", config_file = "{}", lock_file = "{}" }}
         let mut input = String::new();
         io::stdin().read_line(&mut input)?;
 
-        // 设置选择的 Python 版本
+        // Set the selected Python version
         config.python_version = match input.trim() {
             "2" => "3.11".to_string(),
             "3" => "3.10".to_string(),
@@ -858,10 +858,10 @@ package_manager = {{ type = "{}", config_file = "{}", lock_file = "{}" }}
             _ => "3.12".to_string(),
         };
 
-        // 2. 确定环境管理方式
+        // 2. Determine environment management method
         println!("\n🔧 Environment management:");
 
-        // 检查所选Python版本是否可用于系统
+        // Check if selected Python version is available on system
         let system_has_selected_version = if let Some(sys_version) = &system_python {
             sys_version.starts_with(&config.python_version)
         } else {
@@ -869,7 +869,7 @@ package_manager = {{ type = "{}", config_file = "{}", lock_file = "{}" }}
         };
 
         if system_has_selected_version {
-            // 系统有所选版本，提供所有选项
+            // System has selected version, provide all options
             if conda_available {
                 println!("1. Use Conda (recommended for scientific computing)");
                 println!("2. Use virtual environment");
@@ -879,7 +879,7 @@ package_manager = {{ type = "{}", config_file = "{}", lock_file = "{}" }}
             }
             print!("Choice (1-2) [1]: ");
         } else {
-            // 系统没有所选版本，只提供Conda选项
+            // System doesn't have selected version, only provide Conda option
             println!(
                 "1. Use Conda to install Python {} (recommended)",
                 config.python_version
@@ -902,7 +902,7 @@ package_manager = {{ type = "{}", config_file = "{}", lock_file = "{}" }}
         io::stdin().read_line(&mut input)?;
 
         if input.trim() == "3" && system_python.is_some() {
-            // 直接使用系统Python，不使用虚拟环境
+            // Use system Python directly without virtual environment
             config.use_conda = false;
             config.virtual_env_type = VirtualEnvType::None;
         } else {
@@ -911,7 +911,7 @@ package_manager = {{ type = "{}", config_file = "{}", lock_file = "{}" }}
             if config.use_conda {
                 config.virtual_env_type = VirtualEnvType::Conda;
 
-                // 如果 Conda 未安装，提示安装
+                // If Conda is not installed, prompt for installation
                 if !conda_available {
                     println!("\n🔧 Conda is not installed. Would you like to install it now?");
                     println!("1. Install Miniconda (minimal installation)");
@@ -930,7 +930,7 @@ package_manager = {{ type = "{}", config_file = "{}", lock_file = "{}" }}
                     self.install_conda(distribution)?;
                 }
 
-                // 询问Conda渠道选择
+                // Ask for Conda channel selection
                 println!("\n📦 Conda channel selection:");
                 println!("You can select multiple channels. Conda will search packages in the order specified.");
                 println!("1. conda-forge (recommended general channel)");
@@ -951,7 +951,7 @@ package_manager = {{ type = "{}", config_file = "{}", lock_file = "{}" }}
 
                     let trimmed = input.trim();
                     if trimmed.to_lowercase() == "done" || trimmed.is_empty() {
-                        // 如果没有选择任何渠道，默认添加conda-forge
+                        // If no channels selected, add conda-forge by default
                         if selected_channels.is_empty() {
                             selected_channels.push("conda-forge".to_string());
                             println!("No channels selected, using conda-forge as default.");
@@ -959,7 +959,7 @@ package_manager = {{ type = "{}", config_file = "{}", lock_file = "{}" }}
                         break;
                     }
 
-                    // 解析选择的渠道号
+                    // Parse selected channel numbers
                     for choice in trimmed.split(',') {
                         let choice = choice.trim();
                         match choice {
@@ -1029,7 +1029,7 @@ package_manager = {{ type = "{}", config_file = "{}", lock_file = "{}" }}
                     dev_environment_file: "dev-environment.yml".to_string(),
                 });
             } else {
-                // 选择虚拟环境类型
+                // Choose virtual environment type
                 println!("\n🔧 Virtual environment type:");
                 println!("1. venv (recommended, built-in)");
                 println!("2. virtualenv (third-party)");
@@ -1045,7 +1045,7 @@ package_manager = {{ type = "{}", config_file = "{}", lock_file = "{}" }}
             }
         }
 
-        // 3. 询问包管理器选择 (不论是否使用conda)
+        // 3. Ask about package management (whether using conda or not)
         println!("\n📦 Python package management:");
         println!("1. Poetry (recommended for modern Python projects)");
         println!("2. uv (recommended for fast dependency resolution)");
@@ -1063,7 +1063,7 @@ package_manager = {{ type = "{}", config_file = "{}", lock_file = "{}" }}
         input.clear();
         io::stdin().read_line(&mut input)?;
 
-        // 如果使用conda但选择了其他包管理器，保留conda且添加其他包管理器
+        // If using conda but choosing other package managers, keep conda and add other package managers
         if !config.use_conda || input.trim() != "4" {
             match input.trim() {
                 "2" => {
@@ -1086,7 +1086,7 @@ package_manager = {{ type = "{}", config_file = "{}", lock_file = "{}" }}
             }
         }
 
-        // 4. 选择 pip/uv/poetry 的包源 (如果选择了这些管理器)
+        // 4. Choose package source for pip/uv/poetry (if any of these managers are selected)
         if !config
             .package_managers
             .iter()
@@ -1120,7 +1120,7 @@ package_manager = {{ type = "{}", config_file = "{}", lock_file = "{}" }}
                     io::stdin().read_line(&mut input)?;
                     let index_url = input.trim().to_string();
 
-                    // 从URL中提取host部分
+                    // Extract host from URL
                     let host = index_url
                         .replace("http://", "")
                         .replace("https://", "")
@@ -1141,14 +1141,14 @@ package_manager = {{ type = "{}", config_file = "{}", lock_file = "{}" }}
             }
         }
 
-        // 5. 检查 CUDA 可用性
+        // 5. Check CUDA availability
         config.use_cuda = self.check_cuda_availability()?;
         if config.use_cuda {
             config.cuda_version = Some("11.8".to_string());
             config.cudnn_version = Some("8.9".to_string());
         }
 
-        // 6. 显示配置摘要
+        // 6. Display configuration summary
         println!("\n📋 Configuration Summary:");
         println!("Python Version: {}", config.python_version);
         println!(
@@ -1187,7 +1187,7 @@ package_manager = {{ type = "{}", config_file = "{}", lock_file = "{}" }}
             );
         }
 
-        // 7. 询问是否继续安装
+        // 7. Ask if continuing with installation
         print!("\n🚀 Proceed with installation? (Y/n): ");
         io::stdout().flush()?;
         input.clear();
@@ -1281,13 +1281,13 @@ package_manager = {{ type = "{}", config_file = "{}", lock_file = "{}" }}
             }
         };
 
-        // 下载安装脚本
+        // Download installation script
         Command::new("curl")
             .arg("-O")
             .arg(format!("{}{}", base_url, install_script))
             .status()?;
 
-        // 运行安装脚本
+        // Run installation script
         Command::new("bash")
             .arg(install_script)
             .arg("-b")
@@ -1295,13 +1295,13 @@ package_manager = {{ type = "{}", config_file = "{}", lock_file = "{}" }}
             .arg(format!("{}/.conda", std::env::var("HOME").unwrap()))
             .status()?;
 
-        // 删除安装脚本
+        // Delete installation script
         std::fs::remove_file(install_script)?;
 
-        // 初始化 conda
+        // Initialize conda
         Command::new("conda").arg("init").status()?;
 
-        // 如果是 conda-forge，设置默认 channel
+        // If conda-forge, set default channel
         if let CondaDistribution::CondaForge = distribution {
             Command::new("conda")
                 .arg("config")
@@ -1339,11 +1339,11 @@ package_manager = {{ type = "{}", config_file = "{}", lock_file = "{}" }}
     }
 
     fn create_python_project(&self, project_dir: &PathBuf, config: &UserConfig) -> Result<()> {
-        // 创建项目目录
+        // Create project directory
         fs::create_dir_all(project_dir)?;
         std::env::set_current_dir(project_dir)?;
 
-        // 创建基本项目结构
+        // Create basic project structure
         let dirs = [
             "src",
             "tests",
@@ -1357,8 +1357,8 @@ package_manager = {{ type = "{}", config_file = "{}", lock_file = "{}" }}
             fs::create_dir_all(dir)?;
         }
 
-        // 创建 README.md
-        // 获取包管理器信息
+        // Create README.md
+        // Get package manager information
         let package_managers_desc = config
             .package_managers
             .iter()
@@ -1370,36 +1370,35 @@ package_manager = {{ type = "{}", config_file = "{}", lock_file = "{}" }}
             })
             .collect::<Vec<_>>()
             .join(" + ");
-
         let readme_content = format!(
             "# {}\n\n\
-            ## 项目简介\n\
-            这是一个使用 Python {} 的项目。\n\n\
-            ## 环境要求\n\
+            ## Project Overview\n\
+            This is a Python {} project.\n\n\
+            ## Requirements\n\
             - Python {}\n\
-            - 环境管理: {}\n\
-            - 包管理工具: {}\n\n\
-            ## 安装\n\
+            - Environment Management: {}\n\
+            - Package Manager: {}\n\n\
+            ## Installation\n\
             ```bash\n\
-            # 克隆项目\n\
+            # Clone the repository\n\
             git clone <repository-url>\n\
             cd {}\n\n\
-            # 安装依赖\n\
+            # Install dependencies\n\
             {}\n\
             ```\n\n\
-            ## 使用\n\
-            待补充\n\n\
-            ## 开发\n\
+            ## Usage\n\
+            To be added\n\n\
+            ## Development\n\
             ```bash\n\
-            # 安装开发依赖\n\
+            # Install development dependencies\n\
             {}\n\
             ```\n\n\
-            ## 测试\n\
+            ## Testing\n\
             ```bash\n\
-            # 运行测试\n\
+            # Run tests\n\
             {}\n\
             ```\n\n\
-            ## 许可证\n\
+            ## License\n\
             MIT\n",
             project_dir.display(),
             config.python_version,
@@ -1410,7 +1409,7 @@ package_manager = {{ type = "{}", config_file = "{}", lock_file = "{}" }}
                 match config.virtual_env_type {
                     VirtualEnvType::Venv => "venv",
                     VirtualEnvType::Virtualenv => "virtualenv",
-                    _ => "系统Python",
+                    _ => "System Python",
                 }
             },
             package_managers_desc,
@@ -1421,7 +1420,7 @@ package_manager = {{ type = "{}", config_file = "{}", lock_file = "{}" }}
         );
         fs::write("README.md", readme_content)?;
 
-        // 创建 .gitignore
+        // Create .gitignore
         let gitignore_content = "\
 # Python
 __pycache__/
@@ -1498,7 +1497,7 @@ logs/
 ";
         fs::write(".gitignore", gitignore_content)?;
 
-        // 创建主模块
+        // Create main module
         let src_dir = Path::new("src").join(
             project_dir
                 .file_name()
@@ -1527,7 +1526,7 @@ logs/
                 main()\n",
         )?;
 
-        // 创建测试文件
+        // Create test files
         let tests_dir = Path::new("tests");
         fs::write(tests_dir.join("__init__.py"), "\"\"\"Test package.\"\"\"\n")?;
         fs::write(
@@ -1538,7 +1537,7 @@ logs/
                 assert True\n",
         )?;
 
-        // 根据用户选择创建环境配置文件
+        // Based on user selection, create environment configuration files
         let has_conda = config
             .package_managers
             .iter()
@@ -1551,7 +1550,7 @@ logs/
                     environment_file,
                     dev_environment_file,
                 } => {
-                    // 创建 environment.yml
+                    // Create environment.yml
                     let project_name = project_dir
                         .file_name()
                         .and_then(|name| name.to_str())
@@ -1574,29 +1573,29 @@ logs/
                             config.cuda_version.as_ref().unwrap(),
                             config.cudnn_version.as_ref().unwrap()
                         ));
-                    } else {
+        } else {
                         env_content.push_str(&format!("  - python={}\n", config.python_version));
                     }
                     env_content.push_str("  - pip\n");
 
-                    // 添加需要通过conda安装的包
+                    // Add packages that need to be installed via conda
                     if config.use_cuda {
                         env_content.push_str("  - numpy\n  - scipy\n  - matplotlib\n  - pandas\n");
                     }
 
-                    // 如果有Poetry/pip/uv，添加pip部分
+                    // If Poetry/pip/uv, add pip section
                     if config
                         .package_managers
                         .iter()
                         .any(|pm| !matches!(pm, PackageManager::Conda { .. }))
                     {
                         env_content.push_str("  - pip:\n");
-                        env_content.push_str("    - -e .\n"); // 安装当前项目
+                        env_content.push_str("    - -e .\n"); // Install current project
                     }
 
                     fs::write(environment_file, env_content)?;
-
-                    // 创建 dev-environment.yml
+        
+                    // Create dev-environment.yml
                     let mut dev_env_content = format!(
                         "name: {}-dev\n\
                         channels:\n",
@@ -1615,7 +1614,7 @@ logs/
                             config.cuda_version.as_ref().unwrap(),
                             config.cudnn_version.as_ref().unwrap()
                         ));
-                    } else {
+            } else {
                         dev_env_content
                             .push_str(&format!("  - python={}\n", config.python_version));
                     }
@@ -1627,20 +1626,20 @@ logs/
                          - flake8\n",
                     );
 
-                    // 如果有Poetry/pip/uv，添加pip部分
+                    // If Poetry/pip/uv, add pip section
                     if config
                         .package_managers
                         .iter()
                         .any(|pm| !matches!(pm, PackageManager::Conda { .. }))
                     {
                         dev_env_content.push_str("  - pip:\n");
-                        dev_env_content.push_str("    - -e .\n"); // 安装当前项目
+                        dev_env_content.push_str("    - -e .\n"); // Install current project
                     }
 
                     fs::write(dev_environment_file, dev_env_content)?;
                 }
                 PackageManager::Poetry { pyproject_file } => {
-                    // 创建 pyproject.toml
+                    // Create pyproject.toml
                     let project_name = project_dir
                         .file_name()
                         .and_then(|name| name.to_str())
@@ -1667,21 +1666,21 @@ logs/
                     );
                     fs::write(pyproject_file, pyproject_content)?;
 
-                    // 如果同时使用conda，创建.envrc文件用于自动切换环境
+                    // If using conda, create .envrc file for automatic environment switching
                     if has_conda {
                         let envrc_content = format!(
-                            "# 自动激活conda环境\n\
+                            "# Automatically activate conda environment\n\
                             if [ -e ${{HOME}}/.conda/etc/profile.d/conda.sh ]; then\n\
                             \tsource ${{HOME}}/.conda/etc/profile.d/conda.sh\n\
                             \tconda activate {}\n\
                             fi\n\n\
-                            # 设置Poetry使用已激活的Python环境\n\
+                            # Configure Poetry to use the activated Python environment\n\
                             export POETRY_VIRTUALENVS_CREATE=false\n",
                             project_name
                         );
                         fs::write(".envrc", envrc_content)?;
 
-                        // 创建poetry配置文件，禁用虚拟环境创建
+                        // Create poetry config file to disable virtualenv creation
                         fs::create_dir_all(".poetry")?;
                         fs::write(".poetry/config.toml", "virtualenvs.create = false\n")?;
                     }
@@ -1694,7 +1693,7 @@ logs/
                     requirements_file,
                     dev_requirements_file,
                 } => {
-                    // 创建 requirements.txt
+                    // Create requirements.txt
                     let mut req_content = format!(
                         "# Python {}\n\
                         # Core dependencies\n",
@@ -1709,7 +1708,7 @@ logs/
                     }
                     fs::write(requirements_file, req_content)?;
 
-                    // 创建 requirements-dev.txt
+                    // Create requirements-dev.txt
                     let dev_req_content = "\
                         # Development dependencies\n\
                         pytest>=7.0.0\n\
@@ -1718,7 +1717,7 @@ logs/
                         flake8>=6.0.0\n";
                     fs::write(dev_requirements_file, dev_req_content)?;
 
-                    // 如果同时使用conda和pip/uv，创建.envrc文件
+                    // If using conda and pip/uv, create .envrc file
                     if has_conda {
                         let project_name = project_dir
                             .file_name()
@@ -1726,7 +1725,7 @@ logs/
                             .unwrap_or("my-project");
 
                         let envrc_content = format!(
-                            "# 自动激活conda环境\n\
+                            "# Automatically activate conda environment\n\
                             if [ -e ${{HOME}}/.conda/etc/profile.d/conda.sh ]; then\n\
                             \tsource ${{HOME}}/.conda/etc/profile.d/conda.sh\n\
                             \tconda activate {}\n\
@@ -1739,7 +1738,7 @@ logs/
             }
         }
 
-        // 创建虚拟环境
+        // Create virtual environment
         match config.virtual_env_type {
             VirtualEnvType::Venv => {
                 let python_cmd = if config.use_conda {
@@ -1780,13 +1779,13 @@ logs/
     fn get_install_command(&self, config: &UserConfig) -> String {
         let mut commands = Vec::new();
 
-        // 如果有Conda环境，先激活环境
+        // If there is a Conda environment, activate it first
         let has_conda = config
             .package_managers
             .iter()
             .any(|pm| matches!(pm, PackageManager::Conda { .. }));
         if has_conda {
-            commands.push("# 创建并激活Conda环境".to_string());
+            commands.push("# Create and activate Conda environment".to_string());
             for pm in &config.package_managers {
                 if let PackageManager::Conda {
                     environment_file, ..
@@ -1794,7 +1793,7 @@ logs/
                 {
                     commands.push(format!("conda env create -f {}", environment_file));
 
-                    // 修复：使用多步获取项目名称，避免临时值问题
+                    // Fix: Use multi-step to get project name, avoid temporary value problem
                     let canonical_path = Path::new(".").canonicalize().unwrap();
                     let file_name = canonical_path.file_name().unwrap();
                     let project_name = file_name.to_str().unwrap();
@@ -1803,14 +1802,14 @@ logs/
             }
         }
 
-        // 添加其他包管理器的安装命令
+        // Add installation commands for other package managers
         for package_manager in &config.package_managers {
             match package_manager {
                 PackageManager::Conda { .. } => {
-                    // 已经处理过了
+                    // Already handled
                 }
                 PackageManager::Poetry { .. } => {
-                    commands.push("# 安装Poetry依赖".to_string());
+                    commands.push("# Install Poetry dependencies".to_string());
                     if has_conda {
                         commands.push("poetry install --no-interaction".to_string());
                     } else {
@@ -1820,13 +1819,13 @@ logs/
                 PackageManager::Pip {
                     requirements_file, ..
                 } => {
-                    commands.push("# 安装pip依赖".to_string());
+                    commands.push("# Install pip dependencies".to_string());
                     commands.push(format!("pip install -r {}", requirements_file));
                 }
                 PackageManager::Uv {
                     requirements_file, ..
                 } => {
-                    commands.push("# 安装uv依赖".to_string());
+                    commands.push("# Install uv dependencies".to_string());
                     commands.push(format!("uv pip install -r {}", requirements_file));
                 }
             }
@@ -1838,13 +1837,13 @@ logs/
     fn get_dev_install_command(&self, config: &UserConfig) -> String {
         let mut commands = Vec::new();
 
-        // 如果有Conda环境，先激活环境
+        // If there is a Conda environment, activate it first
         let has_conda = config
             .package_managers
             .iter()
             .any(|pm| matches!(pm, PackageManager::Conda { .. }));
         if has_conda {
-            commands.push("# 创建并激活Conda开发环境".to_string());
+            commands.push("# Create and activate Conda development environment".to_string());
             for pm in &config.package_managers {
                 if let PackageManager::Conda {
                     dev_environment_file,
@@ -1853,7 +1852,7 @@ logs/
                 {
                     commands.push(format!("conda env create -f {}", dev_environment_file));
 
-                    // 修复：使用多步获取项目名称，避免临时值问题
+                    // Fix: Use multi-step to get project name, avoid temporary value problem
                     let canonical_path = Path::new(".").canonicalize().unwrap();
                     let file_name = canonical_path.file_name().unwrap();
                     let project_name = file_name.to_str().unwrap();
@@ -1862,14 +1861,14 @@ logs/
             }
         }
 
-        // 添加其他包管理器的开发依赖安装命令
+        // Add installation commands for other package managers
         for package_manager in &config.package_managers {
             match package_manager {
                 PackageManager::Conda { .. } => {
-                    // 已经处理过了
+                    // Already handled
                 }
                 PackageManager::Poetry { .. } => {
-                    commands.push("# 安装Poetry开发依赖".to_string());
+                    commands.push("# Install Poetry development dependencies".to_string());
                     if has_conda {
                         commands.push("poetry install --no-interaction --with dev".to_string());
                     } else {
@@ -1880,14 +1879,14 @@ logs/
                     dev_requirements_file,
                     ..
                 } => {
-                    commands.push("# 安装pip开发依赖".to_string());
+                    commands.push("# Install pip development dependencies".to_string());
                     commands.push(format!("pip install -r {}", dev_requirements_file));
                 }
                 PackageManager::Uv {
                     dev_requirements_file,
                     ..
                 } => {
-                    commands.push("# 安装uv开发依赖".to_string());
+                    commands.push("# Install uv development dependencies".to_string());
                     commands.push(format!("uv pip install -r {}", dev_requirements_file));
                 }
             }
@@ -1917,10 +1916,10 @@ logs/
     }
 
     fn create_r_project(&self, project_dir: &Path) -> Result<()> {
-        // 检查系统R可用性
+        // Check system R availability
         let system_r = self.check_system_r()?;
         let r_version = if system_r.is_some() {
-            // 如果系统已安装R语言，询问用户选择
+            // If system has R installed, ask user to choose
             println!("\n📦 R version selection:");
             println!("1. R 4.3.x (latest)");
             println!("2. R 4.2.x (stable)");
@@ -1948,7 +1947,7 @@ logs/
                 _ => system_r.as_ref().unwrap().clone(),
             }
         } else {
-            // 如果系统未安装R，提供版本选择
+            // If system doesn't have R, provide version selection
             println!("\n⚠️ R is not installed on this system or not found in PATH");
             println!("📦 Select R version to use:");
             println!("1. R 4.3.x (latest)");
@@ -1976,13 +1975,13 @@ logs/
             }
         };
         
-        // 检查版本匹配情况
+        // Check version mismatch
         let is_version_mismatch = match &system_r {
             Some(sys_ver) => !sys_ver.starts_with(&r_version),
             None => true,
         };
         
-        // 如果版本不匹配，提供解决方案
+        // If version mismatch, provide solutions
         if is_version_mismatch {
             println!("\n⚠️ Selected R version ({}) differs from system version or R is not installed", r_version);
             println!("The following solutions are available:");
@@ -2006,7 +2005,7 @@ logs/
             if cfg!(target_os = "macos") {
                 match input.trim() {
                     "2" => {
-                        // Homebrew选项 (仅macOS)
+                        // Homebrew option (macOS only)
                         let major_minor = r_version.split('.').take(2).collect::<Vec<&str>>().join(".");
                         println!("\n📋 To manage R versions with Homebrew:");
                         println!("# Install R {} with Homebrew", major_minor);
@@ -2019,7 +2018,7 @@ logs/
                         println!("source ~/.zshrc # or ~/.bashrc");
                     },
                     "3" => {
-                        // 提供rig安装说明
+                        // Provide rig installation instructions
                         println!("\n📋 To install rig (R Installation Manager):");
                         println!("brew install rig");
                         println!("\n📋 Then install R {}:", r_version);
@@ -2030,11 +2029,11 @@ logs/
                         println!("⚠️ Continuing with current setup. Be aware of potential compatibility issues.");
                     },
                     _ => {
-                        // 默认：创建.Rprofile并使用renv
+                        // Default: Create .Rprofile and use renv
                         println!("\n📋 To install R {}:", r_version);
                         println!("Visit: https://cran.r-project.org/bin/macosx/");
                         
-                        // 将创建增强的renv配置
+                        // Will create enhanced renv configuration
                         self.create_enhanced_renv_setup(project_dir, &r_version)?;
                         println!("✅ Created enhanced renv setup for version management");
                     }
@@ -2042,7 +2041,7 @@ logs/
             } else {
                 match input.trim() {
                     "2" => {
-                        // 提供rig安装说明
+                        // Provide rig installation instructions
                         println!("\n📋 To install rig (R Installation Manager):");
                         if cfg!(target_os = "linux") {
                             println!("curl -Ls https://github.com/r-lib/rig/releases/download/latest/rig-linux-latest.tar.gz | sudo tar xz -C /usr/local");
@@ -2057,7 +2056,7 @@ logs/
                         println!("⚠️ Continuing with current setup. Be aware of potential compatibility issues.");
                     },
                     _ => {
-                        // 默认：创建.Rprofile并使用renv
+                        // Default: Create .Rprofile and use renv
                         println!("\n📋 To install R {}:", r_version);
                         if cfg!(target_os = "linux") {
                             println!("Visit: https://cran.r-project.org/bin/linux/");
@@ -2065,7 +2064,7 @@ logs/
                             println!("Visit: https://cran.r-project.org/bin/windows/base/");
                         }
                         
-                        // 将创建增强的renv配置
+                        // Will create enhanced renv configuration
                         self.create_enhanced_renv_setup(project_dir, &r_version)?;
                         println!("✅ Created enhanced renv setup for version management");
                     }
@@ -2282,9 +2281,9 @@ data/**/*.rds
         Ok(())
     }
 
-    // 辅助函数：创建增强的renv设置
+    // Helper function: Create enhanced renv setup
     fn create_enhanced_renv_setup(&self, project_dir: &Path, r_version: &str) -> Result<()> {
-        // 创建.Rprofile文件，设置renv
+        // Create .Rprofile file to set up renv
         let rprofile_content = format!(r#"# .Rprofile for CRESP project
 # Automatically detect R version mismatch and configure renv
 
@@ -2320,7 +2319,7 @@ if (interactive()) {{
 "#, r_version);
         std::fs::write(project_dir.join(".Rprofile"), rprofile_content)?;
         
-        // 创建详细的renv安装指南
+        // Create detailed renv installation guide
         let renv_setup_content = format!(r#"# Setting up R Environment
 
 ## 1. R Version
@@ -2328,7 +2327,7 @@ This project targets R version {}. If you have a different version installed, co
 
 - Installing R {} from [CRAN](https://cran.r-project.org/)
 - Using [rig](https://github.com/r-lib/rig) to manage multiple R versions
-{}
+- {}
 ## 2. Package Management with renv
 
 This project uses `renv` for package management to ensure reproducibility.
@@ -2397,14 +2396,14 @@ If you encounter package compatibility issues:
         Ok(())
     }
 
-    // 检测系统R安装
+    // Check system R installation
     fn check_system_r(&self) -> Result<Option<String>> {
         let output = Command::new("R").arg("--version").output();
 
         match output {
             Ok(output) if output.status.success() => {
                 let version_output = String::from_utf8_lossy(&output.stdout);
-                // R通常会在第一行输出版本信息，例如 "R version 4.2.1 (2022-06-23) -- "Bird Hippie""
+                // R typically outputs version info in the first line, e.g. "R version 4.2.1 (2022-06-23) -- "Bird Hippie""
                 let version = version_output
                     .lines()
                     .next()
@@ -2485,7 +2484,7 @@ end
 end
 "#,
         )?;
-
+                        
         // Create analyzeResults.m helper function
         std::fs::write(
             project_dir.join("src/analyzeResults.m"),
@@ -2977,7 +2976,7 @@ data/**/*.xlsx
                 .collect::<String>()
                 .trim()
                 .to_string();
-        }
+    }
 
         // Get locale and timezone
         info.os.locale = Command::new("locale")
@@ -3036,7 +3035,7 @@ data/**/*.xlsx
             let packages = String::from_utf8_lossy(&packages);
 
             info.packages = packages
-                .lines()
+                    .lines()
                 .filter(|line| line.starts_with("ii"))
                 .map(|line| {
                     let parts: Vec<&str> = line.split_whitespace().collect();
@@ -3066,7 +3065,7 @@ data/**/*.xlsx
                 "python".to_string(),
                 String::from_utf8_lossy(&python_version.stdout)
                     .split_whitespace()
-                    .nth(1)
+                            .nth(1)
                     .unwrap_or("latest")
                     .to_string(),
             );
@@ -3190,7 +3189,7 @@ struct CpuInfo {
     cores: u32,
     threads: u32,
     frequency: String,
-}
+        }
 
 #[derive(Default)]
 struct MemoryInfo {
