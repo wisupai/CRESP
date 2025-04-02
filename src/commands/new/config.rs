@@ -1,0 +1,770 @@
+use std::io::{self};
+use std::process::Command;
+use crate::error::Result;
+use super::utils::{prompt_input, prompt_selection, prompt_confirmation};
+
+#[derive(Debug, Clone)]
+pub struct UserConfig {
+    pub package_managers: Vec<PackageManager>,
+    pub use_cuda: bool,
+    pub cuda_version: Option<String>,
+    pub cudnn_version: Option<String>,
+    pub python_version: String,
+    pub use_conda: bool,
+    pub virtual_env_type: VirtualEnvType,
+    pub pip_index_url: Option<String>,
+    pub pip_trusted_hosts: Option<Vec<String>>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum VirtualEnvType {
+    Venv,
+    Virtualenv,
+    Conda,
+    None,
+}
+
+#[derive(Debug, Clone)]
+pub enum CondaDistribution {
+    Miniconda,
+    Anaconda,
+    CondaForge,
+}
+
+#[derive(Clone, Debug)]
+pub enum PackageManager {
+    Conda {
+        channels: Vec<String>,
+        environment_file: String,
+        dev_environment_file: String,
+    },
+    Poetry {
+        pyproject_file: String,
+    },
+    Pip {
+        requirements_file: String,
+        dev_requirements_file: String,
+    },
+    Uv {
+        requirements_file: String,
+        dev_requirements_file: String,
+    },
+}
+
+impl Default for UserConfig {
+    fn default() -> Self {
+        UserConfig {
+            package_managers: Vec::new(),
+            use_cuda: false,
+            cuda_version: None,
+            cudnn_version: None,
+            python_version: "3.12".to_string(),
+            use_conda: false,
+            virtual_env_type: VirtualEnvType::None,
+            pip_index_url: None,
+            pip_trusted_hosts: None,
+        }
+    }
+}
+
+/// Check if system Python is available
+pub fn check_system_python() -> Result<Option<String>> {
+    let output = Command::new("python3").arg("--version").output();
+
+    match output {
+        Ok(output) if output.status.success() => {
+            let version_str = if !output.stdout.is_empty() {
+                String::from_utf8_lossy(&output.stdout)
+            } else {
+                String::from_utf8_lossy(&output.stderr)
+            };
+            
+            let version = version_str
+                .split_whitespace()
+                .nth(1)
+                .map(|s| s.to_string());
+            Ok(version)
+        }
+        _ => Ok(None),
+    }
+}
+
+/// Check if Conda is available
+pub fn check_conda_available() -> Result<bool> {
+    let output = Command::new("conda").arg("--version").output();
+    Ok(output.is_ok() && output.unwrap().status.success())
+}
+
+/// Check CUDA availability
+pub fn check_cuda_availability() -> Result<bool> {
+    // Check if nvidia-smi is available
+    if Command::new("nvidia-smi")
+        .arg("--query-gpu=gpu_name")
+        .output()
+        .is_err()
+    {
+        return Ok(false);
+    }
+
+    // Check if CUDA toolkit is installed
+    if Command::new("nvcc").arg("--version").output().is_err() {
+        return Ok(false);
+    }
+
+    // Check if CUDA libraries are available
+    if cfg!(target_os = "linux") && !std::path::Path::new("/usr/local/cuda").exists() {
+        return Ok(false);
+    }
+
+    Ok(true)
+}
+
+/// Check if UV is available
+pub fn check_uv_available() -> Result<bool> {
+    let output = Command::new("uv").arg("--version").output();
+    Ok(output.is_ok() && output.unwrap().status.success())
+}
+
+/// Install UV package manager based on operating system
+pub fn install_uv() -> Result<bool> {
+    println!("Attempting to install UV package manager...");
+    
+    if cfg!(target_os = "windows") {
+        let install_cmd = Command::new("powershell")
+            .args(["-ExecutionPolicy", "ByPass", "-c", "irm https://astral.sh/uv/install.ps1 | iex"])
+            .status();
+            
+        if let Ok(status) = install_cmd {
+            return Ok(status.success());
+        }
+    } else {
+        let install_cmd = Command::new("sh")
+            .arg("-c")
+            .arg("curl -LsSf https://astral.sh/uv/install.sh | sh")
+            .status();
+            
+        if let Ok(status) = install_cmd {
+            return Ok(status.success());
+        }
+    }
+    
+    Ok(false)
+}
+
+/// Check if Poetry is available
+pub fn check_poetry_available() -> Result<bool> {
+    let output = Command::new("poetry").arg("--version").output();
+    Ok(output.is_ok() && output.unwrap().status.success())
+}
+
+/// Install Poetry package manager
+pub fn install_poetry() -> Result<bool> {
+    println!("Attempting to install Poetry package manager...");
+    
+    let installer_cmd = if cfg!(target_os = "windows") {
+        Command::new("powershell")
+            .arg("-Command")
+            .arg("(Invoke-WebRequest -Uri https://install.python-poetry.org -UseBasicParsing).Content | py -")
+            .status()
+    } else {
+        Command::new("sh")
+            .arg("-c")
+            .arg("curl -sSL https://install.python-poetry.org | python3 -")
+            .status()
+    };
+    
+    if let Ok(status) = installer_cmd {
+        return Ok(status.success());
+    }
+    
+    Ok(false)
+}
+
+/// Get Python project configuration through interactive prompts
+pub fn get_python_config() -> Result<UserConfig> {
+    let mut config = UserConfig::default();
+
+    // Check system Python availability and Conda availability
+    let system_python = check_system_python()?;
+    let conda_available = check_conda_available()?;
+
+    // 1. Select Python version
+    println!("\n📦 Python version selection:");
+    let mut python_options = vec![
+        "Python 3.12 (latest, recommended)",
+        "Python 3.11 (stable)",
+        "Python 3.10 (stable)",
+        "Python 3.9 (stable)",
+        "Custom version (e.g., 3.13, 3.14)",
+    ];
+    
+    // Add system Python option if available
+    let system_python_option;
+    if let Some(ver) = &system_python {
+        system_python_option = format!("Use system Python (version {})", ver);
+        python_options.push(&system_python_option[..]);
+    }
+    
+    let selection = prompt_selection("Select Python version:", &python_options, Some(0))?;
+
+    // Adjust selection index based on whether system Python is present
+    let base_selection = if system_python.is_some() && selection == 5 { 5 } else { selection };
+
+    // Set the selected Python version
+    config.python_version = match base_selection {
+        1 => "3.11".to_string(),
+        2 => "3.10".to_string(),
+        3 => "3.9".to_string(),
+        4 => {
+            // Custom version
+            let version = prompt_input("Enter Python version (e.g., 3.13):", None)?;
+            if version.matches('.').count() == 1
+                && version.split('.').all(|n| n.parse::<u32>().is_ok())
+            {
+                version
+            } else {
+                "3.12".to_string() // Default value
+            }
+        }
+        5 => system_python.clone().unwrap(),
+        _ => "3.12".to_string(),
+    };
+
+    // 2. Determine environment management method
+    println!("\n🔧 Environment management:");
+
+    // Check if selected Python version is available on system
+    let system_has_selected_version = if let Some(sys_version) = &system_python {
+        sys_version.starts_with(&config.python_version)
+    } else {
+        false
+    };
+
+    if system_has_selected_version {
+        // System has selected version, provide all options
+        let env_options = if conda_available {
+            &["Use Conda (recommended for scientific computing)", "Use virtual environment", "Use system Python directly"]
+        } else {
+            &["Install and use Conda (recommended for scientific computing)", "Use virtual environment", "Use system Python directly"]
+        };
+        
+        let selection = prompt_selection("Choose environment management method:", env_options, Some(0))?;
+        
+        if selection == 2 {
+            // Use system Python directly
+            config.use_conda = false;
+            config.virtual_env_type = VirtualEnvType::None;
+        } else {
+            config.use_conda = selection == 0;
+            if config.use_conda {
+                config.virtual_env_type = VirtualEnvType::Conda;
+                setup_conda_environment(&mut config, conda_available)?;
+            } else {
+                setup_virtualenv(&mut config)?;
+            }
+        }
+    } else {
+        // System doesn't have selected version, only provide Conda option
+        let python_version_option = format!("Use Conda to install Python {} (recommended)", config.python_version);
+        let env_options = vec![
+            &python_version_option[..],
+            "Cancel and select a different Python version",
+        ];
+        
+        let selection = prompt_selection("Choose environment management method:", &env_options, Some(0))?;
+        
+        if selection == 0 {
+            config.use_conda = true;
+            config.virtual_env_type = VirtualEnvType::Conda;
+            setup_conda_environment(&mut config, conda_available)?;
+        } else {
+            // Re-select Python version
+            return get_python_config();
+        }
+    }
+
+    // 3. Ask about package management (whether using conda or not)
+    println!("\n📦 Python package management:");
+    let mut pkg_options = vec![
+        "Poetry (recommended for modern Python projects)",
+        "uv (recommended for fast dependency resolution)",
+        "pip (traditional, recommended for simple projects)",
+    ];
+    
+    if config.use_conda {
+        pkg_options.push("Only use conda for package management (no additional Python package manager)");
+    }
+    
+    let selection = prompt_selection("Select package management tool:", &pkg_options, Some(0))?;
+
+    // If using conda but choosing other package managers, keep conda and add other package managers
+    if !config.use_conda || selection != 3 {
+        match selection {
+            1 => {
+                // Check if UV is installed
+                let uv_available = check_uv_available()?;
+                if !uv_available {
+                    println!("\n⚠️ UV package manager not found on your system.");
+                    
+                    // Offer to install UV automatically
+                    let install_now = prompt_confirmation("Would you like to install UV now?", true)?;
+                    
+                    if install_now {
+                        let install_success = install_uv()?;
+                        
+                        if install_success {
+                            println!("✅ UV was successfully installed!");
+                        } else {
+                            println!("❌ Failed to install UV automatically.");
+                            println!("To install UV manually, run the following command:");
+                            if cfg!(target_os = "windows") {
+                                println!("powershell -ExecutionPolicy ByPass -c \"irm https://astral.sh/uv/install.ps1 | iex\"");
+                            } else {
+                                println!("curl -LsSf https://astral.sh/uv/install.sh | sh");
+                            }
+                            
+                            let proceed_without_uv = prompt_confirmation("Continue without UV? (You'll need to install it later)", true)?;
+                            if !proceed_without_uv {
+                                return get_python_config(); // Restart the configuration process
+                            }
+                        }
+                    } else {
+                        // User chose not to install now
+                        let proceed_without_uv = prompt_confirmation("Continue without UV? (You'll need to install it later)", true)?;
+                        if !proceed_without_uv {
+                            return get_python_config(); // Restart the configuration process
+                        }
+                    }
+                }
+                
+                config.package_managers.push(PackageManager::Uv {
+                    requirements_file: "requirements.txt".to_string(),
+                    dev_requirements_file: "requirements-dev.txt".to_string(),
+                });
+            }
+            2 => {
+                config.package_managers.push(PackageManager::Pip {
+                    requirements_file: "requirements.txt".to_string(),
+                    dev_requirements_file: "requirements-dev.txt".to_string(),
+                });
+            }
+            _ => {
+                // Check if Poetry is installed
+                let poetry_available = check_poetry_available()?;
+                if !poetry_available {
+                    println!("\n⚠️ Poetry package manager not found on your system.");
+                    
+                    // Offer to install Poetry automatically
+                    let install_now = prompt_confirmation("Would you like to install Poetry now?", true)?;
+                    
+                    if install_now {
+                        let install_success = install_poetry()?;
+                        
+                        if install_success {
+                            println!("✅ Poetry was successfully installed!");
+                        } else {
+                            println!("❌ Failed to install Poetry automatically.");
+                            println!("To install Poetry manually, run the following command:");
+                            if cfg!(target_os = "windows") {
+                                println!("(Invoke-WebRequest -Uri https://install.python-poetry.org -UseBasicParsing).Content | py -");
+                            } else {
+                                println!("curl -sSL https://install.python-poetry.org | python3 -");
+                            }
+                            
+                            let proceed_without_poetry = prompt_confirmation("Continue without Poetry? (You'll need to install it later)", true)?;
+                            if !proceed_without_poetry {
+                                return get_python_config(); // Restart the configuration process
+                            }
+                        }
+                    } else {
+                        // User chose not to install now
+                        let proceed_without_poetry = prompt_confirmation("Continue without Poetry? (You'll need to install it later)", true)?;
+                        if !proceed_without_poetry {
+                            return get_python_config(); // Restart the configuration process
+                        }
+                    }
+                }
+                
+                config.package_managers.push(PackageManager::Poetry {
+                    pyproject_file: "pyproject.toml".to_string(),
+                });
+            }
+        }
+    }
+
+    // 4. Choose package source for pip/uv/poetry (if any of these managers are selected)
+    if !config
+        .package_managers
+        .iter()
+        .all(|pm| matches!(pm, PackageManager::Conda { .. }))
+    {
+        println!("\n📦 Package Index Configuration:");
+        let index_options = &[
+            "PyPI (default)",
+            "Tsinghua Mirror (faster in China)",
+            "Aliyun Mirror (faster in China)",
+            "Custom index URL",
+        ];
+        
+        let selection = prompt_selection("Select package index:", index_options, Some(0))?;
+
+        match selection {
+            1 => {
+                config.pip_index_url =
+                    Some("https://pypi.tuna.tsinghua.edu.cn/simple".to_string());
+                config.pip_trusted_hosts = Some(vec!["pypi.tuna.tsinghua.edu.cn".to_string()]);
+            }
+            2 => {
+                config.pip_index_url =
+                    Some("https://mirrors.aliyun.com/pypi/simple".to_string());
+                config.pip_trusted_hosts = Some(vec!["mirrors.aliyun.com".to_string()]);
+            }
+            3 => {
+                let index_url = prompt_input("Enter custom index URL:", None)?;
+
+                // Extract host from URL
+                let host = index_url
+                    .replace("http://", "")
+                    .replace("https://", "")
+                    .split('/')
+                    .next()
+                    .unwrap_or("")
+                    .to_string();
+
+                config.pip_index_url = Some(index_url);
+                if !host.is_empty() {
+                    config.pip_trusted_hosts = Some(vec![host]);
+                }
+            }
+            _ => {
+                config.pip_index_url = None;
+                config.pip_trusted_hosts = None;
+            }
+        }
+    }
+
+    // 5. Check CUDA availability
+    let cuda_available = check_cuda_availability()?;
+    if cuda_available {
+        let use_cuda = prompt_confirmation("Enable CUDA support?", true)?;
+        if use_cuda {
+            config.use_cuda = true;
+            config.cuda_version = Some("11.8".to_string());
+            config.cudnn_version = Some("8.9".to_string());
+        }
+    }
+
+    // 6. Display configuration summary
+    println!("\n📋 Configuration Summary:");
+    println!("Python Version: {}", config.python_version);
+    println!(
+        "Environment Management: {}",
+        if config.use_conda {
+            "Conda"
+        } else {
+            "System Python"
+        }
+    );
+    println!(
+        "Virtual Environment: {}",
+        match config.virtual_env_type {
+            VirtualEnvType::Venv => "venv",
+            VirtualEnvType::Virtualenv => "virtualenv",
+            VirtualEnvType::Conda => "Conda",
+            VirtualEnvType::None => "None",
+        }
+    );
+    println!("Package Managers:");
+    for pm in &config.package_managers {
+        match pm {
+            PackageManager::Conda { channels, .. } => {
+                println!("  - Conda (channels: {})", channels.join(", "));
+            }
+            PackageManager::Poetry { .. } => println!("  - Poetry"),
+            PackageManager::Uv { .. } => println!("  - uv"),
+            PackageManager::Pip { .. } => println!("  - pip"),
+        }
+    }
+    if config.use_cuda {
+        println!(
+            "CUDA Support: Yes (CUDA {}, cuDNN {})",
+            config.cuda_version.as_ref().unwrap(),
+            config.cudnn_version.as_ref().unwrap()
+        );
+    }
+
+    // 7. Ask if continuing with installation
+    let proceed = prompt_confirmation("\n🚀 Proceed with installation?", true)?;
+    if !proceed {
+        return Err(io::Error::new(io::ErrorKind::Other, "Installation cancelled by user").into());
+    }
+
+    Ok(config)
+}
+
+/// Setup Conda environment
+fn setup_conda_environment(config: &mut UserConfig, conda_available: bool) -> Result<()> {
+    if !conda_available {
+        println!("\n🔧 Conda is not installed. Would you like to install it now?");
+        let conda_options = &[
+            "Install Miniconda (minimal installation)",
+            "Install Anaconda (full installation)",
+            "Install Conda-forge",
+        ];
+        
+        let selection = prompt_selection("Select Conda distribution:", conda_options, Some(0))?;
+
+        let distribution = match selection {
+            1 => CondaDistribution::Anaconda,
+            2 => CondaDistribution::CondaForge,
+            _ => CondaDistribution::Miniconda,
+        };
+        
+        install_conda(distribution)?;
+    }
+
+    // Ask for Conda channel selection
+    println!("\n📦 Conda channel selection:");
+    println!("You can select multiple channels. Conda will search packages in the order specified.");
+    let channel_options = &[
+        "conda-forge (recommended general channel)",
+        "defaults (Anaconda default channel)",
+        "bioconda (for bioinformatics packages)",
+        "pytorch (for PyTorch and related packages)",
+        "nvidia (for CUDA and GPU acceleration)",
+        "r (for R programming language packages)",
+        "Add custom channel",
+    ];
+    
+    println!("Select channels (enter numbers separated by commas, e.g., '1,3,5'):");
+    for (i, option) in channel_options.iter().enumerate() {
+        println!("{}. {}", i + 1, option);
+    }
+
+    let mut selected_channels: Vec<String> = Vec::new();
+    loop {
+        let input = prompt_input("> ", None)?;
+        
+        let trimmed = input.trim();
+        if trimmed.to_lowercase() == "done" || trimmed.is_empty() {
+            // If no channels selected, add conda-forge by default
+            if selected_channels.is_empty() {
+                selected_channels.push("conda-forge".to_string());
+                println!("No channels selected, using conda-forge as default.");
+            }
+            break;
+        }
+
+        // Parse selected channel numbers
+        for choice in trimmed.split(',') {
+            let choice = choice.trim();
+            if let Ok(num) = choice.parse::<usize>() {
+                match num {
+                    1 => {
+                        if !selected_channels.contains(&"conda-forge".to_string()) {
+                            selected_channels.push("conda-forge".to_string());
+                            println!("Added conda-forge channel");
+                        }
+                    }
+                    2 => {
+                        if !selected_channels.contains(&"defaults".to_string()) {
+                            selected_channels.push("defaults".to_string());
+                            println!("Added defaults channel");
+                        }
+                    }
+                    3 => {
+                        if !selected_channels.contains(&"bioconda".to_string()) {
+                            selected_channels.push("bioconda".to_string());
+                            println!("Added bioconda channel");
+                        }
+                    }
+                    4 => {
+                        if !selected_channels.contains(&"pytorch".to_string()) {
+                            selected_channels.push("pytorch".to_string());
+                            println!("Added pytorch channel");
+                        }
+                    }
+                    5 => {
+                        if !selected_channels.contains(&"nvidia".to_string()) {
+                            selected_channels.push("nvidia".to_string());
+                            println!("Added nvidia channel");
+                        }
+                    }
+                    6 => {
+                        if !selected_channels.contains(&"r".to_string()) {
+                            selected_channels.push("r".to_string());
+                            println!("Added r channel");
+                        }
+                    }
+                    7 => {
+                        let custom_channel = prompt_input("Enter custom channel name:", None)?;
+                        if !custom_channel.is_empty()
+                            && !selected_channels.contains(&custom_channel)
+                        {
+                            selected_channels.push(custom_channel.clone());
+                            println!("Added custom channel: {}", custom_channel);
+                        }
+                    }
+                    _ => println!("Invalid choice: {}", choice),
+                }
+            } else {
+                println!("Invalid input: {}", choice);
+            }
+        }
+
+        println!(
+            "Currently selected channels: {}",
+            selected_channels.join(", ")
+        );
+        println!("Enter more channel numbers or type 'done' to finish selection");
+    }
+
+    config.package_managers.push(PackageManager::Conda {
+        channels: selected_channels,
+        environment_file: "environment.yml".to_string(),
+        dev_environment_file: "environment-dev.yml".to_string(),
+    });
+    
+    Ok(())
+}
+
+/// Setup virtual environment
+fn setup_virtualenv(config: &mut UserConfig) -> Result<()> {
+    // Choose virtual environment type
+    println!("\n🔧 Virtual environment type:");
+    let venv_options = &["venv (recommended, built-in)", "virtualenv (third-party)"];
+    
+    let selection = prompt_selection("Select virtual environment type:", venv_options, Some(0))?;
+
+    config.virtual_env_type = match selection {
+        1 => VirtualEnvType::Virtualenv,
+        _ => VirtualEnvType::Venv,
+    };
+    
+    Ok(())
+}
+
+/// Install Conda
+pub fn install_conda(distribution: CondaDistribution) -> Result<()> {
+    let (install_script, base_url) = match distribution {
+        CondaDistribution::Miniconda => {
+            let script = if cfg!(target_os = "linux") {
+                "Miniconda3-latest-Linux-x86_64.sh"
+            } else if cfg!(target_os = "macos") {
+                if cfg!(target_arch = "aarch64") {
+                    "Miniconda3-latest-MacOSX-arm64.sh"
+                } else {
+                    "Miniconda3-latest-MacOSX-x86_64.sh"
+                }
+            } else {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::Other,
+                    "Unsupported operating system",
+                )
+                .into());
+            };
+            (script, "https://repo.anaconda.com/miniconda/")
+        }
+        CondaDistribution::Anaconda => {
+            let script = if cfg!(target_os = "linux") {
+                "Anaconda3-latest-Linux-x86_64.sh"
+            } else if cfg!(target_os = "macos") {
+                if cfg!(target_arch = "aarch64") {
+                    "Anaconda3-latest-MacOSX-arm64.sh"
+                } else {
+                    "Anaconda3-latest-MacOSX-x86_64.sh"
+                }
+            } else {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::Other,
+                    "Unsupported operating system",
+                )
+                .into());
+            };
+            (script, "https://repo.anaconda.com/archive/")
+        }
+        CondaDistribution::CondaForge => {
+            let script = if cfg!(target_os = "linux") {
+                "Miniforge3-Linux-x86_64.sh"
+            } else if cfg!(target_os = "macos") {
+                if cfg!(target_arch = "aarch64") {
+                    "Miniforge3-MacOSX-arm64.sh"
+                } else {
+                    "Miniforge3-MacOSX-x86_64.sh"
+                }
+            } else {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::Other,
+                    "Unsupported operating system",
+                )
+                .into());
+            };
+            (
+                script,
+                "https://github.com/conda-forge/miniforge/releases/latest/download/",
+            )
+        }
+    };
+
+    // Download installation script
+    Command::new("curl")
+        .arg("-O")
+        .arg(format!("{}{}", base_url, install_script))
+        .status()?;
+
+    // Run installation script
+    Command::new("bash")
+        .arg(install_script)
+        .arg("-b")
+        .arg("-p")
+        .arg(format!("{}/.conda", std::env::var("HOME").unwrap()))
+        .status()?;
+
+    // Delete installation script
+    std::fs::remove_file(install_script)?;
+
+    // Initialize conda
+    Command::new("conda").arg("init").status()?;
+
+    // If conda-forge, set default channel
+    if let CondaDistribution::CondaForge = distribution {
+        Command::new("conda")
+            .arg("config")
+            .arg("--add")
+            .arg("channels")
+            .arg("conda-forge")
+            .arg("--set")
+            .status()?;
+    }
+
+    Ok(())
+}
+
+/// Check system R installation
+pub fn check_system_r() -> Result<Option<String>> {
+    let output = Command::new("R").arg("--version").output();
+
+    match output {
+        Ok(output) if output.status.success() => {
+            let version_output = String::from_utf8_lossy(&output.stdout);
+            // R typically outputs version info in the first line, e.g. "R version 4.2.1 (2022-06-23) -- "Bird Hippie""
+            let version = version_output
+                .lines()
+                .next()
+                .and_then(|line| {
+                    line.split("R version ")
+                        .nth(1)
+                        .and_then(|v| v.split(' ').next())
+                        .map(|s| s.to_string())
+                });
+            Ok(version)
+        }
+        _ => Ok(None),
+    }
+}
+
+/// Check if rig is available
+pub fn check_rig_available() -> Result<bool> {
+    let output = Command::new("rig").arg("--version").output();
+    Ok(output.is_ok() && output.unwrap().status.success())
+} 
