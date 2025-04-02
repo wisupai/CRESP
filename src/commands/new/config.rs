@@ -897,3 +897,67 @@ pub fn check_rig_available() -> Result<bool> {
     let output = Command::new("rig").arg("--version").output();
     Ok(output.is_ok() && output.unwrap().status.success())
 }
+
+/// Check system MATLAB installation
+pub fn check_matlab_available() -> Result<Option<String>> {
+    // Try running matlab -batch version command
+    let output = Command::new("matlab").arg("-batch").arg("version").output();
+
+    match output {
+        Ok(output) if output.status.success() => {
+            let version_output = String::from_utf8_lossy(&output.stdout);
+            // Parse the MATLAB version string
+            // Version typically appears in format like "R2023a"
+            // We can extract it by scanning for the pattern "R20xx"
+            let version = version_output
+                .lines()
+                .find_map(|line| {
+                    if line.contains("R20") {
+                        line.split_whitespace()
+                            .find(|word| word.starts_with("R20"))
+                            .map(|s| s.to_string())
+                    } else {
+                        None
+                    }
+                })
+                .or_else(|| {
+                    // Alternative method: just get the last word
+                    version_output
+                        .split_whitespace()
+                        .last()
+                        .map(|s| s.to_string())
+                });
+
+            Ok(version)
+        }
+        _ => {
+            // Try alternative command for detecting MATLAB
+            // On some systems, matlab -n might provide version info
+            let alt_output = Command::new("matlab").arg("-n").output();
+
+            match alt_output {
+                Ok(output) if output.status.success() => {
+                    let version_output = String::from_utf8_lossy(&output.stdout);
+                    // Try to extract the version
+                    let version = version_output.lines().find_map(|line| {
+                        if line.contains("R20") {
+                            line.split_whitespace()
+                                .find(|word| word.starts_with("R20"))
+                                .map(|s| s.to_string())
+                        } else {
+                            None
+                        }
+                    });
+
+                    Ok(version)
+                }
+                _ => Ok(None),
+            }
+        }
+    }
+}
+
+/// Get MATLAB version details
+pub fn get_matlab_version() -> Result<Option<String>> {
+    check_matlab_available()
+}
