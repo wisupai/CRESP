@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - MATLAB project creation support
 - Enhanced CLI user interface with Dialoguer and Console
 - Interactive select menus, confirmations, and styled output
+- MATLAB version detection and configuration functions
 
 ### Changed
 - Improved R project creation with better rig package manager handling
@@ -24,6 +25,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Enhanced installation process for UV to auto-source environment files
 - Added detailed UV installation path information and performance hints
 - Improved MATLAB installation process with comprehensive official MathWorks guidelines for different license types and platforms
+- Enhanced project description prompt with skip option
+- Improved code formatting and error messages in R template
 
 ### Fixed
 - Fixed auto-activation of UV in current terminal session after installation
