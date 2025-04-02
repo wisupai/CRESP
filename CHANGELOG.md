@@ -16,6 +16,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Enhanced CLI user interface with Dialoguer and Console
 - Interactive select menus, confirmations, and styled output
 - MATLAB version detection and configuration functions
+- Automated MATLAB installer download and execution with credential handling
+- Platform-specific MATLAB installation assistance (DMG mounting, EXE execution, ZIP extraction)
 
 ### Changed
 - Improved R project creation with better rig package manager handling
@@ -27,11 +29,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Improved MATLAB installation process with comprehensive official MathWorks guidelines for different license types and platforms
 - Enhanced project description prompt with skip option
 - Improved code formatting and error messages in R template
+- Automated MATLAB installation process with direct credential input and installer execution
+- Enhanced MATLAB installation process with automatic script execution and cleanup
+- Improved security handling for MATLAB installation credentials
 
 ### Fixed
 - Fixed auto-activation of UV in current terminal session after installation
 - Fixed UV installation sequence to provide clearer user instructions 
 - Fixed formatting error in command generation for UV installation
+- Fixed MATLAB installer download script to handle platform-specific installers
 
 ### Removed
 - None

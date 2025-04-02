@@ -974,6 +974,155 @@ fn setup_matlab_environment() -> Result<String> {
                 cli_ui::display_info("1. A valid MathWorks account with license/entitlement");
                 cli_ui::display_info("2. Your account credentials");
 
+                // Ask for credentials
+                let username = cli_ui::prompt_input("Enter your MathWorks email:", None::<String>)?;
+                let password = cli_ui::prompt_password("Enter your MathWorks password:", false)?;
+
+                if username.is_empty() || password.is_empty() {
+                    cli_ui::display_warning("Credentials not provided. Falling back to manual script creation.");
+                } else {
+                    cli_ui::display_info("Creating and executing download script with your credentials...");
+                    
+                    let script_path = if cfg!(target_os = "windows") {
+                        "download_matlab.ps1"
+                    } else {
+                        "download_matlab.sh"
+                    };
+
+                    let script_content = if cfg!(target_os = "windows") {
+                        format!(r#"# Auto-generated MATLAB download script
+$USERNAME = "{}"
+$PASSWORD = "{}"
+$RELEASE = "R2023b"
+
+# Create session and login
+$session = New-Object Microsoft.PowerShell.Commands.WebRequestSession
+$loginPage = Invoke-WebRequest -Uri "https://www.mathworks.com/login" -WebSession $session
+$token = ($loginPage.Content | Select-String -Pattern "token=([^\"]*)" -AllMatches).Matches.Groups[1].Value
+Invoke-WebRequest -Uri "https://www.mathworks.com/login" -Method POST -WebSession $session -Body @{{username=$USERNAME; password=$PASSWORD; token=$token}}
+
+# Download installer
+Invoke-WebRequest -Uri "https://www.mathworks.com/downloads/web_downloads/${{RELEASE}}?release=${{RELEASE}}" -OutFile "matlab_installer.exe" -WebSession $session
+"#, username, password)
+                    } else {
+                        format!(r#"#!/bin/bash
+# Auto-generated MATLAB download script
+USERNAME="{}"
+PASSWORD="{}"
+RELEASE="R2023b"
+
+# Login and get session cookies
+curl -s -c cookies.txt -o login.html https://www.mathworks.com/login
+TOKEN=$(grep -o "token=[^\"]*" login.html | cut -d= -f2)
+curl -s -b cookies.txt -c cookies.txt -d "username=$USERNAME&password=$PASSWORD&token=$TOKEN" https://www.mathworks.com/login
+
+# Download installer
+if [[ "$OSTYPE" == "darwin"* ]]; then
+    curl -L -b cookies.txt -o matlab_installer.dmg "https://www.mathworks.com/downloads/web_downloads/${{RELEASE}}?release=${{RELEASE}}"
+else
+    curl -L -b cookies.txt -o matlab_installer.zip "https://www.mathworks.com/downloads/web_downloads/${{RELEASE}}?release=${{RELEASE}}"
+fi
+
+# Cleanup
+rm -f cookies.txt login.html
+"#, username, password)
+                    };
+
+                    // Write and execute script
+                    std::fs::write(script_path, script_content)?;
+                    
+                    if !cfg!(target_os = "windows") {
+                        let _ = Command::new("chmod").args(["+x", script_path]).status();
+                    }
+
+                    cli_ui::display_info("Executing download script...");
+                    
+                    let status = if cfg!(target_os = "windows") {
+                        Command::new("powershell")
+                            .arg("-ExecutionPolicy")
+                            .arg("Bypass")
+                            .arg("-File")
+                            .arg(script_path)
+                            .status()
+                    } else {
+                        Command::new("./")
+                            .arg(script_path)
+                            .status()
+                    };
+
+                    // Clean up the script file
+                    let _ = std::fs::remove_file(script_path);
+
+                    match status {
+                        Ok(exit_status) if exit_status.success() => {
+                            cli_ui::display_success("Successfully downloaded MATLAB installer!");
+                            
+                            // Provide next steps based on platform
+                            if cfg!(target_os = "macos") {
+                                cli_ui::display_info("\nNext steps:");
+                                cli_ui::display_info("1. Open the downloaded matlab_installer.dmg");
+                                cli_ui::display_info("2. Run the installer application");
+                                cli_ui::display_info("3. Sign in with your MathWorks account");
+                                cli_ui::display_info("4. Follow the installation prompts");
+                                
+                                // Offer to mount the DMG
+                                let mount_dmg = cli_ui::prompt_confirm("Would you like to mount the installer now?", true)?;
+                                if mount_dmg {
+                                    let _ = Command::new("open").arg("matlab_installer.dmg").status();
+                                }
+                            } else if cfg!(target_os = "windows") {
+                                cli_ui::display_info("\nNext steps:");
+                                cli_ui::display_info("1. Run matlab_installer.exe");
+                                cli_ui::display_info("2. Sign in with your MathWorks account");
+                                cli_ui::display_info("3. Follow the installation prompts");
+                                
+                                // Offer to run the installer
+                                let run_installer = cli_ui::prompt_confirm("Would you like to run the installer now?", true)?;
+                                if run_installer {
+                                    let _ = Command::new("cmd")
+                                        .args(["/c", "start", "matlab_installer.exe"])
+                                        .status();
+                                }
+                            } else {
+                                cli_ui::display_info("\nNext steps:");
+                                cli_ui::display_info("1. Extract matlab_installer.zip");
+                                cli_ui::display_info("2. Navigate to the extracted directory");
+                                cli_ui::display_info("3. Run ./install");
+                                cli_ui::display_info("4. Sign in with your MathWorks account");
+                                cli_ui::display_info("5. Follow the installation prompts");
+                                
+                                // Offer to extract and start installation
+                                let extract = cli_ui::prompt_confirm("Would you like to extract and start the installation now?", true)?;
+                                if extract {
+                                    cli_ui::display_info("Extracting installer...");
+                                    let _ = Command::new("unzip")
+                                        .arg("matlab_installer.zip")
+                                        .status();
+                                    
+                                    // Find the install script
+                                    if let Ok(entries) = std::fs::read_dir(".") {
+                                        for entry in entries {
+                                            if let Ok(entry) = entry {
+                                                if entry.path().is_dir() && entry.path().to_string_lossy().contains("matlab") {
+                                                    cli_ui::display_info("Starting installer...");
+                                                    let _ = Command::new("./install")
+                                                        .current_dir(entry.path())
+                                                        .status();
+                                                    break;
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        },
+                        _ => {
+                            cli_ui::display_error("Failed to download MATLAB installer.");
+                            cli_ui::display_info("You can try downloading manually from https://www.mathworks.com/downloads/");
+                        }
+                    }
+                }
+
                 // Provide direct download information based on platform
                 if cfg!(target_os = "macos") {
                     cli_ui::display_info(
@@ -1093,25 +1242,25 @@ fn setup_matlab_environment() -> Result<String> {
                     };
 
                     let script_content = if cfg!(target_os = "windows") {
-                        r#"# Replace with your credentials
-$USERNAME = "your_mathworks_email@example.com"
-$PASSWORD = "your_mathworks_password"
+                        format!(r#"# Auto-generated MATLAB download script
+$USERNAME = "{}"
+$PASSWORD = "{}"
 $RELEASE = "R2023b"
 
 # Create session and login
 $session = New-Object Microsoft.PowerShell.Commands.WebRequestSession
 $loginPage = Invoke-WebRequest -Uri "https://www.mathworks.com/login" -WebSession $session
 $token = ($loginPage.Content | Select-String -Pattern "token=([^\"]*)" -AllMatches).Matches.Groups[1].Value
-Invoke-WebRequest -Uri "https://www.mathworks.com/login" -Method POST -WebSession $session -Body @{username=$USERNAME; password=$PASSWORD; token=$token}
+Invoke-WebRequest -Uri "https://www.mathworks.com/login" -Method POST -WebSession $session -Body @{{username=$USERNAME; password=$PASSWORD; token=$token}}
 
 # Download installer
-Invoke-WebRequest -Uri "https://www.mathworks.com/downloads/web_downloads/${RELEASE}?release=${RELEASE}" -OutFile "matlab_installer.exe" -WebSession $session
-"#
+Invoke-WebRequest -Uri "https://www.mathworks.com/downloads/web_downloads/${{RELEASE}}?release=${{RELEASE}}" -OutFile "matlab_installer.exe" -WebSession $session
+"#, username, password)
                     } else {
-                        r#"#!/bin/bash
-# Replace with your credentials
-USERNAME="your_mathworks_email@example.com"
-PASSWORD="your_mathworks_password"
+                        format!(r#"#!/bin/bash
+# Auto-generated MATLAB download script
+USERNAME="{}"
+PASSWORD="{}"
 RELEASE="R2023b"
 
 # Login and get session cookies
@@ -1120,8 +1269,15 @@ TOKEN=$(grep -o "token=[^\"]*" login.html | cut -d= -f2)
 curl -s -b cookies.txt -c cookies.txt -d "username=$USERNAME&password=$PASSWORD&token=$TOKEN" https://www.mathworks.com/login
 
 # Download installer
-curl -L -b cookies.txt -o matlab_installer.zip "https://www.mathworks.com/downloads/web_downloads/${RELEASE}?release=${RELEASE}"
-"#
+if [[ "$OSTYPE" == "darwin"* ]]; then
+    curl -L -b cookies.txt -o matlab_installer.dmg "https://www.mathworks.com/downloads/web_downloads/${{RELEASE}}?release=${{RELEASE}}"
+else
+    curl -L -b cookies.txt -o matlab_installer.zip "https://www.mathworks.com/downloads/web_downloads/${{RELEASE}}?release=${{RELEASE}}"
+fi
+
+# Cleanup
+rm -f cookies.txt login.html
+"#, username, password)
                     };
 
                     std::fs::write(script_path, script_content)?;
@@ -1130,13 +1286,93 @@ curl -L -b cookies.txt -o matlab_installer.zip "https://www.mathworks.com/downlo
                         let _ = Command::new("chmod").args(["+x", script_path]).status();
                     }
 
-                    cli_ui::display_success(&format!(
-                        "Download script created at: {}",
-                        script_path
-                    ));
-                    cli_ui::display_info(
-                        "Edit the script to add your credentials before running it.",
-                    );
+                    cli_ui::display_info("Created download script, executing now...");
+                    
+                    // Execute the script
+                    let status = if cfg!(target_os = "windows") {
+                        Command::new("powershell")
+                            .arg("-ExecutionPolicy")
+                            .arg("Bypass")
+                            .arg("-File")
+                            .arg(script_path)
+                            .status()
+                    } else {
+                        Command::new("./")
+                            .arg(script_path)
+                            .status()
+                    };
+
+                    // Clean up the script file
+                    let _ = std::fs::remove_file(script_path);
+
+                    match status {
+                        Ok(exit_status) if exit_status.success() => {
+                            cli_ui::display_success("Successfully downloaded MATLAB installer!");
+                            
+                            // Provide next steps based on platform
+                            if cfg!(target_os = "macos") {
+                                cli_ui::display_info("\nNext steps:");
+                                cli_ui::display_info("1. Open the downloaded matlab_installer.dmg");
+                                cli_ui::display_info("2. Run the installer application");
+                                cli_ui::display_info("3. Sign in with your MathWorks account");
+                                cli_ui::display_info("4. Follow the installation prompts");
+                                
+                                // Offer to mount the DMG
+                                let mount_dmg = cli_ui::prompt_confirm("Would you like to mount the installer now?", true)?;
+                                if mount_dmg {
+                                    let _ = Command::new("open").arg("matlab_installer.dmg").status();
+                                }
+                            } else if cfg!(target_os = "windows") {
+                                cli_ui::display_info("\nNext steps:");
+                                cli_ui::display_info("1. Run matlab_installer.exe");
+                                cli_ui::display_info("2. Sign in with your MathWorks account");
+                                cli_ui::display_info("3. Follow the installation prompts");
+                                
+                                // Offer to run the installer
+                                let run_installer = cli_ui::prompt_confirm("Would you like to run the installer now?", true)?;
+                                if run_installer {
+                                    let _ = Command::new("cmd")
+                                        .args(["/c", "start", "matlab_installer.exe"])
+                                        .status();
+                                }
+                            } else {
+                                cli_ui::display_info("\nNext steps:");
+                                cli_ui::display_info("1. Extract matlab_installer.zip");
+                                cli_ui::display_info("2. Navigate to the extracted directory");
+                                cli_ui::display_info("3. Run ./install");
+                                cli_ui::display_info("4. Sign in with your MathWorks account");
+                                cli_ui::display_info("5. Follow the installation prompts");
+                                
+                                // Offer to extract and start installation
+                                let extract = cli_ui::prompt_confirm("Would you like to extract and start the installation now?", true)?;
+                                if extract {
+                                    cli_ui::display_info("Extracting installer...");
+                                    let _ = Command::new("unzip")
+                                        .arg("matlab_installer.zip")
+                                        .status();
+                                    
+                                    // Find the install script
+                                    if let Ok(entries) = std::fs::read_dir(".") {
+                                        for entry in entries {
+                                            if let Ok(entry) = entry {
+                                                if entry.path().is_dir() && entry.path().to_string_lossy().contains("matlab") {
+                                                    cli_ui::display_info("Starting installer...");
+                                                    let _ = Command::new("./install")
+                                                        .current_dir(entry.path())
+                                                        .status();
+                                                    break;
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        },
+                        _ => {
+                            cli_ui::display_error("Failed to download MATLAB installer.");
+                            cli_ui::display_info("You can try downloading manually from https://www.mathworks.com/downloads/");
+                        }
+                    }
                 }
             } else {
                 cli_ui::display_info("You need a MathWorks account to download MATLAB.");
