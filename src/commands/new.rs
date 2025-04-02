@@ -1915,6 +1915,12 @@ logs/
         commands.join(" && ")
     }
 
+    // Check if rig is installed
+    fn check_rig_available(&self) -> Result<bool> {
+        let output = Command::new("rig").arg("--version").output();
+        Ok(output.is_ok() && output.unwrap().status.success())
+    }
+
     fn create_r_project(&self, project_dir: &Path) -> Result<()> {
         // Check system R availability
         let system_r = self.check_system_r()?;
@@ -2018,10 +2024,55 @@ logs/
                         println!("source ~/.zshrc # or ~/.bashrc");
                     },
                     "3" => {
+                        // Check if rig is installed
+                        if !self.check_rig_available()? {
+                            println!("\n⚠️ rig is not installed. Would you like to install it now?");
+                            println!("1. Yes, install rig");
+                            println!("2. No, use alternative method");
+                            print!("Choice (1-2) [1]: ");
+                            io::stdout().flush()?;
+                            let mut install_input = String::new();
+                            io::stdin().read_line(&mut install_input)?;
+                            
+                            if install_input.trim() == "1" {
+                                println!("\n📋 Installing rig...");
+                                if cfg!(target_os = "macos") {
+                                    let output = Command::new("brew").arg("install").arg("rig").output()?;
+                                    if !output.status.success() {
+                                        println!("⚠️ Failed to install rig. Please try installing manually:");
+                                        println!("brew install rig");
+                                        println!("\nFalling back to renv setup...");
+                                        self.create_enhanced_renv_setup(project_dir, &r_version)?;
+                                        return Ok(());
+                                    }
+                                } else if cfg!(target_os = "linux") {
+                                    let output = Command::new("curl")
+                                        .arg("-Ls")
+                                        .arg("https://github.com/r-lib/rig/releases/download/latest/rig-linux-latest.tar.gz")
+                                        .arg("|")
+                                        .arg("sudo")
+                                        .arg("tar")
+                                        .arg("xz")
+                                        .arg("-C")
+                                        .arg("/usr/local")
+                                        .output()?;
+                                    if !output.status.success() {
+                                        println!("⚠️ Failed to install rig. Please try installing manually:");
+                                        println!("curl -Ls https://github.com/r-lib/rig/releases/download/latest/rig-linux-latest.tar.gz | sudo tar xz -C /usr/local");
+                                        println!("\nFalling back to renv setup...");
+                                        self.create_enhanced_renv_setup(project_dir, &r_version)?;
+                                        return Ok(());
+                                    }
+                                }
+                            } else {
+                                println!("\nFalling back to renv setup...");
+                                self.create_enhanced_renv_setup(project_dir, &r_version)?;
+                                return Ok(());
+                            }
+                        }
+                        
                         // Provide rig installation instructions
-                        println!("\n📋 To install rig (R Installation Manager):");
-                        println!("brew install rig");
-                        println!("\n📋 Then install R {}:", r_version);
+                        println!("\n📋 To install R {}:", r_version);
                         println!("rig add {}", r_version);
                         println!("rig default {}", r_version);
                     },
@@ -2041,14 +2092,46 @@ logs/
             } else {
                 match input.trim() {
                     "2" => {
-                        // Provide rig installation instructions
-                        println!("\n📋 To install rig (R Installation Manager):");
-                        if cfg!(target_os = "linux") {
-                            println!("curl -Ls https://github.com/r-lib/rig/releases/download/latest/rig-linux-latest.tar.gz | sudo tar xz -C /usr/local");
-                        } else {
-                            println!("Visit: https://github.com/r-lib/rig");
+                        // Check if rig is installed
+                        if !self.check_rig_available()? {
+                            println!("\n⚠️ rig is not installed. Would you like to install it now?");
+                            println!("1. Yes, install rig");
+                            println!("2. No, use alternative method");
+                            print!("Choice (1-2) [1]: ");
+                            io::stdout().flush()?;
+                            let mut install_input = String::new();
+                            io::stdin().read_line(&mut install_input)?;
+                            
+                            if install_input.trim() == "1" {
+                                println!("\n📋 Installing rig...");
+                                if cfg!(target_os = "linux") {
+                                    let output = Command::new("curl")
+                                        .arg("-Ls")
+                                        .arg("https://github.com/r-lib/rig/releases/download/latest/rig-linux-latest.tar.gz")
+                                        .arg("|")
+                                        .arg("sudo")
+                                        .arg("tar")
+                                        .arg("xz")
+                                        .arg("-C")
+                                        .arg("/usr/local")
+                                        .output()?;
+                                    if !output.status.success() {
+                                        println!("⚠️ Failed to install rig. Please try installing manually:");
+                                        println!("curl -Ls https://github.com/r-lib/rig/releases/download/latest/rig-linux-latest.tar.gz | sudo tar xz -C /usr/local");
+                                        println!("\nFalling back to renv setup...");
+                                        self.create_enhanced_renv_setup(project_dir, &r_version)?;
+                                        return Ok(());
+                                    }
+                                }
+                            } else {
+                                println!("\nFalling back to renv setup...");
+                                self.create_enhanced_renv_setup(project_dir, &r_version)?;
+                                return Ok(());
+                            }
                         }
-                        println!("\n📋 Then install R {}:", r_version);
+                        
+                        // Provide rig installation instructions
+                        println!("\n📋 To install R {}:", r_version);
                         println!("rig add {}", r_version);
                         println!("rig default {}", r_version);
                     },
