@@ -1917,8 +1917,164 @@ logs/
     }
 
     fn create_r_project(&self, project_dir: &Path) -> Result<()> {
+        // 检查系统R可用性
+        let system_r = self.check_system_r()?;
+        let r_version = if system_r.is_some() {
+            // 如果系统已安装R语言，询问用户选择
+            println!("\n📦 R version selection:");
+            println!("1. R 4.3.x (latest)");
+            println!("2. R 4.2.x (stable)");
+            println!("3. R 4.1.x");
+            println!("4. R 4.0.x");
+            println!("5. Custom version");
+            println!("6. Use system R (version {})", system_r.as_ref().unwrap());
+            print!("Choice (1-6) [6]: ");
+            io::stdout().flush()?;
+            let mut input = String::new();
+            io::stdin().read_line(&mut input)?;
+            
+            match input.trim() {
+                "1" => "4.3".to_string(),
+                "2" => "4.2".to_string(),
+                "3" => "4.1".to_string(),
+                "4" => "4.0".to_string(),
+                "5" => {
+                    print!("Enter R version (e.g., 4.2.2): ");
+                    io::stdout().flush()?;
+                    let mut custom_version = String::new();
+                    io::stdin().read_line(&mut custom_version)?;
+                    custom_version.trim().to_string()
+                },
+                _ => system_r.as_ref().unwrap().clone(),
+            }
+        } else {
+            // 如果系统未安装R，提供版本选择
+            println!("\n⚠️ R is not installed on this system or not found in PATH");
+            println!("📦 Select R version to use:");
+            println!("1. R 4.3.x (latest)");
+            println!("2. R 4.2.x (stable)");
+            println!("3. R 4.1.x");
+            println!("4. R 4.0.x");
+            println!("5. Custom version");
+            print!("Choice (1-5) [1]: ");
+            io::stdout().flush()?;
+            let mut input = String::new();
+            io::stdin().read_line(&mut input)?;
+            
+            match input.trim() {
+                "2" => "4.2".to_string(),
+                "3" => "4.1".to_string(),
+                "4" => "4.0".to_string(),
+                "5" => {
+                    print!("Enter R version (e.g., 4.2.2): ");
+                    io::stdout().flush()?;
+                    let mut custom_version = String::new();
+                    io::stdin().read_line(&mut custom_version)?;
+                    custom_version.trim().to_string()
+                },
+                _ => "4.3".to_string(),
+            }
+        };
+        
+        // 检查版本匹配情况
+        let is_version_mismatch = match &system_r {
+            Some(sys_ver) => !sys_ver.starts_with(&r_version),
+            None => true,
+        };
+        
+        // 如果版本不匹配，提供解决方案
+        if is_version_mismatch {
+            println!("\n⚠️ Selected R version ({}) differs from system version or R is not installed", r_version);
+            println!("The following solutions are available:");
+            println!("1. Install R {} and use renv for package management", r_version);
+            
+            if cfg!(target_os = "macos") {
+                println!("2. Use Homebrew to manage R versions (macOS)");
+                println!("3. Use rig (R Installation Manager) to manage multiple R versions");
+                println!("4. Continue with current setup (may cause compatibility issues)");
+                print!("Choice (1-4) [1]: ");
+            } else {
+                println!("2. Use rig (R Installation Manager) to manage multiple R versions");
+                println!("3. Continue with current setup (may cause compatibility issues)");
+                print!("Choice (1-3) [1]: ");
+            }
+            
+            io::stdout().flush()?;
+            let mut input = String::new();
+            io::stdin().read_line(&mut input)?;
+            
+            if cfg!(target_os = "macos") {
+                match input.trim() {
+                    "2" => {
+                        // Homebrew选项 (仅macOS)
+                        let major_minor = r_version.split('.').take(2).collect::<Vec<&str>>().join(".");
+                        println!("\n📋 To manage R versions with Homebrew:");
+                        println!("# Install R {} with Homebrew", major_minor);
+                        println!("brew install r@{}", major_minor);
+                        println!("\n# Switch between versions");
+                        println!("brew unlink r");
+                        println!("brew link r@{} --force", major_minor);
+                        println!("\n# Set R_HOME environment variable");
+                        println!("echo 'export R_HOME=$(brew --prefix r@{})' >> ~/.zshrc # or ~/.bashrc", major_minor);
+                        println!("source ~/.zshrc # or ~/.bashrc");
+                    },
+                    "3" => {
+                        // 提供rig安装说明
+                        println!("\n📋 To install rig (R Installation Manager):");
+                        println!("brew install rig");
+                        println!("\n📋 Then install R {}:", r_version);
+                        println!("rig add {}", r_version);
+                        println!("rig default {}", r_version);
+                    },
+                    "4" => {
+                        println!("⚠️ Continuing with current setup. Be aware of potential compatibility issues.");
+                    },
+                    _ => {
+                        // 默认：创建.Rprofile并使用renv
+                        println!("\n📋 To install R {}:", r_version);
+                        println!("Visit: https://cran.r-project.org/bin/macosx/");
+                        
+                        // 将创建增强的renv配置
+                        self.create_enhanced_renv_setup(project_dir, &r_version)?;
+                        println!("✅ Created enhanced renv setup for version management");
+                    }
+                }
+            } else {
+                match input.trim() {
+                    "2" => {
+                        // 提供rig安装说明
+                        println!("\n📋 To install rig (R Installation Manager):");
+                        if cfg!(target_os = "linux") {
+                            println!("curl -Ls https://github.com/r-lib/rig/releases/download/latest/rig-linux-latest.tar.gz | sudo tar xz -C /usr/local");
+                        } else {
+                            println!("Visit: https://github.com/r-lib/rig");
+                        }
+                        println!("\n📋 Then install R {}:", r_version);
+                        println!("rig add {}", r_version);
+                        println!("rig default {}", r_version);
+                    },
+                    "3" => {
+                        println!("⚠️ Continuing with current setup. Be aware of potential compatibility issues.");
+                    },
+                    _ => {
+                        // 默认：创建.Rprofile并使用renv
+                        println!("\n📋 To install R {}:", r_version);
+                        if cfg!(target_os = "linux") {
+                            println!("Visit: https://cran.r-project.org/bin/linux/");
+                        } else {
+                            println!("Visit: https://cran.r-project.org/bin/windows/base/");
+                        }
+                        
+                        // 将创建增强的renv配置
+                        self.create_enhanced_renv_setup(project_dir, &r_version)?;
+                        println!("✅ Created enhanced renv setup for version management");
+                    }
+                }
+            }
+        }
+
         // Create DESCRIPTION
-        let description = r#"Package: myresearch
+        let description = format!(r#"Package: myresearch
 Title: My Research Project
 Version: 0.1.0
 Authors@R: 
@@ -1931,7 +2087,12 @@ RoxygenNote: 7.2.3
 Imports: 
     renv,
     testthat
-"#;
+Suggests:
+    knitr,
+    rmarkdown
+RdMacros: lifecycle
+Config/testthat/edition: 3
+"#);
 
         std::fs::write(project_dir.join("DESCRIPTION"), description)?;
 
@@ -1986,12 +2147,16 @@ test_check("myresearch")
 "#,
         )?;
 
-        // Create README.md
+        // Create README.md with version information
         std::fs::write(
             project_dir.join("README.md"),
-            r#"# My Research Project
+            format!(r#"# My Research Project
 
 This is a research project using CRESP protocol.
+
+## R Version
+
+This project uses R {} for development.
 
 ## Project Structure
 
@@ -2001,27 +2166,30 @@ This is a research project using CRESP protocol.
 ├── data/           # Data directory
 ├── output/         # Output directory
 ├── tests/          # Tests directory
-└── DESCRIPTION     # Package metadata
+├── DESCRIPTION     # Package metadata
+└── renv.lock       # Package dependency lock file
 ```
 
 ## Setup
 
-1. Install renv:
+1. Install R {} if not already installed.
+
+2. Install renv:
 ```r
 install.packages("renv")
 ```
 
-2. Initialize renv:
+3. Initialize renv:
 ```r
 renv::init()
 ```
 
-3. Install dependencies:
+4. Install dependencies:
 ```r
 renv::restore()
 ```
 
-4. Run the project:
+5. Run the project:
 ```r
 source("R/main.R")
 ```
@@ -2034,7 +2202,7 @@ testthat::test_package("myresearch")
 # or
 devtools::test()
 ```
-"#,
+"#, r_version, r_version),
         )?;
 
         // Create .Rbuildignore
@@ -2083,7 +2251,173 @@ data/**/*.rds
 "#,
         )?;
 
+        // Create renv.lock template
+        let renv_lock = format!(r#"{{
+  "R": {{
+    "Version": "{}",
+    "Repositories": [
+      {{
+        "Name": "CRAN",
+        "URL": "https://cloud.r-project.org"
+      }}
+    ]
+  }},
+  "Packages": {{
+    "renv": {{
+      "Package": "renv",
+      "Version": "1.0.2",
+      "Source": "Repository",
+      "Repository": "CRAN"
+    }},
+    "testthat": {{
+      "Package": "testthat",
+      "Version": "3.1.10",
+      "Source": "Repository",
+      "Repository": "CRAN"
+    }}
+  }}
+}}"#, r_version);
+        std::fs::write(project_dir.join("renv.lock"), renv_lock)?;
+
         Ok(())
+    }
+
+    // 辅助函数：创建增强的renv设置
+    fn create_enhanced_renv_setup(&self, project_dir: &Path, r_version: &str) -> Result<()> {
+        // 创建.Rprofile文件，设置renv
+        let rprofile_content = format!(r#"# .Rprofile for CRESP project
+# Automatically detect R version mismatch and configure renv
+
+# Store information about target R version
+target_r_version <- "{}"
+
+# Check R version
+current_r_version <- paste0(R.version$major, ".", strsplit(R.version$minor, "\\.")[[1]][1])
+
+message("Current R version: ", R.version$version.string)
+message("Target R version: ", target_r_version)
+
+if (current_r_version != target_r_version) {{
+  warning(
+    "\\nR version mismatch. Project targets R ", target_r_version,
+    " but you're running R ", current_r_version, ".\n",
+    "This may cause compatibility issues.\n",
+    "Consider switching to R ", target_r_version, " or updating your renv.lock file.\n"
+  )
+}}
+
+# Setup renv
+if (interactive()) {{
+  suppressMessages(require(renv, quietly = TRUE))
+  if (requireNamespace("renv", quietly = TRUE)) {{
+    renv::activate()
+  }} else {{
+    message("Installing renv...")
+    install.packages("renv")
+    renv::activate()
+  }}
+}}
+"#, r_version);
+        std::fs::write(project_dir.join(".Rprofile"), rprofile_content)?;
+        
+        // 创建详细的renv安装指南
+        let renv_setup_content = format!(r#"# Setting up R Environment
+
+## 1. R Version
+This project targets R version {}. If you have a different version installed, consider:
+
+- Installing R {} from [CRAN](https://cran.r-project.org/)
+- Using [rig](https://github.com/r-lib/rig) to manage multiple R versions
+{}
+## 2. Package Management with renv
+
+This project uses `renv` for package management to ensure reproducibility.
+
+### 2.1 Initial Setup
+
+When opening the project for the first time, R will automatically activate renv.
+If it doesn't, run:
+
+```r
+install.packages("renv")
+renv::activate()
+renv::restore()
+```
+
+### 2.2 Installing/Adding New Packages
+
+When adding new packages to the project, use:
+
+```r
+# Install and record in lockfile
+renv::install("packagename")
+
+# After adding packages, update the lockfile
+renv::snapshot()
+```
+
+### 2.3 Updating Packages
+
+To update packages:
+
+```r
+# Update specific packages
+renv::update("packagename")
+
+# Update all packages
+renv::update()
+```
+
+## 3. Sharing the Project
+
+When sharing the project, the recipient should simply run:
+
+```r
+# Restore the exact environment
+renv::restore()
+```
+
+## 4. Troubleshooting
+
+If you encounter package compatibility issues:
+
+1. Check R version matches target ({})
+2. Try reinstalling problematic packages: `renv::install("packagename", force = TRUE)`
+3. Update renv itself: `install.packages("renv")`
+4. Consult the [renv documentation](https://rstudio.github.io/renv/)
+"#, r_version, r_version, 
+        if cfg!(target_os = "macos") {
+            "- Using Homebrew to manage R versions on macOS: `brew install r@x.y`\n"
+        } else {
+            ""
+        }, r_version);
+        std::fs::create_dir_all(project_dir.join("docs"))?;
+        std::fs::write(project_dir.join("docs/renv-setup.md"), renv_setup_content)?;
+        
+        Ok(())
+    }
+
+    // 检测系统R安装
+    fn check_system_r(&self) -> Result<Option<String>> {
+        let output = Command::new("R").arg("--version").output();
+
+        match output {
+            Ok(output) if output.status.success() => {
+                let version_output = String::from_utf8_lossy(&output.stdout);
+                // R通常会在第一行输出版本信息，例如 "R version 4.2.1 (2022-06-23) -- "Bird Hippie""
+                let version = version_output
+                    .lines()
+                    .next()
+                    .and_then(|line| {
+                        line.split("R version ")
+                            .nth(1)
+                            .and_then(|v| v.split(' ').next())
+                            .map(|s| s.to_string())
+                    });
+                Ok(version)
+            }
+            _ => Ok(None),
+        }
     }
 
     fn create_matlab_project(&self, project_dir: &Path) -> Result<()> {
