@@ -237,7 +237,7 @@ fn setup_r_environment(system_r: Option<String>, rig_available: bool) -> Result<
     cli_ui::display_header("R Configuration", "📊");
     
     // Default R version
-    let default_version = "4.3.2";
+    let default_version = "4.3.2".to_string();
     
     if let Some(ver) = &system_r {
         cli_ui::display_info(&format!("Detected installed R version: {}", ver));
@@ -270,7 +270,7 @@ fn setup_r_environment(system_r: Option<String>, rig_available: bool) -> Result<
             // Custom version
             cli_ui::prompt_input("Enter R version (e.g., 4.4.0):", Some(default_version))?
         },
-        _ => default_version.to_string(),
+        _ => default_version,
     };
     
     // Check if the selected version is installed
