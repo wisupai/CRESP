@@ -8,11 +8,11 @@ use super::super::config::{check_system_r, check_rig_available};
 /// Create R project with the specified configuration
 pub fn create_r_project(project_dir: &Path) -> Result<()> {
     // Check system R availability
-    let system_r = check_system_r()?;
+    let (system_r, r_info) = get_r_info()?;
     let rig_available = check_rig_available()?;
     
     // Setup R environment
-    let r_version = setup_r_environment(system_r, rig_available)?;
+    let r_version = setup_r_environment(system_r, r_info, rig_available)?;
     
     cli_ui::display_info("Creating R project structure...");
     // Create basic R project structure
@@ -232,8 +232,158 @@ test_check("myresearch")
     Ok(())
 }
 
+/// Get detailed information about installed R
+fn get_r_info() -> Result<(Option<String>, Option<RInfo>)> {
+    // Check basic R version
+    let system_r = check_system_r()?;
+    
+    if system_r.is_none() {
+        return Ok((None, None));
+    }
+    
+    // Try to get more detailed information
+    let version = system_r.as_ref().unwrap().clone();
+    
+    // Get R executable path
+    let r_path = get_r_path()?;
+    
+    // Determine installation method
+    let install_method = if let Some(path) = &r_path {
+        determine_install_method(path)
+    } else {
+        "Unknown".to_string()
+    };
+    
+    // Get R arch if possible
+    let r_arch = get_r_arch(&version, &r_path)?;
+    
+    Ok((system_r, Some(RInfo {
+        version,
+        path: r_path,
+        install_method,
+        arch: r_arch,
+    })))
+}
+
+/// Struct to hold detailed R information
+#[derive(Debug, Clone)]
+struct RInfo {
+    version: String,
+    path: Option<String>,
+    install_method: String,
+    arch: String,
+}
+
+/// Get R executable path
+fn get_r_path() -> Result<Option<String>> {
+    let cmd = if cfg!(target_os = "windows") {
+        Command::new("where").arg("R.exe").output()
+    } else {
+        Command::new("which").arg("R").output()
+    };
+    
+    match cmd {
+        Ok(output) if output.status.success() => {
+            let path = String::from_utf8_lossy(&output.stdout)
+                .trim()
+                .to_string();
+            if !path.is_empty() {
+                Ok(Some(path))
+            } else {
+                Ok(None)
+            }
+        },
+        _ => Ok(None),
+    }
+}
+
+/// Determine how R was installed based on its path
+fn determine_install_method(path: &str) -> String {
+    if cfg!(target_os = "macos") {
+        if path.contains("/usr/local/bin") {
+            // Could be Homebrew
+            if std::path::Path::new("/usr/local/Cellar/r").exists() || 
+               std::path::Path::new("/opt/homebrew/Cellar/r").exists() {
+                return "Homebrew".to_string();
+            }
+        }
+        
+        if path.contains("/Library/Frameworks/R.framework") {
+            return "Official installer".to_string();
+        }
+        
+        if path.contains(".rig/") || path.contains("/.r/") {
+            return "rig (R Installation Manager)".to_string();
+        }
+    } else if cfg!(target_os = "windows") {
+        if path.contains("\\Program Files\\R\\") {
+            return "Official installer".to_string();
+        }
+    } else {
+        // Linux
+        if path.contains("/usr/bin") {
+            if std::path::Path::new("/etc/debian_version").exists() {
+                return "apt (Debian/Ubuntu package)".to_string();
+            }
+            if std::path::Path::new("/etc/fedora-release").exists() {
+                return "dnf (Fedora package)".to_string();
+            }
+            if std::path::Path::new("/etc/arch-release").exists() {
+                return "pacman (Arch Linux package)".to_string();
+            }
+            return "System package manager".to_string();
+        }
+        
+        if path.contains("/.rig/") || path.contains("/.r/") {
+            return "rig (R Installation Manager)".to_string();
+        }
+    }
+    
+    "Unknown source".to_string()
+}
+
+/// Get R architecture
+fn get_r_arch(_version: &str, _path: &Option<String>) -> Result<String> {
+    // Try to run R --version to get architecture info
+    let output = Command::new("R").arg("--version").output();
+    
+    match output {
+        Ok(output) if output.status.success() => {
+            let version_str = String::from_utf8_lossy(&output.stdout);
+            
+            // Check for architecture information
+            if version_str.contains("x86_64") {
+                Ok("x86_64 (64-bit)".to_string())
+            } else if version_str.contains("i386") || version_str.contains("i686") {
+                Ok("i386/i686 (32-bit)".to_string())
+            } else if version_str.contains("aarch64") || version_str.contains("arm64") {
+                Ok("ARM64".to_string())
+            } else {
+                // Default to platform-specific architecture
+                if cfg!(target_arch = "x86_64") {
+                    Ok("x86_64 (64-bit)".to_string())
+                } else if cfg!(target_arch = "aarch64") {
+                    Ok("ARM64".to_string())
+                } else {
+                    Ok("Unknown".to_string())
+                }
+            }
+        },
+        _ => {
+            // Fallback to platform-specific architecture
+            if cfg!(target_arch = "x86_64") {
+                Ok("x86_64 (64-bit)".to_string())
+            } else if cfg!(target_arch = "aarch64") {
+                Ok("ARM64".to_string())
+            } else {
+                Ok("Unknown".to_string())
+            }
+        }
+    }
+}
+
 /// Setup R environment by checking existing installation and selecting version
-fn setup_r_environment(system_r: Option<String>, rig_available: bool) -> Result<String> {
+fn setup_r_environment(system_r: Option<String>, r_info: Option<RInfo>, rig_available: bool) -> Result<String> {
     cli_ui::display_header("R Configuration", "📊");
     
     // Default R version
@@ -241,6 +391,15 @@ fn setup_r_environment(system_r: Option<String>, rig_available: bool) -> Result<
     
     if let Some(ver) = &system_r {
         cli_ui::display_info(&format!("Detected installed R version: {}", ver));
+        
+        // Display additional R information if available
+        if let Some(info) = &r_info {
+            if let Some(path) = &info.path {
+                cli_ui::display_info(&format!("R location: {}", path));
+            }
+            cli_ui::display_info(&format!("Installation method: {}", info.install_method));
+            cli_ui::display_info(&format!("Architecture: {}", info.arch));
+        }
         
         // Ask if user wants to use the detected version
         let use_detected = cli_ui::prompt_confirm(&format!("Use detected R version {}?", ver), true)?;
@@ -297,6 +456,14 @@ fn setup_r_environment(system_r: Option<String>, rig_available: bool) -> Result<
             0 => {
                 cli_ui::display_info("Please download R from: https://cloud.r-project.org/bin/windows/base/");
                 cli_ui::display_info("Run the installer and follow the instructions.");
+                
+                // Wait for user to confirm installation
+                let installed = cli_ui::prompt_confirm("Have you installed R? Press 'y' when installation is complete.", true)?;
+                
+                if installed {
+                    // Verify installation
+                    verify_r_installation()?;
+                }
             }
             _ => cli_ui::display_info("You can install R later using the instructions in the README."),
         }
@@ -326,6 +493,9 @@ fn setup_r_environment(system_r: Option<String>, rig_available: bool) -> Result<
                 if let Ok(status) = status {
                     if status.success() {
                         cli_ui::display_success(&format!("Successfully installed R {}", selected_version));
+                        
+                        // Verify and get installation info
+                        verify_r_installation()?;
                     } else {
                         cli_ui::display_error(&format!("Failed to install R {}", selected_version));
                     }
@@ -334,49 +504,96 @@ fn setup_r_environment(system_r: Option<String>, rig_available: bool) -> Result<
                 }
             },
             i if (rig_available && i == 1) || (!rig_available && i == 0) => {
-                cli_ui::display_info("Installing R using Homebrew...");
-                cli_ui::display_info("Running: brew install --cask r");
+                // Check if Homebrew is installed
+                let brew_check = Command::new("brew").arg("--version").output();
                 
-                let status = Command::new("brew")
-                    .arg("install")
-                    .arg("--cask")
-                    .arg("r")
-                    .status();
-                    
-                if let Ok(status) = status {
-                    if status.success() {
-                        cli_ui::display_success("Successfully installed R using Homebrew");
-                    } else {
-                        cli_ui::display_error("Failed to install R using Homebrew");
-                    }
+                if brew_check.is_err() || !brew_check.unwrap().status.success() {
+                    cli_ui::display_error("Homebrew not found. Please install Homebrew first:");
+                    cli_ui::display_info("/bin/bash -c \"$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)\"");
+                    cli_ui::display_info("After installing Homebrew, try again.");
                 } else {
-                    cli_ui::display_error("Failed to run Homebrew command");
+                    cli_ui::display_info("Installing R using Homebrew...");
+                    cli_ui::display_info("Running: brew install --cask r");
+                    
+                    let status = Command::new("brew")
+                        .arg("install")
+                        .arg("--cask")
+                        .arg("r")
+                        .status();
+                        
+                    if let Ok(status) = status {
+                        if status.success() {
+                            cli_ui::display_success("Successfully installed R using Homebrew");
+                            
+                            // Verify and get installation info
+                            verify_r_installation()?;
+                        } else {
+                            cli_ui::display_error("Failed to install R using Homebrew");
+                        }
+                    } else {
+                        cli_ui::display_error("Failed to run Homebrew command");
+                    }
                 }
             },
             i if (rig_available && i == 2) || (!rig_available && i == 1) => {
                 cli_ui::display_info("Please download R from: https://cloud.r-project.org/bin/macosx/");
+                
+                // Check platform architecture to recommend the right version
+                if cfg!(target_arch = "aarch64") {
+                    cli_ui::display_info("Since you're on Apple Silicon (M1/M2), download the arm64 version.");
+                } else {
+                    cli_ui::display_info("Since you're on Intel Mac, download the x86_64 version.");
+                }
+                
                 cli_ui::display_info("Run the installer and follow the instructions.");
+                
+                // Wait for user to confirm installation
+                let installed = cli_ui::prompt_confirm("Have you installed R? Press 'y' when installation is complete.", true)?;
+                
+                if installed {
+                    // Verify installation
+                    verify_r_installation()?;
+                }
             },
             _ => cli_ui::display_info("You can install R later using the instructions in the README."),
         }
     } else {
         // Linux-specific installation options
-        let mut install_options = vec![
-            "Using apt (Ubuntu/Debian)",
-            "Using dnf (Fedora/RHEL/CentOS)",
-            "Using pacman (Arch Linux)",
-            "Manual installation (other distributions)",
-            "I'll install it later"
-        ];
+        let mut install_options = vec![];
+        
+        // Add distribution-specific options based on detection
+        if is_debian_based() {
+            install_options.push("Using apt (Ubuntu/Debian)");
+        }
+        
+        if is_fedora_based() {
+            install_options.push("Using dnf (Fedora/RHEL/CentOS)");
+        }
+        
+        if is_arch_based() {
+            install_options.push("Using pacman (Arch Linux)");
+        }
+        
+        if install_options.is_empty() {
+            // General options for unknown Linux distributions
+            install_options.push("Using system package manager");
+        }
         
         if rig_available {
             install_options.insert(0, "Using rig (R Installation Manager)");
         }
         
+        // Add general options
+        install_options.push("Manual installation");
+        install_options.push("I'll install it later");
+        
         let install_selection = cli_ui::prompt_select("How would you like to install R?", &install_options)?;
         
-        match install_selection {
-            0 if rig_available => {
+        if install_selection < install_options.len() - 2 {
+            // Selected a specific installation method
+            let selected_option = install_options[install_selection];
+            
+            if selected_option.contains("rig") && rig_available {
                 cli_ui::display_info(&format!("Installing R {} using rig...", selected_version));
                 
                 let status = Command::new("rig")
@@ -387,42 +604,170 @@ fn setup_r_environment(system_r: Option<String>, rig_available: bool) -> Result<
                 if let Ok(status) = status {
                     if status.success() {
                         cli_ui::display_success(&format!("Successfully installed R {}", selected_version));
+                        
+                        // Verify installation
+                        verify_r_installation()?;
                     } else {
                         cli_ui::display_error(&format!("Failed to install R {}", selected_version));
                     }
                 } else {
                     cli_ui::display_error("Failed to run rig command");
                 }
-            },
-            i if (rig_available && i == 1) || (!rig_available && i == 0) => {
+            } else if selected_option.contains("apt") {
                 cli_ui::display_info("Installing R using apt...");
                 cli_ui::display_warning("This will require sudo privileges. You may be prompted for your password.");
                 
-                cli_ui::display_info("Please follow these commands to install R:");
-                cli_ui::display_info("
-sudo apt update
-sudo apt install --no-install-recommends software-properties-common dirmngr
-wget -qO- https://cloud.r-project.org/bin/linux/ubuntu/marutter_pubkey.asc | sudo tee -a /etc/apt/trusted.gpg.d/cran_ubuntu_key.asc
-sudo add-apt-repository \"deb https://cloud.r-project.org/bin/linux/ubuntu $(lsb_release -cs)-cran40/\"
-sudo apt update
-sudo apt install r-base r-base-dev
-                ");
-            },
-            i if (rig_available && i == 2) || (!rig_available && i == 1) => {
+                // Check for sudo access
+                let sudo_check = Command::new("sudo").arg("-n").arg("true").status();
+                let has_sudo = sudo_check.is_ok() && sudo_check.unwrap().success();
+                
+                if !has_sudo {
+                    cli_ui::display_warning("You might not have sudo access or sudo requires a password.");
+                }
+                
+                let install_commands = [
+                    "sudo apt update",
+                    "sudo apt install --no-install-recommends software-properties-common dirmngr",
+                    "wget -qO- https://cloud.r-project.org/bin/linux/ubuntu/marutter_pubkey.asc | sudo tee -a /etc/apt/trusted.gpg.d/cran_ubuntu_key.asc",
+                    "sudo add-apt-repository \"deb https://cloud.r-project.org/bin/linux/ubuntu $(lsb_release -cs)-cran40/\"",
+                    "sudo apt update",
+                    "sudo apt install -y r-base r-base-dev"
+                ];
+                
+                cli_ui::display_info("Please execute these commands in your terminal:");
+                for cmd in &install_commands {
+                    cli_ui::display_info(cmd);
+                }
+                
+                let proceed = cli_ui::prompt_confirm("Do you want to execute these commands now?", true)?;
+                
+                if proceed {
+                    for cmd in &install_commands {
+                        cli_ui::display_info(&format!("Running: {}", cmd));
+                        
+                        let status = Command::new("sh")
+                            .arg("-c")
+                            .arg(cmd)
+                            .status();
+                            
+                        match status {
+                            Ok(exit_status) => {
+                                if !exit_status.success() {
+                                    cli_ui::display_error(&format!("Command failed: {}", cmd));
+                                    break;
+                                }
+                            },
+                            Err(e) => {
+                                cli_ui::display_error(&format!("Failed to execute command: {} ({})", cmd, e));
+                                break;
+                            }
+                        }
+                    }
+                    
+                    // Verify installation
+                    verify_r_installation()?;
+                }
+            } else if selected_option.contains("dnf") {
                 cli_ui::display_info("Installing R using dnf...");
                 cli_ui::display_warning("This will require sudo privileges. You may be prompted for your password.");
-                cli_ui::display_info("Please run: sudo dnf install R");
-            },
-            i if (rig_available && i == 3) || (!rig_available && i == 2) => {
+                
+                let cmd = "sudo dnf install -y R";
+                cli_ui::display_info(&format!("Running: {}", cmd));
+                
+                let proceed = cli_ui::prompt_confirm("Do you want to execute this command now?", true)?;
+                
+                if proceed {
+                    let status = Command::new("sh")
+                        .arg("-c")
+                        .arg(cmd)
+                        .status();
+                        
+                    if let Ok(status) = status {
+                        if status.success() {
+                            cli_ui::display_success("Successfully installed R");
+                            
+                            // Verify installation
+                            verify_r_installation()?;
+                        } else {
+                            cli_ui::display_error("Failed to install R using dnf");
+                        }
+                    } else {
+                        cli_ui::display_error("Failed to execute dnf command");
+                    }
+                }
+            } else if selected_option.contains("pacman") {
                 cli_ui::display_info("Installing R using pacman...");
                 cli_ui::display_warning("This will require sudo privileges. You may be prompted for your password.");
-                cli_ui::display_info("Please run: sudo pacman -S r");
-            },
-            i if (rig_available && i == 4) || (!rig_available && i == 3) => {
-                cli_ui::display_info("Please follow the R installation instructions for your distribution:");
-                cli_ui::display_info("https://cloud.r-project.org/bin/linux/");
-            },
-            _ => cli_ui::display_info("You can install R later using the instructions in the README."),
+                
+                let cmd = "sudo pacman -S --noconfirm r";
+                cli_ui::display_info(&format!("Running: {}", cmd));
+                
+                let proceed = cli_ui::prompt_confirm("Do you want to execute this command now?", true)?;
+                
+                if proceed {
+                    let status = Command::new("sh")
+                        .arg("-c")
+                        .arg(cmd)
+                        .status();
+                        
+                    if let Ok(status) = status {
+                        if status.success() {
+                            cli_ui::display_success("Successfully installed R");
+                            
+                            // Verify installation
+                            verify_r_installation()?;
+                        } else {
+                            cli_ui::display_error("Failed to install R using pacman");
+                        }
+                    } else {
+                        cli_ui::display_error("Failed to execute pacman command");
+                    }
+                }
+            } else if selected_option.contains("system package") {
+                cli_ui::display_info("Please enter the appropriate command for your system to install R:");
+                let cmd: String = cli_ui::prompt_input("Installation command:", Some("sudo apt install r-base".to_string()))?;
+                
+                if !cmd.trim().is_empty() {
+                    let proceed = cli_ui::prompt_confirm(&format!("Run: {}?", cmd), true)?;
+                    
+                    if proceed {
+                        cli_ui::display_info(&format!("Running: {}", cmd));
+                        
+                        let status = Command::new("sh")
+                            .arg("-c")
+                            .arg(&cmd)
+                            .status();
+                            
+                        if let Ok(status) = status {
+                            if status.success() {
+                                cli_ui::display_success("Command executed successfully");
+                                
+                                // Verify installation
+                                verify_r_installation()?;
+                            } else {
+                                cli_ui::display_error("Command returned non-zero exit status");
+                            }
+                        } else {
+                            cli_ui::display_error("Failed to execute command");
+                        }
+                    }
+                }
+            }
+        } else if install_selection == install_options.len() - 2 {
+            // Manual installation selected
+            cli_ui::display_info("Please follow the instructions for your distribution:");
+            cli_ui::display_info("https://cloud.r-project.org/bin/linux/");
+            
+            // Wait for user to confirm installation
+            let installed = cli_ui::prompt_confirm("Have you installed R? Press 'y' when installation is complete.", false)?;
+            
+            if installed {
+                // Verify installation
+                verify_r_installation()?;
+            }
+        } else {
+            // Install later selected
+            cli_ui::display_info("You can install R later using the instructions in the README.");
         }
     }
     
@@ -437,17 +782,28 @@ fn get_r_installation_instructions() -> String {
 2. Run the installer and follow the instructions
 3. Optionally install RStudio from https://posit.co/download/rstudio-desktop/"#.to_string()
     } else if cfg!(target_os = "macos") {
-        r#"macOS Installation:
+        let arch_note = if cfg!(target_arch = "aarch64") {
+            "Note: For Apple Silicon (M1/M2) Macs, make sure to download the arm64 version."
+        } else {
+            "Note: For Intel Macs, make sure to download the x86_64 version."
+        };
+        
+        format!(
+            r#"macOS Installation:
 1. Using Homebrew (recommended):
    ```bash
    brew install --cask r
    ```
 
 2. Alternative: Download from https://cloud.r-project.org/bin/macosx/
+   {}
+
 3. Consider installing R Installation Manager (rig) for managing multiple R versions:
    ```bash
    brew install rig
-   ```"#.to_string()
+   ```"#,
+            arch_note
+        )
     } else {
         r#"Linux Installation:
 1. Ubuntu/Debian:
@@ -476,4 +832,66 @@ fn get_r_installation_instructions() -> String {
 4. Consider installing R Installation Manager (rig) for managing multiple R versions:
    https://github.com/r-lib/rig#installation"#.to_string()
     }
+}
+
+/// Verify that R is installed and get version information
+fn verify_r_installation() -> Result<()> {
+    cli_ui::display_info("Verifying R installation...");
+    
+    // Try to get R version
+    let output = Command::new("R").arg("--version").output();
+    
+    match output {
+        Ok(output) if output.status.success() => {
+            let version_output = String::from_utf8_lossy(&output.stdout);
+            let first_line = version_output.lines().next().unwrap_or("Unknown");
+            
+            cli_ui::display_success(&format!("R is successfully installed: {}", first_line));
+            
+            // Get installation path
+            if let Ok(Some(path)) = get_r_path() {
+                cli_ui::display_info(&format!("R is installed at: {}", path));
+                
+                // Try to detect installation method
+                let install_method = determine_install_method(&path);
+                cli_ui::display_info(&format!("Installation method: {}", install_method));
+            }
+            
+            // Get architecture information
+            if version_output.contains("x86_64") {
+                cli_ui::display_info("Architecture: x86_64 (64-bit)");
+            } else if version_output.contains("i386") || version_output.contains("i686") {
+                cli_ui::display_info("Architecture: i386/i686 (32-bit)");
+            } else if version_output.contains("aarch64") || version_output.contains("arm64") {
+                cli_ui::display_info("Architecture: ARM64");
+            }
+            
+            Ok(())
+        },
+        _ => {
+            cli_ui::display_warning("Could not verify R installation. Make sure R is properly installed and in your PATH.");
+            cli_ui::display_info("You may need to restart your terminal or add R to your PATH manually.");
+            Ok(())
+        }
+    }
+}
+
+/// Check if system is Debian/Ubuntu based
+fn is_debian_based() -> bool {
+    std::path::Path::new("/etc/debian_version").exists() || 
+    std::path::Path::new("/etc/apt").exists() ||
+    Command::new("apt").arg("--version").status().is_ok()
+}
+
+/// Check if system is Fedora/RHEL/CentOS based
+fn is_fedora_based() -> bool {
+    std::path::Path::new("/etc/redhat-release").exists() || 
+    std::path::Path::new("/etc/fedora-release").exists() ||
+    Command::new("dnf").arg("--version").status().is_ok()
+}
+
+/// Check if system is Arch based
+fn is_arch_based() -> bool {
+    std::path::Path::new("/etc/arch-release").exists() ||
+    Command::new("pacman").arg("--version").status().is_ok()
 }
