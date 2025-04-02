@@ -1929,7 +1929,8 @@ Encoding: UTF-8
 Roxygen: list(markdown = TRUE)
 RoxygenNote: 7.2.3
 Imports: 
-    renv
+    renv,
+    testthat
 "#;
 
         std::fs::write(project_dir.join("DESCRIPTION"), description)?;
@@ -1939,12 +1940,23 @@ Imports:
         std::fs::write(
             project_dir.join("R/main.R"),
             r#"#' Main function
+#' 
+#' This is the main entry point for the research project.
+#' 
+#' @return NULL
 #' @export
+#'
+#' @examples
+#' main()
 main <- function() {
     print("Hello, CRESP!")
+    
+    # Your analysis code goes here
 }
 
-main()
+if (interactive()) {
+    main()
+}
 "#,
         )?;
 
@@ -1959,12 +1971,38 @@ test_check("myresearch")
 "#,
         )?;
 
+        // Create a basic test file
+        std::fs::write(
+            project_dir.join("tests/testthat/test-main.R"),
+            r#"test_that("main function works", {
+  # Setup test environment
+  
+  # Call the function (without executing side effects)
+  # result <- main()
+  
+  # Verify results
+  expect_true(TRUE)
+})
+"#,
+        )?;
+
         // Create README.md
         std::fs::write(
             project_dir.join("README.md"),
             r#"# My Research Project
 
 This is a research project using CRESP protocol.
+
+## Project Structure
+
+```
+.
+├── R/              # R code files
+├── data/           # Data directory
+├── output/         # Output directory
+├── tests/          # Tests directory
+└── DESCRIPTION     # Package metadata
+```
 
 ## Setup
 
@@ -1992,8 +2030,56 @@ source("R/main.R")
 
 Run tests with:
 ```r
+testthat::test_package("myresearch")
+# or
 devtools::test()
 ```
+"#,
+        )?;
+
+        // Create .Rbuildignore
+        std::fs::write(
+            project_dir.join(".Rbuildignore"),
+            r#"^.*\.Rproj$
+^\.Rproj\.user$
+^data/
+^output/
+^renv$
+^renv\.lock$
+^\.renvignore$
+^\.gitignore$
+^cresp\.toml$
+"#,
+        )?;
+
+        // Create .gitignore
+        std::fs::write(
+            project_dir.join(".gitignore"),
+            r#"# R specific
+.Rproj.user
+.Rhistory
+.RData
+.Ruserdata
+*.Rproj
+
+# renv specific
+renv/library/
+renv/local/
+renv/lock/
+renv/python/
+renv/staging/
+
+# Output files
+output/
+*.html
+*.pdf
+*.png
+*.jpg
+
+# Large data files
+data/**/*.csv
+data/**/*.xlsx
+data/**/*.rds
 "#,
         )?;
 
@@ -2001,53 +2087,267 @@ devtools::test()
     }
 
     fn create_matlab_project(&self, project_dir: &Path) -> Result<()> {
-        // Create matlab directory and main.m
-        std::fs::create_dir_all(project_dir.join("matlab"))?;
+        // Create project structure for MATLAB
+        std::fs::create_dir_all(project_dir.join("src"))?;
+        std::fs::create_dir_all(project_dir.join("test"))?;
+        std::fs::create_dir_all(project_dir.join("data"))?;
+        std::fs::create_dir_all(project_dir.join("results"))?;
+        std::fs::create_dir_all(project_dir.join("docs"))?;
+
+        // Create main.m in src
         std::fs::write(
-            project_dir.join("matlab/main.m"),
+            project_dir.join("src/main.m"),
             r#"function main()
-    % Main function
-    disp('Hello, CRESP!')
+% MAIN Main function of the project
+%
+% This function serves as the entry point for the research project.
+%
+% Example:
+%   main()
+%
+% See also: processData, analyzeResults
+
+    disp('Hello, CRESP!');
+    
+    % Your research code goes here
+    
+    % Example workflow:
+    % 1. Load data
+    % data = loadData('../data/sample.mat');
+    
+    % 2. Process data
+    % processedData = processData(data);
+    
+    % 3. Analyze results
+    % results = analyzeResults(processedData);
+    
+    % 4. Save results
+    % saveResults(results, '../results');
 end
 "#,
         )?;
 
-        // Create tests directory and test_main.m
-        std::fs::create_dir_all(project_dir.join("tests"))?;
+        // Create processData.m helper function
         std::fs::write(
-            project_dir.join("tests/test_main.m"),
-            r#"function test_main()
-    % Test main function
-    assert(true)
+            project_dir.join("src/processData.m"),
+            r#"function processedData = processData(data)
+% PROCESSDATA Process the raw data
+%
+% This function takes raw data and processes it for analysis.
+%
+% Args:
+%   data: Raw data to process
+%
+% Returns:
+%   processedData: Processed data ready for analysis
+%
+% Example:
+%   data = loadData('../data/sample.mat');
+%   processedData = processData(data);
+
+    % Placeholder - replace with actual data processing
+    processedData = data;
+    disp('Processing data...');
 end
+"#,
+        )?;
+
+        // Create analyzeResults.m helper function
+        std::fs::write(
+            project_dir.join("src/analyzeResults.m"),
+            r#"function results = analyzeResults(data)
+% ANALYZERESULTS Analyze the processed data
+%
+% This function analyzes the processed data and returns results.
+%
+% Args:
+%   data: Processed data to analyze
+%
+% Returns:
+%   results: Analysis results
+%
+% Example:
+%   processedData = processData(data);
+%   results = analyzeResults(processedData);
+
+    % Placeholder - replace with actual data analysis
+    results = struct('data', data, 'timestamp', now);
+    disp('Analyzing results...');
+end
+"#,
+        )?;
+
+        // Create a test script
+        std::fs::write(
+            project_dir.join("test/runTests.m"),
+            r#"function results = runTests()
+% RUNTESTS Run all tests for the project
+%
+% This function runs all tests and returns the results.
+%
+% Returns:
+%   results: Test results
+%
+% Example:
+%   results = runTests();
+
+    disp('Running tests...');
+    
+    % Initialize test results
+    results = struct('passed', 0, 'failed', 0, 'total', 0);
+    
+    % Run test_processData
+    try
+        test_processData();
+        results.passed = results.passed + 1;
+        disp('test_processData: PASSED');
+    catch ME
+        results.failed = results.failed + 1;
+        disp(['test_processData: FAILED - ' ME.message]);
+    end
+    results.total = results.total + 1;
+    
+    % Run test_analyzeResults
+    try
+        test_analyzeResults();
+        results.passed = results.passed + 1;
+        disp('test_analyzeResults: PASSED');
+    catch ME
+        results.failed = results.failed + 1;
+        disp(['test_analyzeResults: FAILED - ' ME.message]);
+    end
+    results.total = results.total + 1;
+    
+    % Display summary
+    disp(['Test summary: ' num2str(results.passed) '/' num2str(results.total) ' tests passed']);
+end
+
+function test_processData()
+    % Test the processData function
+    testData = 1:10;
+    result = processData(testData);
+    assert(isequal(size(result), size(testData)), 'Output size should match input size');
+end
+
+function test_analyzeResults()
+    % Test the analyzeResults function
+    testData = 1:10;
+    result = analyzeResults(testData);
+    assert(isfield(result, 'data'), 'Result should have a data field');
+    assert(isfield(result, 'timestamp'), 'Result should have a timestamp field');
+end
+"#,
+        )?;
+
+        // Create MATLAB project file
+        std::fs::write(
+            project_dir.join("project.prj"),
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+<MATLABProject xmlns="http://www.mathworks.com/MATLABProjectFile" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" version="1.0"/>
+"#,
+        )?;
+
+        // Create startup.m
+        std::fs::write(
+            project_dir.join("startup.m"),
+            r#"% STARTUP Project startup script
+%
+% This script runs automatically when MATLAB starts in this directory
+% and sets up the project environment.
+
+% Add src directory to the MATLAB path
+addpath(genpath('src'));
+addpath(genpath('test'));
+
+disp('Project environment initialized.');
+disp('Type "help main" for usage information.');
 "#,
         )?;
 
         // Create README.md
         std::fs::write(
             project_dir.join("README.md"),
-            r#"# My Research Project
+            r#"# MATLAB Research Project
 
-This is a research project using CRESP protocol.
+This is a MATLAB research project using CRESP protocol.
+
+## Project Structure
+
+```
+.
+├── src/        # Source code
+├── test/       # Test scripts
+├── data/       # Input data
+├── results/    # Output results
+├── docs/       # Documentation
+├── project.prj # MATLAB project file
+└── startup.m   # Project initialization script
+```
 
 ## Setup
 
-1. Add the project directory to your MATLAB path:
+1. Start MATLAB in the project directory or run:
 ```matlab
-addpath('matlab')
+cd /path/to/project
 ```
 
-2. Run the project:
+2. The startup.m script will automatically add the required paths. If it doesn't run automatically, execute:
 ```matlab
-main()
+startup
+```
+
+## Usage
+
+Run the main script:
+```matlab
+main
 ```
 
 ## Testing
 
-Run tests with:
+Run the test suite:
 ```matlab
-runtests('tests')
+results = runTests()
 ```
+
+## Adding Dependencies
+
+For projects using MATLAB's package management, add dependencies to the project:
+
+1. Open the project in MATLAB:
+```matlab
+openProject('/path/to/project/project.prj')
+```
+
+2. Use the project manager to add required MATLAB toolboxes or files.
+"#,
+        )?;
+
+        // Create .gitignore
+        std::fs::write(
+            project_dir.join(".gitignore"),
+            r#"# MATLAB specific
+*.asv
+*.mex*
+*.mlx
+*.mat
+*.fig
+slprj/
+sccprj/
+codegen/
+*.slxc
+.SimulinkProject/
+*.autosave
+*.slx.r*
+*.mdl.r*
+
+# Results directory
+results/
+
+# Avoid large data files
+data/**/*.mat
+data/**/*.csv
+data/**/*.xlsx
 "#,
         )?;
 
