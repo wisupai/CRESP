@@ -389,6 +389,9 @@ fn setup_r_environment(system_r: Option<String>, r_info: Option<RInfo>, rig_avai
     // Default R version
     let default_version = "4.3.2".to_string();
     
+    // Flag to track if user rejected existing installation
+    let mut rejected_existing = false;
+    
     if let Some(ver) = &system_r {
         cli_ui::display_info(&format!("Detected installed R version: {}", ver));
         
@@ -406,6 +409,9 @@ fn setup_r_environment(system_r: Option<String>, r_info: Option<RInfo>, rig_avai
         
         if use_detected {
             return Ok(ver.clone());
+        } else {
+            // User explicitly rejected the existing installation
+            rejected_existing = true;
         }
     } else {
         cli_ui::display_warning("No R installation detected on your system.");
@@ -434,7 +440,7 @@ fn setup_r_environment(system_r: Option<String>, r_info: Option<RInfo>, rig_avai
     
     // Check if the selected version is installed
     if let Some(ver) = &system_r {
-        if ver.starts_with(&selected_version.split('.').take(2).collect::<Vec<_>>().join(".")) {
+        if !rejected_existing && ver.starts_with(&selected_version.split('.').take(2).collect::<Vec<_>>().join(".")) {
             cli_ui::display_success(&format!("Found compatible R version: {}", ver));
             return Ok(selected_version);
         }
