@@ -8,6 +8,7 @@ pub mod reproduce;
 pub mod update;
 pub mod validate;
 pub mod verify;
+pub mod version;
 
 #[derive(Subcommand, Debug)]
 pub enum Command {
@@ -18,6 +19,7 @@ pub enum Command {
     Reproduce(reproduce::ReproduceCommand),
     Diff(diff::DiffCommand),
     Update(update::UpdateCommand),
+    Version(version::VersionCommand),
 }
 
 impl Command {
@@ -30,6 +32,7 @@ impl Command {
             Command::Reproduce(cmd) => cmd.execute().await,
             Command::Diff(cmd) => cmd.execute().await,
             Command::Update(cmd) => cmd.execute().await,
+            Command::Version(cmd) => cmd.execute().await,
         }
     }
 }

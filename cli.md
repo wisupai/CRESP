@@ -102,6 +102,15 @@ Options:
 - `--dry-run`: Show what would be updated without making changes
 - `--force`: Force update even if conflicts exist
 
+### `version`
+Display detailed version information about the CRESP CLI.
+
+```bash
+cresp version
+```
+
+Displays the current version number, package description, and authors.
+
 ### `completion`
 Generate shell completion scripts.
 
@@ -117,7 +126,7 @@ Options:
 - `-v, --verbose`: Enable verbose output
 - `-q, --quiet`: Suppress output
 - `--color <WHEN>`: Color output (auto, always, never)
-- `--version`: Show version information
+- `--version`: Show version information (can be used with any command or independently)
 - `-h, --help`: Show help information
 
 ## Examples
@@ -146,6 +155,11 @@ cresp diff config1.toml config2.toml
 
 # Update configuration
 cresp update cresp.toml
+
+# Display version information
+cresp --version
+# or
+cresp version
 ```
 
 ## CRESP CLI UI
