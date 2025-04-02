@@ -23,6 +23,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Optimized UV package manager integration with improved PATH handling and user guidance
 - Enhanced installation process for UV to auto-source environment files
 - Added detailed UV installation path information and performance hints
+- Improved MATLAB installation process with comprehensive official MathWorks guidelines for different license types and platforms
 
 ### Fixed
 - Fixed auto-activation of UV in current terminal session after installation
