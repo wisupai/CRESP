@@ -1,9 +1,11 @@
 use std::path::Path;
 use crate::error::Result;
+use crate::utils::cli_ui;
 use super::super::utils::write_file;
 
 /// Create MATLAB project with the specified configuration
 pub fn create_matlab_project(project_dir: &Path) -> Result<()> {
+    cli_ui::display_info("Creating MATLAB project structure...");
     // Create project structure for MATLAB
     let dirs = &[
         "src",
@@ -17,6 +19,7 @@ pub fn create_matlab_project(project_dir: &Path) -> Result<()> {
         std::fs::create_dir_all(project_dir.join(dir))?;
     }
 
+    cli_ui::display_info("Generating MATLAB project files...");
     // Create main.m in src
     let main_m = r#"function main()
 % MAIN Main function of the project

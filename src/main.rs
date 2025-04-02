@@ -1,5 +1,5 @@
 use clap::Parser;
-use log::{info, LevelFilter};
+use log::LevelFilter;
 
 mod commands;
 mod config;
@@ -8,6 +8,8 @@ mod error;
 mod utils;
 
 use error::Result;
+use utils::cli_ui;
+use console::Term;
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
@@ -42,11 +44,24 @@ async fn main() -> Result<()> {
         .format_timestamp(None)
         .init();
 
-    info!("🚀 Starting CRESP CLI...");
+    // Show welcome message
+    if !cli.quiet {
+        let term = Term::stdout();
+        let _ = term.clear_screen();
+        cli_ui::display_header("CRESP - Computational Research Environment Standardization Protocol", "🧪");
+    }
 
     // Execute command
-    cli.command.execute().await?;
-
-    info!("✨ CRESP CLI completed successfully");
-    Ok(())
+    match cli.command.execute().await {
+        Ok(_) => {
+            if !cli.quiet {
+                cli_ui::display_success("Command completed successfully");
+            }
+            Ok(())
+        },
+        Err(e) => {
+            cli_ui::display_error(&format!("Error: {}", e));
+            Err(e)
+        }
+    }
 }

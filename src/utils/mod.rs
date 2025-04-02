@@ -4,6 +4,8 @@ use std::fs::File;
 use std::io::Read;
 use std::path::Path;
 
+pub mod cli_ui;
+
 #[allow(dead_code)]
 pub fn calculate_sha256<P: AsRef<Path>>(path: P) -> Result<String> {
     let mut file = File::open(path)?;

@@ -13,12 +13,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Python project creation support
 - R project creation support
 - MATLAB project creation support
+- Enhanced CLI user interface with Dialoguer and Console
+- Interactive select menus, confirmations, and styled output
 
 ### Changed
 - Improved R project creation with better rig package manager handling
+- Refactored command line interface for a more user-friendly experience
+- Enhanced MATLAB project initialization with better directory structure
+- Optimized UV package manager integration with improved PATH handling and user guidance
+- Enhanced installation process for UV to auto-source environment files
+- Added detailed UV installation path information and performance hints
 
 ### Fixed
-- None
+- Fixed auto-activation of UV in current terminal session after installation
+- Fixed UV installation sequence to provide clearer user instructions 
+- Fixed formatting error in command generation for UV installation
 
 ### Removed
 - None

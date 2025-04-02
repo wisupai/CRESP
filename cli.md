@@ -146,4 +146,69 @@ cresp diff config1.toml config2.toml
 
 # Update configuration
 cresp update cresp.toml
-``` 
+```
+
+## CRESP CLI UI
+
+The CRESP CLI utilizes Dialoguer and Console to provide a beautiful and interactive command-line interface.
+
+### UI Features
+
+- **Styled Output**: Different message types have distinct colors and emojis:
+  - ✅ Success messages (green)
+  - ❌ Error messages (red)
+  - ⚠️ Warning messages (yellow)
+  - ℹ️ Info messages (blue)
+  - 🧪 Headers (cyan)
+
+- **Interactive Prompts**:
+  - Text input with validation
+  - Password input with optional confirmation
+  - Confirmation prompts (yes/no)
+  - Selection from lists
+  - Fuzzy searching in selection lists
+  - Multiple selection from lists
+
+### Using the CLI UI in Your Commands
+
+You can use the CLI UI utilities in any command implementation:
+
+```rust
+use crate::utils::cli_ui;
+
+// Display styled messages
+cli_ui::display_header("Command Title", "🔍");
+cli_ui::display_info("Processing...");
+cli_ui::display_success("Operation completed successfully");
+cli_ui::display_warning("Proceeding with caution");
+cli_ui::display_error("Something went wrong");
+
+// Get user input
+let name: String = cli_ui::prompt_input("Enter your name", None)?;
+let age: u32 = cli_ui::prompt_input("Enter your age", Some(30))?;
+
+// Get password
+let password = cli_ui::prompt_password("Enter your password", true)?;
+
+// Get confirmation
+let proceed = cli_ui::prompt_confirm("Do you want to proceed?", true)?;
+
+// Select from a list
+let options = vec!["Option 1", "Option 2", "Option 3"];
+let selected = cli_ui::prompt_select("Select an option", &options)?;
+
+// Fuzzy select from a list
+let fuzzy_selected = cli_ui::prompt_fuzzy_select("Search and select", &options)?;
+
+// Multi-select from a list
+let multi_selected = cli_ui::prompt_multiselect("Select multiple options", &options)?;
+```
+
+### Tips for Consistent UI
+
+1. Use `display_header()` at the beginning of each command execution
+2. Use `display_success()` for successful operations
+3. Use `display_error()` for error cases
+4. Use `display_info()` for progress updates
+5. Use `display_warning()` for caution messages
+6. Use appropriate emoji for context 

@@ -1,5 +1,6 @@
 use std::path::Path;
 use crate::error::Result;
+use crate::utils::cli_ui;
 use super::utils::{create_directories, write_file};
 
 mod python;
@@ -40,11 +41,26 @@ pub fn create_project_structure(
     language: &str,
 ) -> Result<()> {
     match template_type {
-        TemplateType::Basic => create_basic_structure(project_dir, language),
-        TemplateType::DataAnalysis => create_data_analysis_structure(project_dir, language),
-        TemplateType::MachineLearning => create_ml_structure(project_dir, language),
-        TemplateType::ScientificComputing => create_scientific_structure(project_dir, language),
-        TemplateType::Custom => create_custom_structure(project_dir, language),
+        TemplateType::Basic => {
+            cli_ui::display_info("Creating basic project structure...");
+            create_basic_structure(project_dir, language)
+        },
+        TemplateType::DataAnalysis => {
+            cli_ui::display_info("Creating data analysis project structure...");
+            create_data_analysis_structure(project_dir, language)
+        },
+        TemplateType::MachineLearning => {
+            cli_ui::display_info("Creating machine learning project structure...");
+            create_ml_structure(project_dir, language)
+        },
+        TemplateType::ScientificComputing => {
+            cli_ui::display_info("Creating scientific computing project structure...");
+            create_scientific_structure(project_dir, language)
+        },
+        TemplateType::Custom => {
+            cli_ui::display_info("Creating custom project structure...");
+            create_custom_structure(project_dir, language)
+        },
     }
 }
 
@@ -314,20 +330,18 @@ fn create_scientific_structure(project_dir: &Path, _language: &str) -> Result<()
 
 /// Create custom project structure
 fn create_custom_structure(project_dir: &Path, _language: &str) -> Result<()> {
-    use super::utils::{prompt_input, prompt_selection};
-    
-    println!("🔧 Custom project structure setup:");
-    let options = &[
+    cli_ui::display_info("Custom project structure setup:");
+    let options = vec![
         "Create basic directories",
         "Create detailed structure",
     ];
     
-    let selection = prompt_selection("Choose structure type:", options, Some(0))?;
+    let selection = cli_ui::prompt_select("Choose structure type", &options)?;
 
     if selection == 1 {
         // Create detailed structure
-        println!("📁 Enter directory names (comma-separated):");
-        let dirs_input = prompt_input("> ", None)?;
+        cli_ui::display_info("Enter directory names (comma-separated):");
+        let dirs_input: String = cli_ui::prompt_input("> ", None)?;
 
         let dirs: Vec<&str> = dirs_input.split(',').map(|s| s.trim()).collect();
         let dirs_clone = dirs.clone();

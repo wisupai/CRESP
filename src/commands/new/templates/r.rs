@@ -1,9 +1,11 @@
 use std::path::Path;
 use crate::error::Result;
+use crate::utils::cli_ui;
 use super::super::utils::write_file;
 
 /// Create R project with the specified configuration
 pub fn create_r_project(project_dir: &Path) -> Result<()> {
+    cli_ui::display_info("Creating R project structure...");
     // Create basic R project structure 
     let dirs = &[
         "R",
@@ -17,6 +19,7 @@ pub fn create_r_project(project_dir: &Path) -> Result<()> {
         std::fs::create_dir_all(project_dir.join(dir))?;
     }
     
+    cli_ui::display_info("Generating R project files...");
     // Create DESCRIPTION file
     let description = r#"Package: myresearch
 Title: My Research Project

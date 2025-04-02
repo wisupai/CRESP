@@ -1,6 +1,5 @@
 use crate::error::Result;
 use clap::Parser;
-use log::{info, warn};
 use std::path::PathBuf;
 
 mod config;
@@ -8,10 +7,11 @@ mod system_info;
 mod templates;
 mod utils;
 
+use crate::utils::cli_ui;
 use config::{UserConfig, get_python_config};
 use system_info::collect_system_info;
 use templates::{TemplateType, create_project_structure};
-use utils::{prompt_input, prompt_selection, ensure_directory};
+use utils::ensure_directory;
 
 #[derive(Parser, Debug)]
 pub struct NewCommand {
@@ -38,37 +38,39 @@ pub struct NewCommand {
 
 impl NewCommand {
     pub async fn execute(&self) -> Result<()> {
-        info!("🚀 Creating new CRESP project...");
+        cli_ui::display_header("Creating new CRESP project", "🚀");
 
         // Interactive prompts for basic project information
-        let name = self.name.clone().unwrap_or_else(|| 
-            prompt_input("📝 Project name", None).unwrap()
-        );
+        let name = match &self.name {
+            Some(name) => name.clone(),
+            None => cli_ui::prompt_input("Project name", None::<String>)?
+        };
 
-        let description = self.description.clone().unwrap_or_else(|| 
-            prompt_input("📄 Project description", None).unwrap()
-        );
+        let description = match &self.description {
+            Some(desc) => desc.clone(),
+            None => cli_ui::prompt_input("Project description", None::<String>)?
+        };
 
         // Select programming language
-        let language_options = &["Python", "R", "MATLAB"];
+        let language_options = vec!["Python", "R", "MATLAB"];
         let language_idx = if let Some(lang) = &self.language {
             match lang.to_lowercase().as_str() {
                 "python" => 0,
                 "r" => 1,
                 "matlab" => 2,
                 _ => {
-                    warn!("Unknown language: {}. Defaulting to Python.", lang);
+                    cli_ui::display_warning(&format!("Unknown language: {}. Defaulting to Python.", lang));
                     0
                 }
             }
         } else {
-            prompt_selection("🔧 Select primary programming language", language_options, Some(0)).unwrap()
+            cli_ui::prompt_select("Select primary programming language", &language_options)?
         };
         
         let language = language_options[language_idx].to_lowercase();
 
         // Select project template
-        let template_options = &[
+        let template_options = vec![
             "Basic (flat structure for simple experiments)",
             "Data Analysis (for data processing and analysis)",
             "Machine Learning (for ML/DL experiments)",
@@ -84,12 +86,12 @@ impl NewCommand {
                 "4" | "scientific" => 3,
                 "5" | "custom" => 4,
                 _ => {
-                    warn!("Unknown template: {}. Defaulting to Basic.", tmpl);
+                    cli_ui::display_warning(&format!("Unknown template: {}. Defaulting to Basic.", tmpl));
                     0
                 }
             }
         } else {
-            prompt_selection("📁 Select project template", template_options, Some(0)).unwrap()
+            cli_ui::prompt_select("Select project template", &template_options)?
         };
         
         let template = (template_idx + 1).to_string();
@@ -107,17 +109,18 @@ impl NewCommand {
             return Ok(());
         }
 
-        // Get system information
+        cli_ui::display_info("Collecting system information...");
         let system_info = collect_system_info()?;
 
-        // Create CRESP.toml
+        cli_ui::display_info("Creating CRESP configuration file...");
         create_cresp_toml(&project_dir, &name, &description, &language, &system_info, &user_config)?;
 
-        // Create project structure based on template
+        cli_ui::display_info(&format!("Creating project structure using {} template...", template_options[template_idx]));
         let template_type = TemplateType::from(template.as_str());
         create_project_structure(&project_dir, template_type, &language)?;
 
         // Create language-specific project files
+        cli_ui::display_info(&format!("Setting up {} environment...", language));
         match language.as_str() {
             "python" => templates::create_python_project(&project_dir, &user_config)?,
             "r" => templates::create_r_project(&project_dir)?,
@@ -125,7 +128,33 @@ impl NewCommand {
             _ => unreachable!(),
         }
 
-        info!("✨ Project created successfully at: {}", project_dir.display());
+        cli_ui::display_success(&format!("Project created successfully at: {}", project_dir.display()));
+        
+        // Output package manager installation reminders if needed
+        if user_config.use_conda {
+            // For Conda projects, remind user to activate the environment
+            let project_name = project_dir
+                .file_name()
+                .and_then(|name| name.to_str())
+                .unwrap_or("my-project");
+                
+            cli_ui::display_info(&format!("To use this project, activate the Conda environment:"));
+            cli_ui::display_info(&format!("   conda activate {}", project_name));
+        } else if user_config.uv_installed {
+            // Only show this for non-Conda projects
+            cli_ui::display_info("UV package manager was installed during project creation.");
+            cli_ui::display_info("If UV commands are not working, try running:");
+            cli_ui::display_info("  source $HOME/.local/bin/env");
+            cli_ui::display_info("Or restart your terminal before running UV commands.");
+        }
+        
+        if user_config.poetry_installed && !user_config.use_conda {
+            // Only show this for non-Conda projects
+            cli_ui::display_info("Poetry package manager was installed during project creation.");
+            cli_ui::display_info("If Poetry commands are not working, check if it was properly added to your PATH.");
+        }
+
+        cli_ui::display_success("Command completed successfully");
         Ok(())
     }
 }
