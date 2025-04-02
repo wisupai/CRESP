@@ -383,7 +383,7 @@ fn get_r_arch(_version: &str, _path: &Option<String>) -> Result<String> {
 }
 
 /// Setup R environment by checking existing installation and selecting version
-fn setup_r_environment(system_r: Option<String>, r_info: Option<RInfo>, rig_available: bool) -> Result<String> {
+fn setup_r_environment(system_r: Option<String>, r_info: Option<RInfo>, _: bool) -> Result<String> {
     cli_ui::display_header("R Configuration", "📊");
     
     // Default R version
@@ -451,44 +451,46 @@ fn setup_r_environment(system_r: Option<String>, r_info: Option<RInfo>, rig_avai
     
     // Present installation method options based on platform
     if cfg!(target_os = "windows") {
-        let install_options = vec![
-            "Download and install manually (recommended)",
-            "I'll install it later"
-        ];
+        let mut install_options = vec![];
         
-        let install_selection = cli_ui::prompt_select("How would you like to install R?", &install_options)?;
+        // Check if rig is available
+        let rig_available = check_rig_available()?;
         
-        match install_selection {
-            0 => {
-                cli_ui::display_info("Please download R from: https://cloud.r-project.org/bin/windows/base/");
-                cli_ui::display_info("Run the installer and follow the instructions.");
-                
-                // Wait for user to confirm installation
-                let installed = cli_ui::prompt_confirm("Have you installed R? Press 'y' when installation is complete.", true)?;
-                
-                if installed {
-                    // Verify installation
-                    verify_r_installation()?;
-                }
-            }
-            _ => cli_ui::display_info("You can install R later using the instructions in the README."),
-        }
-    } else if cfg!(target_os = "macos") {
-        // macOS-specific installation options
-        let mut install_options = vec![
-            "Using Homebrew (recommended if you have it installed)",
-            "Download and install manually",
-            "I'll install it later"
-        ];
+        // Check if package managers are available
+        let scoop_available = Command::new("scoop").arg("--version").status().map_or(false, |status| status.success());
+        let choco_available = Command::new("choco").arg("--version").status().map_or(false, |status| status.success());
+        let winget_available = Command::new("winget").arg("--version").status().map_or(false, |status| status.success());
         
+        // Add options with installation status
         if rig_available {
-            install_options.insert(0, "Using rig (R Installation Manager)");
+            install_options.push("Using rig (R Installation Manager) (already installed, recommended)");
+        } else {
+            install_options.push("Install and use rig (R Installation Manager) (recommended)");
+            
+            // Add specific installation methods if available
+            if winget_available {
+                install_options.push("Install rig using WinGet");
+            }
+            if choco_available {
+                install_options.push("Install rig using Chocolatey");
+            }
+            if scoop_available {
+                install_options.push("Install rig using Scoop");
+            }
         }
+        
+        install_options.push("Download and install manually");
+        install_options.push("I'll install it later");
         
         let install_selection = cli_ui::prompt_select("How would you like to install R?", &install_options)?;
         
-        match install_selection {
-            0 if rig_available => {
+        // Calculate the offset for the manual and "install later" options
+        let manual_option_idx = if rig_available { 1 } else { 1 + (winget_available as usize) + (choco_available as usize) + (scoop_available as usize) };
+        
+        if install_selection == 0 {
+            // Using or installing rig
+            if rig_available {
+                // Rig is already installed
                 cli_ui::display_info(&format!("Installing R {} using rig...", selected_version));
                 
                 let status = Command::new("rig")
@@ -500,7 +502,7 @@ fn setup_r_environment(system_r: Option<String>, r_info: Option<RInfo>, rig_avai
                     if status.success() {
                         cli_ui::display_success(&format!("Successfully installed R {}", selected_version));
                         
-                        // Verify and get installation info
+                        // Verify installation
                         verify_r_installation()?;
                     } else {
                         cli_ui::display_error(&format!("Failed to install R {}", selected_version));
@@ -508,12 +510,269 @@ fn setup_r_environment(system_r: Option<String>, r_info: Option<RInfo>, rig_avai
                 } else {
                     cli_ui::display_error("Failed to run rig command");
                 }
-            },
-            i if (rig_available && i == 1) || (!rig_available && i == 0) => {
-                // Check if Homebrew is installed
-                let brew_check = Command::new("brew").arg("--version").output();
+            } else {
+                // Need to install rig first using the installer
+                cli_ui::display_info("To install rig on Windows:");
+                cli_ui::display_info("1. Download the latest release from https://github.com/r-lib/rig/releases");
+                cli_ui::display_info("2. Run the installer and follow the instructions");
+                cli_ui::display_info("3. You might need to restart your terminal after installation");
                 
-                if brew_check.is_err() || !brew_check.unwrap().status.success() {
+                let installed = cli_ui::prompt_confirm("Have you installed rig? Press 'y' when installation is complete.", true)?;
+                
+                if installed {
+                    // Now use rig to install R
+                    cli_ui::display_info(&format!("Installing R {} using rig...", selected_version));
+                    
+                    let status = Command::new("rig")
+                        .arg("add")
+                        .arg(&selected_version)
+                        .status();
+                        
+                    if let Ok(status) = status {
+                        if status.success() {
+                            cli_ui::display_success(&format!("Successfully installed R {}", selected_version));
+                            
+                            // Verify installation
+                            verify_r_installation()?;
+                        } else {
+                            cli_ui::display_error(&format!("Failed to install R {}", selected_version));
+                        }
+                    } else {
+                        cli_ui::display_error("Failed to run rig command. Make sure it's properly installed and restart your terminal if needed.");
+                    }
+                }
+            }
+        } else if !rig_available && install_selection > 0 && install_selection < manual_option_idx {
+            // Handle rig installation via package managers
+            let mut cmd = String::new();
+            let mut mgr_name = String::new();
+            
+            // Determine which package manager to use
+            let mut idx = 1;
+            if winget_available {
+                if install_selection == idx {
+                    cmd = "winget install posit.rig".to_string();
+                    mgr_name = "WinGet".to_string();
+                }
+                idx += 1;
+            }
+            
+            if choco_available && cmd.is_empty() {
+                if install_selection == idx {
+                    cmd = "choco install rig".to_string();
+                    mgr_name = "Chocolatey".to_string();
+                }
+                idx += 1;
+            }
+            
+            if scoop_available && cmd.is_empty() {
+                if install_selection == idx {
+                    cmd = "scoop bucket add r-bucket https://github.com/cderv/r-bucket.git && scoop install rig".to_string();
+                    mgr_name = "Scoop".to_string();
+                }
+            }
+            
+            if !cmd.is_empty() {
+                cli_ui::display_info(&format!("Installing rig using {}...", mgr_name));
+                cli_ui::display_info(&format!("Running: {}", cmd));
+                
+                let status = Command::new("cmd")
+                    .args(&["/C", &cmd])
+                    .status();
+                    
+                if let Ok(status) = status {
+                    if status.success() {
+                        cli_ui::display_success(&format!("Successfully installed rig using {}", mgr_name));
+                        
+                        // Now use rig to install R (might need to restart the terminal)
+                        cli_ui::display_info("You might need to restart your terminal to use rig.");
+                        let continue_with_rig = cli_ui::prompt_confirm("Do you want to try using rig now to install R?", true)?;
+                        
+                        if continue_with_rig {
+                            cli_ui::display_info(&format!("Installing R {} using rig...", selected_version));
+                            
+                            let status = Command::new("rig")
+                                .arg("add")
+                                .arg(&selected_version)
+                                .status();
+                                
+                            if let Ok(status) = status {
+                                if status.success() {
+                                    cli_ui::display_success(&format!("Successfully installed R {}", selected_version));
+                                    
+                                    // Verify installation
+                                    verify_r_installation()?;
+                                } else {
+                                    cli_ui::display_error(&format!("Failed to install R {}. You might need to restart your terminal first.", selected_version));
+                                }
+                            } else {
+                                cli_ui::display_error("Failed to run rig command. You might need to restart your terminal first.");
+                            }
+                        }
+                    } else {
+                        cli_ui::display_error(&format!("Failed to install rig using {}", mgr_name));
+                    }
+                } else {
+                    cli_ui::display_error(&format!("Failed to execute {} command", mgr_name));
+                }
+            }
+        } else if install_selection == manual_option_idx {
+            // Manual installation
+            cli_ui::display_info("Please download R from: https://cloud.r-project.org/bin/windows/base/");
+            cli_ui::display_info("Run the installer and follow the instructions.");
+            
+            // Wait for user to confirm installation
+            let installed = cli_ui::prompt_confirm("Have you installed R? Press 'y' when installation is complete.", true)?;
+            
+            if installed {
+                // Verify installation
+                verify_r_installation()?;
+            }
+        } else {
+            // Install later
+            cli_ui::display_info("You can install R later using the instructions in the README.");
+        }
+    } else if cfg!(target_os = "macos") {
+        // macOS-specific installation options
+        let mut install_options = vec![];
+        
+        // Check if rig is available
+        let rig_available = check_rig_available()?;
+        
+        // Check if Homebrew is installed
+        let brew_available = Command::new("brew").arg("--version").status().map_or(false, |status| status.success());
+        
+        // Add options with installation status
+        if rig_available {
+            install_options.push("Using rig (R Installation Manager) (already installed, recommended)");
+        } else {
+            install_options.push("Install and use rig (R Installation Manager) (recommended)");
+        }
+        
+        if brew_available {
+            install_options.push("Using Homebrew (already installed)");
+        } else {
+            install_options.push("Using Homebrew");
+        }
+        
+        install_options.push("Download and install manually");
+        install_options.push("I'll install it later");
+        
+        let install_selection = cli_ui::prompt_select("How would you like to install R?", &install_options)?;
+        
+        match install_selection {
+            0 => {
+                if rig_available {
+                    // Rig is already installed
+                    cli_ui::display_info(&format!("Installing R {} using rig...", selected_version));
+                    
+                    let status = Command::new("rig")
+                        .arg("add")
+                        .arg(&selected_version)
+                        .status();
+                        
+                    if let Ok(status) = status {
+                        if status.success() {
+                            cli_ui::display_success(&format!("Successfully installed R {}", selected_version));
+                            
+                            // Verify and get installation info
+                            verify_r_installation()?;
+                        } else {
+                            cli_ui::display_error(&format!("Failed to install R {}", selected_version));
+                        }
+                    } else {
+                        cli_ui::display_error("Failed to run rig command");
+                    }
+                } else {
+                    // Install rig first
+                    cli_ui::display_info("Installing rig (R Installation Manager)...");
+                    
+                    if brew_available {
+                        // Install using Homebrew since it's available
+                        cli_ui::display_info("Installing rig using Homebrew...");
+                        
+                        // First add the tap if needed
+                        let tap_status = Command::new("brew")
+                            .arg("tap")
+                            .arg("r-lib/rig")
+                            .status();
+                            
+                        if let Ok(status) = tap_status {
+                            if status.success() {
+                                // Install rig
+                                let install_status = Command::new("brew")
+                                    .arg("install")
+                                    .arg("--cask")
+                                    .arg("rig")
+                                    .status();
+                                    
+                                if let Ok(status) = install_status {
+                                    if status.success() {
+                                        cli_ui::display_success("Successfully installed rig");
+                                        
+                                        // Now use rig to install R
+                                        cli_ui::display_info(&format!("Installing R {} using rig...", selected_version));
+                                        
+                                        let status = Command::new("rig")
+                                            .arg("add")
+                                            .arg(&selected_version)
+                                            .status();
+                                            
+                                        if let Ok(status) = status {
+                                            if status.success() {
+                                                cli_ui::display_success(&format!("Successfully installed R {}", selected_version));
+                                                
+                                                // Verify and get installation info
+                                                verify_r_installation()?;
+                                            } else {
+                                                cli_ui::display_error(&format!("Failed to install R {}", selected_version));
+                                            }
+                                        }
+                                    } else {
+                                        cli_ui::display_error("Failed to install rig");
+                                        cli_ui::display_info("Please install rig manually from https://github.com/r-lib/rig/releases");
+                                    }
+                                }
+                            } else {
+                                cli_ui::display_error("Failed to add r-lib/rig tap");
+                            }
+                        }
+                    } else {
+                        // No Homebrew, provide manual installation instructions
+                        cli_ui::display_info("To install rig on macOS:");
+                        cli_ui::display_info("1. Download the latest release from https://github.com/r-lib/rig/releases");
+                        cli_ui::display_info("2. Install it the usual way by opening the downloaded file");
+                        
+                        let installed = cli_ui::prompt_confirm("Have you installed rig? Press 'y' when installation is complete.", true)?;
+                        
+                        if installed {
+                            // Now use rig to install R
+                            cli_ui::display_info(&format!("Installing R {} using rig...", selected_version));
+                            
+                            let status = Command::new("rig")
+                                .arg("add")
+                                .arg(&selected_version)
+                                .status();
+                                
+                            if let Ok(status) = status {
+                                if status.success() {
+                                    cli_ui::display_success(&format!("Successfully installed R {}", selected_version));
+                                    
+                                    // Verify and get installation info
+                                    verify_r_installation()?;
+                                } else {
+                                    cli_ui::display_error(&format!("Failed to install R {}", selected_version));
+                                }
+                            } else {
+                                cli_ui::display_error("Failed to run rig command. Make sure it's properly installed and in your PATH.");
+                            }
+                        }
+                    }
+                }
+            },
+            1 => {
+                // Using Homebrew
+                if !brew_available {
                     cli_ui::display_error("Homebrew not found. Please install Homebrew first:");
                     cli_ui::display_info("/bin/bash -c \"$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)\"");
                     cli_ui::display_info("After installing Homebrew, try again.");
@@ -541,7 +800,8 @@ fn setup_r_environment(system_r: Option<String>, r_info: Option<RInfo>, rig_avai
                     }
                 }
             },
-            i if (rig_available && i == 2) || (!rig_available && i == 1) => {
+            2 => {
+                // Manual installation
                 cli_ui::display_info("Please download R from: https://cloud.r-project.org/bin/macosx/");
                 
                 // Check platform architecture to recommend the right version
@@ -567,26 +827,38 @@ fn setup_r_environment(system_r: Option<String>, r_info: Option<RInfo>, rig_avai
         // Linux-specific installation options
         let mut install_options = vec![];
         
+        // Check if rig is available
+        let rig_available = check_rig_available()?;
+        
         // Add distribution-specific options based on detection
-        if is_debian_based() {
+        let is_debian = is_debian_based();
+        let is_fedora = is_fedora_based();
+        let is_arch = is_arch_based();
+        let has_sudo = Command::new("sudo").arg("-n").arg("true").status().map_or(false, |status| status.success());
+        
+        // Add rig options
+        if rig_available {
+            install_options.push("Using rig (R Installation Manager) (already installed, recommended)");
+        } else {
+            install_options.push("Install and use rig (R Installation Manager) (recommended)");
+        }
+        
+        // Add distribution-specific options
+        if is_debian {
             install_options.push("Using apt (Ubuntu/Debian)");
         }
         
-        if is_fedora_based() {
+        if is_fedora {
             install_options.push("Using dnf (Fedora/RHEL/CentOS)");
         }
         
-        if is_arch_based() {
+        if is_arch {
             install_options.push("Using pacman (Arch Linux)");
         }
         
-        if install_options.is_empty() {
+        if install_options.len() <= 1 {
             // General options for unknown Linux distributions
             install_options.push("Using system package manager");
-        }
-        
-        if rig_available {
-            install_options.insert(0, "Using rig (R Installation Manager)");
         }
         
         // Add general options
@@ -595,11 +867,10 @@ fn setup_r_environment(system_r: Option<String>, r_info: Option<RInfo>, rig_avai
         
         let install_selection = cli_ui::prompt_select("How would you like to install R?", &install_options)?;
         
-        if install_selection < install_options.len() - 2 {
-            // Selected a specific installation method
-            let selected_option = install_options[install_selection];
-            
-            if selected_option.contains("rig") && rig_available {
+        if install_selection == 0 {
+            // Using or installing rig
+            if rig_available {
+                // Rig is already installed
                 cli_ui::display_info(&format!("Installing R {} using rig...", selected_version));
                 
                 let status = Command::new("rig")
@@ -619,17 +890,201 @@ fn setup_r_environment(system_r: Option<String>, r_info: Option<RInfo>, rig_avai
                 } else {
                     cli_ui::display_error("Failed to run rig command");
                 }
-            } else if selected_option.contains("apt") {
+            } else {
+                // Install rig first
+                cli_ui::display_info("Installing rig (R Installation Manager)...");
+                
+                if is_debian {
+                    // Install rig using apt for Debian/Ubuntu
+                    if !has_sudo {
+                        cli_ui::display_warning("You might not have sudo access or sudo requires a password.");
+                        cli_ui::display_warning("The following commands require sudo privileges:");
+                    }
+                    
+                    let rig_install_commands = [
+                        "curl -L https://rig.r-pkg.org/deb/rig.gpg -o /tmp/rig.gpg",
+                        "sudo mv /tmp/rig.gpg /etc/apt/trusted.gpg.d/rig.gpg",
+                        "echo \"deb http://rig.r-pkg.org/deb rig main\" | sudo tee /etc/apt/sources.list.d/rig.list",
+                        "sudo apt update",
+                        "sudo apt install r-rig"
+                    ];
+                    
+                    cli_ui::display_info("To install rig on Debian/Ubuntu, run the following commands:");
+                    for cmd in &rig_install_commands {
+                        cli_ui::display_info(cmd);
+                    }
+                    
+                    let proceed = cli_ui::prompt_confirm("Do you want to execute these commands now?", true)?;
+                    
+                    if proceed {
+                        for cmd in &rig_install_commands {
+                            cli_ui::display_info(&format!("Running: {}", cmd));
+                            
+                            let status = Command::new("sh")
+                                .arg("-c")
+                                .arg(cmd)
+                                .status();
+                                
+                            match status {
+                                Ok(exit_status) => {
+                                    if !exit_status.success() {
+                                        cli_ui::display_error(&format!("Command failed: {}", cmd));
+                                        break;
+                                    }
+                                },
+                                Err(e) => {
+                                    cli_ui::display_error(&format!("Failed to execute command: {} ({})", cmd, e));
+                                    break;
+                                }
+                            }
+                        }
+                        
+                        // Check if rig was installed
+                        let rig_check = Command::new("rig").arg("--version").status();
+                        if rig_check.map_or(false, |status| status.success()) {
+                            cli_ui::display_success("Successfully installed rig");
+                            
+                            // Now use rig to install R
+                            cli_ui::display_info(&format!("Installing R {} using rig...", selected_version));
+                            
+                            let status = Command::new("rig")
+                                .arg("add")
+                                .arg(&selected_version)
+                                .status();
+                                
+                            if let Ok(status) = status {
+                                if status.success() {
+                                    cli_ui::display_success(&format!("Successfully installed R {}", selected_version));
+                                    
+                                    // Verify installation
+                                    verify_r_installation()?;
+                                } else {
+                                    cli_ui::display_error(&format!("Failed to install R {}", selected_version));
+                                }
+                            }
+                        } else {
+                            cli_ui::display_error("Failed to install rig. Try manual installation.");
+                        }
+                    }
+                } else if is_fedora || is_arch {
+                    // RPM/Arch-based distros
+                    let arch_cmd = if cfg!(target_arch = "aarch64") {
+                        "aarch64"
+                    } else {
+                        "x86_64"
+                    };
+                    
+                    let rig_cmd = if is_fedora {
+                        format!("sudo yum install -y https://github.com/r-lib/rig/releases/download/latest/r-rig-latest-1.{}.rpm", arch_cmd)
+                    } else { // Arch
+                        format!("sudo zypper install -y --allow-unsigned-rpm https://github.com/r-lib/rig/releases/download/latest/r-rig-latest-1.{}.rpm", arch_cmd)
+                    };
+                    
+                    cli_ui::display_info(&format!("To install rig, run: {}", rig_cmd));
+                    
+                    let proceed = cli_ui::prompt_confirm("Do you want to execute this command now?", true)?;
+                    
+                    if proceed {
+                        cli_ui::display_info(&format!("Running: {}", rig_cmd));
+                        
+                        let status = Command::new("sh")
+                            .arg("-c")
+                            .arg(&rig_cmd)
+                            .status();
+                            
+                        if let Ok(status) = status {
+                            if status.success() {
+                                cli_ui::display_success("Successfully installed rig");
+                                
+                                // Now use rig to install R
+                                cli_ui::display_info(&format!("Installing R {} using rig...", selected_version));
+                                
+                                let status = Command::new("rig")
+                                    .arg("add")
+                                    .arg(&selected_version)
+                                    .status();
+                                    
+                                if let Ok(status) = status {
+                                    if status.success() {
+                                        cli_ui::display_success(&format!("Successfully installed R {}", selected_version));
+                                        
+                                        // Verify installation
+                                        verify_r_installation()?;
+                                    } else {
+                                        cli_ui::display_error(&format!("Failed to install R {}", selected_version));
+                                    }
+                                }
+                            } else {
+                                cli_ui::display_error("Failed to install rig");
+                            }
+                        } else {
+                            cli_ui::display_error("Failed to execute command");
+                        }
+                    }
+                } else {
+                    // Generic Linux - use tarball method
+                    let arch_cmd = if cfg!(target_arch = "aarch64") {
+                        "aarch64"
+                    } else {
+                        "x86_64"
+                    };
+                    
+                    let rig_cmd = format!("curl -Ls https://github.com/r-lib/rig/releases/download/latest/rig-linux-{}-latest.tar.gz | sudo tar xz -C /usr/local", arch_cmd);
+                    
+                    cli_ui::display_info("To install rig on your Linux distribution:");
+                    cli_ui::display_info(&format!("Run: {}", rig_cmd));
+                    
+                    let proceed = cli_ui::prompt_confirm("Do you want to execute this command now?", true)?;
+                    
+                    if proceed {
+                        cli_ui::display_info(&format!("Running: {}", rig_cmd));
+                        
+                        let status = Command::new("sh")
+                            .arg("-c")
+                            .arg(&rig_cmd)
+                            .status();
+                            
+                        if let Ok(status) = status {
+                            if status.success() {
+                                cli_ui::display_success("Successfully installed rig");
+                                
+                                // Now use rig to install R
+                                cli_ui::display_info(&format!("Installing R {} using rig...", selected_version));
+                                
+                                let status = Command::new("rig")
+                                    .arg("add")
+                                    .arg(&selected_version)
+                                    .status();
+                                    
+                                if let Ok(status) = status {
+                                    if status.success() {
+                                        cli_ui::display_success(&format!("Successfully installed R {}", selected_version));
+                                        
+                                        // Verify installation
+                                        verify_r_installation()?;
+                                    } else {
+                                        cli_ui::display_error(&format!("Failed to install R {}", selected_version));
+                                    }
+                                } else {
+                                    cli_ui::display_error("Failed to run rig command. Make sure it's in your PATH.");
+                                }
+                            } else {
+                                cli_ui::display_error("Failed to install rig");
+                            }
+                        } else {
+                            cli_ui::display_error("Failed to execute command");
+                        }
+                    }
+                }
+            }
+        } else if (is_debian && install_selection == 1) ||
+                  (!is_debian && is_fedora && install_selection == 1) ||
+                  (!is_debian && !is_fedora && is_arch && install_selection == 1) ||
+                  (!is_debian && !is_fedora && !is_arch && install_selection == 1) {
+            // Using distribution package manager
+            if is_debian {
                 cli_ui::display_info("Installing R using apt...");
                 cli_ui::display_warning("This will require sudo privileges. You may be prompted for your password.");
-                
-                // Check for sudo access
-                let sudo_check = Command::new("sudo").arg("-n").arg("true").status();
-                let has_sudo = sudo_check.is_ok() && sudo_check.unwrap().success();
-                
-                if !has_sudo {
-                    cli_ui::display_warning("You might not have sudo access or sudo requires a password.");
-                }
                 
                 let install_commands = [
                     "sudo apt update",
@@ -673,7 +1128,7 @@ fn setup_r_environment(system_r: Option<String>, r_info: Option<RInfo>, rig_avai
                     // Verify installation
                     verify_r_installation()?;
                 }
-            } else if selected_option.contains("dnf") {
+            } else if is_fedora {
                 cli_ui::display_info("Installing R using dnf...");
                 cli_ui::display_warning("This will require sudo privileges. You may be prompted for your password.");
                 
@@ -701,7 +1156,7 @@ fn setup_r_environment(system_r: Option<String>, r_info: Option<RInfo>, rig_avai
                         cli_ui::display_error("Failed to execute dnf command");
                     }
                 }
-            } else if selected_option.contains("pacman") {
+            } else if is_arch {
                 cli_ui::display_info("Installing R using pacman...");
                 cli_ui::display_warning("This will require sudo privileges. You may be prompted for your password.");
                 
@@ -729,7 +1184,7 @@ fn setup_r_environment(system_r: Option<String>, r_info: Option<RInfo>, rig_avai
                         cli_ui::display_error("Failed to execute pacman command");
                     }
                 }
-            } else if selected_option.contains("system package") {
+            } else {
                 cli_ui::display_info("Please enter the appropriate command for your system to install R:");
                 let cmd: String = cli_ui::prompt_input("Installation command:", Some("sudo apt install r-base".to_string()))?;
                 
@@ -784,8 +1239,15 @@ fn setup_r_environment(system_r: Option<String>, r_info: Option<RInfo>, rig_avai
 fn get_r_installation_instructions() -> String {
     if cfg!(target_os = "windows") {
         r#"Windows Installation:
-1. Download R from https://cloud.r-project.org/bin/windows/base/
-2. Run the installer and follow the instructions
+1. Recommended: Install rig (R Installation Manager) first
+   - Download from https://github.com/r-lib/rig/releases
+   - Or use WinGet: winget install posit.rig 
+   - Or use Chocolatey: choco install rig
+   - Or use Scoop: scoop bucket add r-bucket https://github.com/cderv/r-bucket.git && scoop install rig
+   
+   Then install R with: rig add release
+
+2. Alternative: Download R from https://cloud.r-project.org/bin/windows/base/
 3. Optionally install RStudio from https://posit.co/download/rstudio-desktop/"#.to_string()
     } else if cfg!(target_os = "macos") {
         let arch_note = if cfg!(target_arch = "aarch64") {
@@ -796,23 +1258,64 @@ fn get_r_installation_instructions() -> String {
         
         format!(
             r#"macOS Installation:
-1. Using Homebrew (recommended):
+1. Recommended: Install rig (R Installation Manager) first
+   ```bash
+   # Using Homebrew
+   brew tap r-lib/rig
+   brew install --cask rig
+   
+   # Then install R
+   rig add release
+   ```
+
+2. Using Homebrew directly:
    ```bash
    brew install --cask r
    ```
 
-2. Alternative: Download from https://cloud.r-project.org/bin/macosx/
+3. Alternative: Download from https://cloud.r-project.org/bin/macosx/
    {}
-
-3. Consider installing R Installation Manager (rig) for managing multiple R versions:
-   ```bash
-   brew install rig
-   ```"#,
+"#,
             arch_note
         )
     } else {
         r#"Linux Installation:
-1. Ubuntu/Debian:
+1. Recommended: Install rig (R Installation Manager) first
+
+   Ubuntu/Debian:
+   ```bash
+   # Add rig repository
+   curl -L https://rig.r-pkg.org/deb/rig.gpg -o /tmp/rig.gpg
+   sudo mv /tmp/rig.gpg /etc/apt/trusted.gpg.d/rig.gpg
+   echo "deb http://rig.r-pkg.org/deb rig main" | sudo tee /etc/apt/sources.list.d/rig.list
+   sudo apt update
+   sudo apt install r-rig
+   
+   # Then install R
+   rig add release
+   ```
+
+   Fedora/RHEL/CentOS:
+   ```bash
+   # Install rig
+   sudo yum install -y https://github.com/r-lib/rig/releases/download/latest/r-rig-latest-1.$(arch).rpm
+   
+   # Then install R
+   rig add release
+   ```
+
+   Other Linux distributions:
+   ```bash
+   # Install rig
+   curl -Ls https://github.com/r-lib/rig/releases/download/latest/rig-linux-$(arch)-latest.tar.gz | sudo tar xz -C /usr/local
+   
+   # Then install R
+   rig add release
+   ```
+
+2. Alternative direct installation:
+
+   Ubuntu/Debian:
    ```bash
    # Add CRAN repository
    sudo apt update
@@ -825,18 +1328,15 @@ fn get_r_installation_instructions() -> String {
    sudo apt install r-base r-base-dev
    ```
 
-2. Fedora/RHEL/CentOS:
+   Fedora/RHEL/CentOS:
    ```bash
    sudo dnf install R
    ```
 
-3. Arch Linux:
+   Arch Linux:
    ```bash
    sudo pacman -S r
-   ```
-
-4. Consider installing R Installation Manager (rig) for managing multiple R versions:
-   https://github.com/r-lib/rig#installation"#.to_string()
+   ```"#.to_string()
     }
 }
 
