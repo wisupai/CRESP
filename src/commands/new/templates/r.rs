@@ -5,8 +5,18 @@ use crate::utils::cli_ui;
 use std::path::Path;
 use std::process::Command;
 
+/// Configuration for R project
+#[derive(Debug)]
+struct RProjectConfig {
+    r_version: String,
+    project_name: String,
+    create_conda_env: bool,
+}
+
 /// Create R project with the specified configuration
 pub fn create_r_project(project_dir: &Path) -> Result<()> {
+    // PHASE 1: Check prerequisites and collect user configuration
+
     // Check conda availability (required for R projects)
     let conda_version = match conda_utils::ensure_conda_available()? {
         Some(version) => version,
@@ -20,10 +30,51 @@ pub fn create_r_project(project_dir: &Path) -> Result<()> {
     // Check conda version and show warning if outdated
     conda_utils::check_conda_version(&conda_version)?;
 
-    // Setup R environment - get version from user
+    // Collect project configuration from user
+    let config = collect_r_project_config(project_dir)?;
+
+    // PHASE 2: Create project structure and files based on configuration
+    create_r_project_structure(project_dir, &config)?;
+
+    // PHASE 3: Setup environment (if requested)
+    if config.create_conda_env {
+        if conda_utils::create_conda_environment(project_dir, "environment.yml")? {
+            // Verify if R is correctly installed in the conda environment
+            verify_r_installation()?;
+        }
+    }
+
+    Ok(())
+}
+
+/// Collect all user settings for R project
+fn collect_r_project_config(project_dir: &Path) -> Result<RProjectConfig> {
+    cli_ui::display_info("Setting up r environment...");
+
+    // Get R version from user
     let r_version = setup_r_environment()?;
 
+    // Get project name for conda environment
+    let project_name = project_dir
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("myresearch")
+        .to_string();
+
+    // Ask if conda environment should be created
+    let create_conda_env = cli_ui::prompt_confirm("Create conda environment now?", true)?;
+
+    Ok(RProjectConfig {
+        r_version,
+        project_name,
+        create_conda_env,
+    })
+}
+
+/// Create R project structure and files
+fn create_r_project_structure(project_dir: &Path, config: &RProjectConfig) -> Result<()> {
     cli_ui::display_info("Creating R project structure...");
+
     // Create basic R project structure
     let dirs = &["R", "data", "output", "tests/testthat", "docs"];
 
@@ -61,19 +112,14 @@ pub fn create_r_project(project_dir: &Path) -> Result<()> {
 }"#;
 
     // Replace R version in renv.lock
-    let renv_lock = renv_lock.replace("__R_VERSION__", &r_version);
+    let renv_lock = renv_lock.replace("__R_VERSION__", &config.r_version);
     write_file(&project_dir.join("renv.lock"), &renv_lock)?;
 
     // Create conda environment.yml file
-    let project_name = project_dir
-        .file_name()
-        .and_then(|n| n.to_str())
-        .unwrap_or("myresearch");
-
     // Using the new function to generate environment.yml content
     let channels = ["r", "conda-forge", "defaults"];
     let dependencies = [
-        &format!("r-base={}", r_version),
+        &format!("r-base={}", config.r_version),
         "r-renv",
         "r-essentials",
         "r-devtools",
@@ -81,7 +127,7 @@ pub fn create_r_project(project_dir: &Path) -> Result<()> {
     ];
 
     let environment_yml =
-        conda_utils::generate_base_environment_yml(project_name, &channels, &dependencies);
+        conda_utils::generate_base_environment_yml(&config.project_name, &channels, &dependencies);
 
     write_file(&project_dir.join("environment.yml"), &environment_yml)?;
 
@@ -259,7 +305,7 @@ Run tests with:
 testthat::test_package("{}")
 ```
 "#,
-        project_name, project_name, project_name, project_name
+        config.project_name, config.project_name, config.project_name, config.project_name
     );
     write_file(&project_dir.join("README.md"), &readme)?;
 
@@ -315,15 +361,6 @@ library(myresearch)
 test_check("myresearch")
 "#;
     write_file(&project_dir.join("tests/testthat.R"), test_runner)?;
-
-    // Optional: Create conda environment if user confirms
-    let create_conda_env = cli_ui::prompt_confirm("Create conda environment now?", true)?;
-    if create_conda_env {
-        if conda_utils::create_conda_environment(project_dir, "environment.yml")? {
-            // Verify if R is correctly installed in the conda environment
-            verify_r_installation()?;
-        }
-    }
 
     Ok(())
 }
