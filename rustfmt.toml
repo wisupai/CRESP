@@ -1,0 +1,39 @@
+# rustfmt configuration for CRESP project
+# See https://rust-lang.github.io/rustfmt/ for documentation
+
+# Use max line width of 100 characters
+max_width = 100
+
+# Indentation style (4 spaces)
+tab_spaces = 4
+
+# Trailing commas in collections
+trailing_comma = "Vertical"
+
+# Consistent formatting of imports
+imports_granularity = "Crate"
+group_imports = "StdExternalCrate"
+
+# Control brace style
+control_brace_style = "AlwaysSameLine"
+
+# Formatting of function/method calls
+fn_args_layout = "Compressed"
+
+# Comments
+comment_width = 100
+wrap_comments = true
+
+# Format doc-comments
+format_code_in_doc_comments = true
+format_macro_matchers = true
+
+# Code organization
+reorder_imports = true
+reorder_modules = true
+
+# Edition
+edition = "2021"
+
+# Force Unix line endings
+newline_style = "Unix" 

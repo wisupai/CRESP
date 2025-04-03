@@ -154,6 +154,10 @@ Keep commit messages in a single line (no line breaks).
 - Add comments for complex logic
 - Use English for all code and comments
 - Follow Rust's official style guidelines
+- Use `rustfmt` for code formatting:
+  ```bash
+  cargo fmt
+  ```
 - Run `cargo fmt` before committing
 
 Thank you for contributing to CRESP! 
