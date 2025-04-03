@@ -38,19 +38,6 @@ irm https://raw.githubusercontent.com/wisupai/CRESP/main/install.ps1 | iex -Args
 1. Download the appropriate binary for your platform from the [Releases](https://github.com/wisupai/CRESP/releases) page
 2. Extract the archive and move the binary to a location in your PATH
 
-## Quick Start
-
-```bash
-# Create a new Python project
-cresp new python my-project
-
-# Create a new R project
-cresp new r my-project
-
-# Create a new MATLAB project
-cresp new matlab my-project
-```
-
 ## Documentation
 
 For detailed documentation and usage examples, please visit the [CRESP Documentation](https://github.com/wisupai/CRESP/wiki).
