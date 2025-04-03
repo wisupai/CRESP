@@ -563,3 +563,291 @@ pub fn generate_base_environment_yml(
 
     content
 }
+
+/// Language type enumeration
+#[derive(Debug, Clone, PartialEq)]
+pub enum Language {
+    Python,
+    R,
+    Matlab,
+    Other,
+}
+
+impl From<&str> for Language {
+    fn from(s: &str) -> Self {
+        match s.to_lowercase().as_str() {
+            "python" => Language::Python,
+            "r" => Language::R,
+            "matlab" => Language::Matlab,
+            _ => Language::Other,
+        }
+    }
+}
+
+/// Create conda environment for specific language
+pub fn create_language_conda_env(
+    project_dir: &Path,
+    project_name: &str, 
+    language: &Language,
+    python_version: Option<&str>,
+    r_version: Option<&str>,
+    with_cuda: bool,
+    channels: Option<&[String]>,
+) -> Result<bool> {
+    // Generate environment file
+    let env_file_content = generate_language_environment_yml(
+        project_name, 
+        language, 
+        python_version,
+        r_version,
+        with_cuda,
+        channels,
+    );
+
+    // Write environment file
+    let env_file_path = project_dir.join("environment.yml");
+    std::fs::write(&env_file_path, env_file_content)?;
+    debug!("Created conda environment file at: {:?}", env_file_path);
+
+    // Create environment
+    cli_ui::display_progress("Creating conda environment...", "This may take a while...");
+    let result = create_conda_environment(project_dir, "environment.yml")?;
+
+    // If creation successful, configure additional package managers
+    if result {
+        let conda_env_name = sanitize_for_conda_env(project_name);
+        
+        match language {
+            Language::Python => {
+                // May need to install additional package managers for Python
+                cli_ui::display_info("Setting up Python package managers...");
+                setup_python_package_managers(&conda_env_name)?;
+            },
+            Language::R => {
+                // Install renv for R
+                cli_ui::display_info("Setting up R environment...");
+                setup_r_environment(&conda_env_name)?;
+            },
+            _ => {
+                // Specific settings for other languages
+                cli_ui::display_info("Basic conda environment setup complete.");
+            }
+        }
+        
+        // Show environment activation prompt
+        cli_ui::display_success(&format!("Environment '{}' created successfully!", conda_env_name));
+        cli_ui::display_message(&format!("To activate: conda activate {}", conda_env_name));
+    }
+    
+    Ok(result)
+}
+
+/// Setup package managers for Python
+fn setup_python_package_managers(conda_env_name: &str) -> Result<()> {
+    let install_poetry = cli_ui::prompt_confirm("Install Poetry in conda environment?", false)?;
+    let install_uv = cli_ui::prompt_confirm("Install UV package manager in conda environment?", true)?;
+
+    if install_poetry {
+        cli_ui::display_progress("Installing Poetry...", "This may take a moment...");
+        install_poetry_in_conda_env(conda_env_name)?;
+    }
+
+    if install_uv {
+        cli_ui::display_progress("Installing UV...", "This may take a moment...");
+        install_uv_in_conda_env(conda_env_name)?;
+    }
+
+    Ok(())
+}
+
+/// Setup R environment
+fn setup_r_environment(conda_env_name: &str) -> Result<()> {
+    // Ensure renv is installed
+    cli_ui::display_progress("Setting up R environment...", "Installing renv...");
+    
+    let conda_path = find_conda_executable()?;
+    let install_cmd = Command::new(&conda_path)
+        .args(&["run", "-n", conda_env_name, "Rscript", "-e", 
+                "if(!require('renv')) install.packages('renv', repos='https://cloud.r-project.org')"])
+        .stdout(Stdio::inherit())
+        .stderr(Stdio::inherit())
+        .status();
+    
+    match install_cmd {
+        Ok(status) if status.success() => {
+            cli_ui::display_success("R environment setup completed successfully");
+        }
+        _ => {
+            cli_ui::display_warning("Could not complete R environment setup");
+            cli_ui::display_info("You may need to install renv manually: install.packages('renv')");
+        }
+    }
+    
+    Ok(())
+}
+
+/// Generate language-specific environment YAML
+pub fn generate_language_environment_yml(
+    project_name: &str, 
+    language: &Language,
+    python_version: Option<&str>,
+    r_version: Option<&str>,
+    with_cuda: bool,
+    channels: Option<&[String]>,
+) -> String {
+    // Default channels for each language
+    let default_channels = match language {
+        Language::Python => vec!["conda-forge", "defaults"],
+        Language::R => vec!["r", "conda-forge", "defaults"],
+        _ => vec!["conda-forge", "defaults"],
+    };
+    
+    // Use custom channels if provided, otherwise use defaults
+    let channels: Vec<&str> = match channels {
+        Some(channels) if !channels.is_empty() => {
+            channels.iter().map(|s| s.as_str()).collect()
+        },
+        _ => default_channels.iter().copied().collect(),
+    };
+    
+    // Base dependencies
+    let mut dependencies = Vec::new();
+    
+    // Add language-specific dependencies
+    match language {
+        Language::Python => {
+            // Python dependencies
+            let python_ver = python_version.unwrap_or("3.12");
+            dependencies.push(format!("python={}", python_ver));
+            dependencies.push("pip".to_string());
+            
+            if with_cuda {
+                dependencies.push("cudatoolkit=11.8".to_string());
+                dependencies.push("cudnn=8.9".to_string());
+                dependencies.push("numpy".to_string());
+                dependencies.push("scipy".to_string());
+                dependencies.push("matplotlib".to_string());
+                dependencies.push("pandas".to_string());
+            }
+        },
+        Language::R => {
+            // R dependencies
+            let r_ver = r_version.unwrap_or("4.3");
+            dependencies.push(format!("r-base={}", r_ver));
+            dependencies.push("r-renv".to_string());
+            dependencies.push("r-essentials".to_string());
+            dependencies.push("r-devtools".to_string());
+            dependencies.push("r-testthat".to_string());
+        },
+        Language::Matlab => {
+            // Matlab dependencies
+            dependencies.push("python=3.11".to_string()); // Matlab typically integrates with Python
+            dependencies.push("pip".to_string());
+        },
+        Language::Other => {
+            // Default dependencies
+            dependencies.push("python=3.11".to_string());
+            dependencies.push("pip".to_string());
+        }
+    }
+    
+    // Generate environment file content
+    let conda_env_name = sanitize_for_conda_env(project_name);
+    let mut content = format!("name: {}\nchannels:\n", conda_env_name);
+    
+    // Add channels
+    for channel in channels {
+        content.push_str(&format!("  - {}\n", channel));
+    }
+    
+    // Add dependencies
+    content.push_str("\ndependencies:\n");
+    for dependency in dependencies {
+        content.push_str(&format!("  - {}\n", dependency));
+    }
+    
+    content
+}
+
+/// Generate conda environment file for development environment
+pub fn generate_dev_environment_yml(
+    project_name: &str, 
+    language: &Language,
+    python_version: Option<&str>,
+    r_version: Option<&str>,
+    with_cuda: bool,
+    channels: Option<&[String]>,
+) -> String {
+    // First get the base environment
+    let mut content = generate_language_environment_yml(
+        project_name, 
+        language,
+        python_version,
+        r_version,
+        with_cuda,
+        channels,
+    );
+    
+    // Modify environment name to development version
+    content = content.replace(&format!("name: {}", sanitize_for_conda_env(project_name)), 
+                             &format!("name: {}-dev", sanitize_for_conda_env(project_name)));
+    
+    // Add development dependencies
+    match language {
+        Language::Python => {
+            // Python development dependencies
+            content.push_str("  - pytest\n");
+            content.push_str("  - black\n");
+            content.push_str("  - isort\n");
+            content.push_str("  - flake8\n");
+        },
+        Language::R => {
+            // R development dependencies
+            content.push_str("  - r-testthat\n");
+            content.push_str("  - r-roxygen2\n");
+            content.push_str("  - r-rcpp\n");
+        },
+        _ => {
+            // Generic development dependencies
+            content.push_str("  - pytest\n");
+        }
+    }
+    
+    content
+}
+
+/// Verify language installation in conda environment
+pub fn verify_language_installation(language: &Language) -> Result<bool> {
+    match language {
+        Language::Python => {
+            // Verify Python installation
+            let output = Command::new("python").arg("--version").output();
+            if let Ok(output) = output {
+                if output.status.success() {
+                    let version = String::from_utf8_lossy(&output.stdout);
+                    cli_ui::display_success(&format!("Python is installed: {}", version.trim()));
+                    return Ok(true);
+                }
+            }
+            cli_ui::display_warning("Could not verify Python installation.");
+        },
+        Language::R => {
+            // Verify R installation
+            let output = Command::new("Rscript").arg("--version").output();
+            if let Ok(output) = output {
+                let version_output = String::from_utf8_lossy(&output.stderr); // R prints version to stderr
+                cli_ui::display_success(&format!(
+                    "R is successfully installed: {}",
+                    version_output.trim()
+                ));
+                return Ok(true);
+            }
+            cli_ui::display_warning("Could not verify R installation.");
+        },
+        _ => {
+            cli_ui::display_warning("Verification not implemented for this language type.");
+        }
+    }
+    
+    Ok(false)
+}

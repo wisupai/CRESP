@@ -22,6 +22,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Enhanced user feedback during installation process
 - Added automatic shell detection for better PATH configuration
 - Improved macOS shell detection to properly identify and configure zsh even when script is executed with bash
+- Fixed type mismatch in Python project template when passing channels to conda environment creation function
+- Removed unused imports in conda_utils.rs to improve code quality
 
 ## [0.1.0] - Unreleased
 Same as 0.1.0-dev.1, will be merged from the develop branch to the main branch after development stabilizes.
