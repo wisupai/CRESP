@@ -7,8 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.1.0] - 未发布
-与0.1.0-dev.1相同，将在开发稳定后从develop分支合并到main分支发布。
+### Added
+- Added shell installation script (install.sh) for Linux and macOS platforms
+- Added PowerShell installation script (install.ps1) for Windows platform
+- Enhanced README.md with comprehensive project description and installation instructions
+
+### Changed
+- Simplified README.md by removing Quick Start section
+- Updated project description in README.md to better reflect the purpose and functionality of CRESP
+
+## [0.1.0] - Unreleased
+Same as 0.1.0-dev.1, will be merged from the develop branch to the main branch after development stabilizes.
 
 ## [0.1.0-dev.1] - 2025-04-03
 
