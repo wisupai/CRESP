@@ -1,5 +1,5 @@
 use super::super::config::{
-    check_poetry_available, check_uv_available, install_poetry, install_uv, PackageManager,
+    check_poetry_available, check_uv_available, PackageManager,
     UserConfig, VirtualEnvType,
 };
 use super::super::utils::write_file;
@@ -10,7 +10,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 /// Create a Python project with the specified configuration
-pub fn create_python_project(project_dir: &PathBuf, config: &UserConfig) -> Result<()> {
+pub fn create_python_project(project_dir: &PathBuf, config: &mut UserConfig) -> Result<()> {
     // 添加检查conda版本功能
     check_conda_version()?;
     
@@ -25,91 +25,26 @@ pub fn create_python_project(project_dir: &PathBuf, config: &UserConfig) -> Resu
         .iter()
         .any(|pm| matches!(pm, PackageManager::Poetry { .. }));
 
-    // Only check and install package managers if they weren't already installed in the config step
+    // 移除全局安装UV和Poetry的部分，我们将在conda环境创建后安装它们
+    // 注意：仅保留检查是否已经存在的代码，以便提示用户
+
     if has_uv && !config.uv_installed {
         let uv_available = check_uv_available()?;
         if !uv_available {
-            cli_ui::display_warning("UV package manager is required but not found on your system.");
-
-            // Offer to install UV automatically now
-            let install_now = cli_ui::prompt_confirm("Would you like to install UV now?", true)?;
-
-            if install_now {
-                let installation_success = install_uv()?;
-
-                if installation_success {
-                    cli_ui::display_success("UV was successfully installed!");
-                } else {
-                    cli_ui::display_error("Failed to install UV automatically.");
-                    cli_ui::display_warning(
-                        "Some project commands may not work until UV is installed.",
-                    );
-                    cli_ui::display_info("To install UV later, run one of these commands:");
-                    if cfg!(target_os = "windows") {
-                        cli_ui::display_info("powershell -ExecutionPolicy ByPass -c \"irm https://astral.sh/uv/install.ps1 | iex\"");
-                    } else {
-                        cli_ui::display_info("curl -LsSf https://astral.sh/uv/install.sh | sh");
-                    }
-                }
-            } else {
-                // User chose not to install now
-                cli_ui::display_info("You chose to continue without installing UV.");
-                cli_ui::display_warning(
-                    "Some project commands may not work until UV is installed.",
-                );
-                cli_ui::display_info("To install UV later, run one of these commands:");
-                if cfg!(target_os = "windows") {
-                    cli_ui::display_info("powershell -ExecutionPolicy ByPass -c \"irm https://astral.sh/uv/install.ps1 | iex\"");
-                } else {
-                    cli_ui::display_info("curl -LsSf https://astral.sh/uv/install.sh | sh");
-                }
-            }
+            cli_ui::display_info("UV package manager will be installed in your Conda environment.");
+        } else {
+            cli_ui::display_success("UV package manager found on your system.");
+            config.uv_installed = true;
         }
     }
 
     if has_poetry && !config.poetry_installed {
         let poetry_available = check_poetry_available()?;
         if !poetry_available {
-            cli_ui::display_warning(
-                "Poetry package manager is required but not found on your system.",
-            );
-
-            // Offer to install Poetry automatically now
-            let install_now =
-                cli_ui::prompt_confirm("Would you like to install Poetry now?", true)?;
-
-            if install_now {
-                let installation_success = install_poetry()?;
-
-                if installation_success {
-                    cli_ui::display_success("Poetry was successfully installed!");
-                } else {
-                    cli_ui::display_error("Failed to install Poetry automatically.");
-                    cli_ui::display_warning(
-                        "Some project commands may not work until Poetry is installed.",
-                    );
-                    cli_ui::display_info("To install Poetry later, run one of these commands:");
-                    if cfg!(target_os = "windows") {
-                        cli_ui::display_info("(Invoke-WebRequest -Uri https://install.python-poetry.org -UseBasicParsing).Content | py -");
-                    } else {
-                        cli_ui::display_info(
-                            "curl -sSL https://install.python-poetry.org | python3 -",
-                        );
-                    }
-                }
-            } else {
-                // User chose not to install now
-                cli_ui::display_info("You chose to continue without installing Poetry.");
-                cli_ui::display_warning(
-                    "Some project commands may not work until Poetry is installed.",
-                );
-                cli_ui::display_info("To install Poetry later, run one of these commands:");
-                if cfg!(target_os = "windows") {
-                    cli_ui::display_info("(Invoke-WebRequest -Uri https://install.python-poetry.org -UseBasicParsing).Content | py -");
-                } else {
-                    cli_ui::display_info("curl -sSL https://install.python-poetry.org | python3 -");
-                }
-            }
+            cli_ui::display_info("Poetry package manager will be installed in your Conda environment.");
+        } else {
+            cli_ui::display_success("Poetry package manager found on your system.");
+            config.poetry_installed = true;
         }
     }
 
@@ -542,46 +477,49 @@ def test_main():\n\
                         .iter()
                         .any(|pm| matches!(pm, PackageManager::Uv { .. }));
 
+                    // 确保每种平台上都先安装pip，然后通过pip安装UV和Poetry
+                    let install_pip_first = Command::new("conda")
+                        .arg("install")
+                        .arg("-n")
+                        .arg(&project_name)
+                        .arg("pip")
+                        .arg("-y")
+                        .status()?;
+                    
+                    if !install_pip_first.success() {
+                        cli_ui::display_warning("Could not install pip in Conda environment. Some dependencies may not install correctly.");
+                    }
+
                     // Install Poetry in Conda environment if needed
                     if has_poetry {
                         println!("🔧 Installing Poetry in Conda environment...");
 
                         let installation_success;
 
-                        // On Unix systems, we need to use a different approach for Conda activation
-                        if cfg!(target_os = "windows") {
-                            // Windows approach
-                            let install_cmd = format!("activate {} && pip install poetry && poetry config virtualenvs.create false", project_name);
-                            let status = Command::new("cmd").arg("/c").arg(install_cmd).status()?;
+                        // 统一优先使用conda run命令在Conda环境中安装Poetry
+                        let pip_status = Command::new("conda")
+                            .arg("run")
+                            .arg("-n")
+                            .arg(&project_name)
+                            .arg("pip")
+                            .arg("install")
+                            .arg("poetry")
+                            .status()?;
 
-                            installation_success = status.success();
-                        } else {
-                            // Unix approach (macOS, Linux)
-                            // For Unix, it's better to use conda run which doesn't require shell activation
-                            let pip_status = Command::new("conda")
+                        if pip_status.success() {
+                            let config_status = Command::new("conda")
                                 .arg("run")
                                 .arg("-n")
                                 .arg(&project_name)
-                                .arg("pip")
-                                .arg("install")
                                 .arg("poetry")
+                                .arg("config")
+                                .arg("virtualenvs.create")
+                                .arg("false")
                                 .status()?;
 
-                            if pip_status.success() {
-                                let config_status = Command::new("conda")
-                                    .arg("run")
-                                    .arg("-n")
-                                    .arg(&project_name)
-                                    .arg("poetry")
-                                    .arg("config")
-                                    .arg("virtualenvs.create")
-                                    .arg("false")
-                                    .status()?;
-
-                                installation_success = config_status.success();
-                            } else {
-                                installation_success = false;
-                            }
+                            installation_success = config_status.success();
+                        } else {
+                            installation_success = false;
                         }
 
                         if installation_success {
@@ -597,30 +535,17 @@ def test_main():\n\
                     if has_uv {
                         cli_ui::display_info("Installing UV in Conda environment...");
 
-                        let installation_success;
+                        // 统一优先使用conda run命令在Conda环境中安装UV
+                        let pip_status = Command::new("conda")
+                            .arg("run")
+                            .arg("-n")
+                            .arg(&project_name)
+                            .arg("pip")
+                            .arg("install")
+                            .arg("uv")
+                            .status()?;
 
-                        // On Unix systems, we need to use a different approach for Conda activation
-                        if cfg!(target_os = "windows") {
-                            // Windows approach
-                            let install_cmd =
-                                format!("activate {} && pip install uv", project_name);
-                            let status = Command::new("cmd").arg("/c").arg(install_cmd).status()?;
-
-                            installation_success = status.success();
-                        } else {
-                            // Unix approach (macOS, Linux)
-                            // For Unix, it's better to use conda run which doesn't require shell activation
-                            let pip_status = Command::new("conda")
-                                .arg("run")
-                                .arg("-n")
-                                .arg(&project_name)
-                                .arg("pip")
-                                .arg("install")
-                                .arg("uv")
-                                .status()?;
-
-                            installation_success = pip_status.success();
-                        }
+                        let installation_success = pip_status.success();
 
                         if installation_success {
                             cli_ui::display_success(&format!(
@@ -665,57 +590,8 @@ def test_main():\n\
             cli_ui::display_info(&format!("  Example: conda activate {} && poetry add numpy pandas", project_name));
         }
     } else if has_uv && config.uv_installed {
-        // Only check global UV installation for non-Conda environments
-        let uv_check = Command::new("sh").arg("-c").arg("command -v uv").output();
-
-        match uv_check {
-            Ok(output) if output.status.success() => {
-                cli_ui::display_success("UV is properly installed and available in your PATH.");
-
-                // 获取UV路径，辅助用户了解安装位置
-                if let Ok(path_output) = Command::new("sh").arg("-c").arg("which uv").output() {
-                    if path_output.status.success() {
-                        let path = String::from_utf8_lossy(&path_output.stdout)
-                            .trim()
-                            .to_string();
-                        cli_ui::display_info(&format!("UV is installed at: {}", path));
-                    }
-                }
-                
-                // 添加UV使用示例
-                cli_ui::display_info("Example usage of UV for package management:");
-                cli_ui::display_info("  uv pip install numpy pandas    # Install packages");
-                cli_ui::display_info("  uv pip freeze > requirements.txt    # Generate requirements file");
-            }
-            _ => {
-                cli_ui::display_warning(
-                    "UV was installed but doesn't seem to be available in your PATH.",
-                );
-                cli_ui::display_info("To use UV, you may need to:");
-                cli_ui::display_info("1. Run 'source $HOME/.local/bin/env' in your terminal");
-                cli_ui::display_info("2. Or restart your terminal session");
-                cli_ui::display_info("3. Or add $HOME/.local/bin to your PATH with: export PATH=\"$HOME/.local/bin:$PATH\"");
-
-                // 尝试自动使UV在当前会话中可用
-                if cfg!(target_os = "macos") || cfg!(target_os = "linux") {
-                    cli_ui::display_info("Attempting to make UV available in current session...");
-
-                    let source_cmd = Command::new("sh")
-                        .arg("-c")
-                        .arg("source $HOME/.local/bin/env || true")
-                        .status();
-
-                    if source_cmd.is_ok() && source_cmd.unwrap().success() {
-                        // 重新检查UV是否可用
-                        let recheck = Command::new("sh").arg("-c").arg("command -v uv").status();
-
-                        if recheck.is_ok() && recheck.unwrap().success() {
-                            cli_ui::display_success("UV is now available in your current session!");
-                        }
-                    }
-                }
-            }
-        }
+        // 移除此部分，因为我们不再提供全局UV的支持，所有UV都安装在conda环境内
+        cli_ui::display_info("Please activate your Conda environment to use UV.");
     }
 
     Ok(())

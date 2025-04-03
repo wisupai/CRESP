@@ -120,6 +120,7 @@ pub fn check_uv_available() -> Result<bool> {
     Ok(output.is_ok() && output.unwrap().status.success())
 }
 
+#[allow(dead_code)]
 /// Install UV package manager based on operating system
 pub fn install_uv() -> Result<bool> {
     cli_ui::display_info("Attempting to install UV package manager...");

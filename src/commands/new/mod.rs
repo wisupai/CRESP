@@ -106,7 +106,7 @@ impl NewCommand {
         let template = (template_idx + 1).to_string();
 
         // Get language-specific user configuration
-        let user_config = if language == "python" {
+        let mut user_config = if language == "python" {
             get_python_config()?
         } else {
             UserConfig::default()
@@ -141,7 +141,7 @@ impl NewCommand {
         // Create language-specific project files
         cli_ui::display_info(&format!("Setting up {} environment...", language));
         match language.as_str() {
-            "python" => templates::create_python_project(&project_dir, &user_config)?,
+            "python" => templates::create_python_project(&project_dir, &mut user_config)?,
             "r" => templates::create_r_project(&project_dir)?,
             "matlab" => templates::create_matlab_project(&project_dir)?,
             _ => unreachable!(),
