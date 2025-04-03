@@ -10,7 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.1.0] - 未发布
 与0.1.0-dev.1相同，将在开发稳定后从develop分支合并到main分支发布。
 
-## [0.1.0-dev.1] - 2024-07-04
+## [0.1.0-dev.1] - 2025-04-03
 
 ### Added
 - Initial project setup
