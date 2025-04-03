@@ -3,8 +3,7 @@ name: Release
 on:
   push:
     tags:
-      - 'v[0-9]+.[0-9]+.[0-9]+-dev.[0-9]+'  # matches v0.1.0-dev.1
-      - 'v[0-9]+.[0-9]+.[0-9]+'             # matches v0.1.0
+      - 'v[0-9]+.[0-9]+.[0-9]+*'  # Matches both dev and stable versions
 
 env:
   CARGO_TERM_COLOR: always
@@ -129,15 +128,25 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Get version from tag
-        id: get_version
+      - name: Determine version type
+        id: version_type
         run: |
+          # Get the current ref and branch
           echo "VERSION=${GITHUB_REF#refs/tags/v}" >> $GITHUB_ENV
-          if [[ $GITHUB_REF =~ -dev\. ]]; then
-            echo "IS_PRERELEASE=true" >> $GITHUB_ENV
-          else
+          
+          # Get branch for this tag
+          BRANCH=$(git branch -r --contains $GITHUB_REF | grep -v HEAD | head -n 1 | sed 's/.*\///' | xargs)
+          echo "BRANCH=$BRANCH" >> $GITHUB_ENV
+          
+          if [[ "$BRANCH" == "main" ]]; then
             echo "IS_PRERELEASE=false" >> $GITHUB_ENV
+            echo "RELEASE_TYPE=stable" >> $GITHUB_ENV
+          else
+            echo "IS_PRERELEASE=true" >> $GITHUB_ENV
+            echo "RELEASE_TYPE=development" >> $GITHUB_ENV
           fi
+          
+          echo "Branch: $BRANCH, Release type: $RELEASE_TYPE"
 
       - name: Generate release notes
         id: release_notes
@@ -152,7 +161,7 @@ jobs:
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v1
         with:
-          name: Release ${{ env.VERSION }}
+          name: ${{ env.RELEASE_TYPE == 'stable' && 'Release' || 'Development Release' }} ${{ env.VERSION }}
           body: ${{ env.NOTES }}
           files: |
             cresp-x86_64-linux-gnu.tar.gz
@@ -170,11 +179,11 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Install Rust toolchain
-        if: env.IS_PRERELEASE == 'false'
+        if: env.RELEASE_TYPE == 'stable'
         uses: dtolnay/rust-toolchain@stable
 
       - name: Publish to crates.io
-        if: env.IS_PRERELEASE == 'false'
+        if: env.RELEASE_TYPE == 'stable'
         run: cargo publish --token ${CRATES_TOKEN}
         env:
           CRATES_TOKEN: ${{ secrets.CRATES_IO_TOKEN }} 
