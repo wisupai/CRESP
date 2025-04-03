@@ -18,6 +18,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Updated project description in README.md to better reflect the purpose and functionality of CRESP
 
 ### Fixed
+- Fixed package management selection UI issues that caused repeated options display
+- Added support for handling conda environment name conflicts by allowing users to specify alternative names
 - Fixed installation scripts to automatically update PATH environment variable
 - Added installation verification to both shell and PowerShell scripts
 - Enhanced user feedback during installation process
