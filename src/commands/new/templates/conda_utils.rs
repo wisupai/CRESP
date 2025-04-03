@@ -136,30 +136,35 @@ pub fn install_uv_in_conda_env(env_name: &str) -> Result<()> {
 /// Create conda environment from environment file
 pub fn create_conda_environment(project_dir: &Path, environment_file: &str) -> Result<bool> {
     cli_ui::display_info("Creating conda environment...");
-    
-    // 先确保存在文件写入操作之后的延迟
+
+    // Add delay after file write operations
     std::thread::sleep(std::time::Duration::from_secs(1));
-    
-    // Find conda executable path - 需要使用完整路径，而不是简单的"conda"命令
+
+    // Find conda executable path - need to use full path instead of simple "conda" command
     let conda_path = match find_conda_executable() {
         Ok(path) => path,
         Err(e) => {
             cli_ui::display_error(&format!("Failed to find conda executable: {}", e));
-            cli_ui::display_info("Please make sure conda is correctly installed and available in your PATH.");
+            cli_ui::display_info(
+                "Please make sure conda is correctly installed and available in your PATH.",
+            );
             return Ok(false);
         }
     };
-    
-    // 确保环境文件存在
+
+    // Ensure environment file exists
     let env_file_path = project_dir.join(environment_file);
     if !env_file_path.exists() {
         cli_ui::display_error(&format!("Environment file not found: {:?}", env_file_path));
-        
-        // 检查目录是否存在
+
+        // Check if directory exists
         if !project_dir.exists() {
-            cli_ui::display_error(&format!("Project directory does not exist: {:?}", project_dir));
+            cli_ui::display_error(&format!(
+                "Project directory does not exist: {:?}",
+                project_dir
+            ));
         } else {
-            // 列出目录内容以便调试
+            // List directory contents for debugging
             cli_ui::display_info(&format!("Project directory contents at {:?}:", project_dir));
             if let Ok(entries) = std::fs::read_dir(project_dir) {
                 for entry in entries {
@@ -169,71 +174,83 @@ pub fn create_conda_environment(project_dir: &Path, environment_file: &str) -> R
                 }
             }
         }
-        
+
         return Ok(false);
     }
-    
-    // 显示环境文件内容日志，帮助调试
+
+    // Log environment file contents for debugging
     cli_ui::display_info(&format!("Using environment file: {:?}", env_file_path));
     if let Ok(content) = std::fs::read_to_string(&env_file_path) {
         cli_ui::display_info(&format!("Environment file content:\n{}", content));
     }
-    
-    // 强制刷新文件系统缓存，确保文件已写入磁盘
+
+    // Force flush filesystem cache to ensure file is written to disk
     #[cfg(unix)]
     {
         use std::process::Command;
         let _ = Command::new("sync").status();
     }
-    
-    // 再次等待，确保文件系统完全同步
+
+    // Wait again to ensure filesystem is fully synced
     std::thread::sleep(std::time::Duration::from_secs(1));
-    
-    // 使用绝对路径
+
+    // Use absolute path
     let abs_project_dir = if project_dir.is_absolute() {
         project_dir.to_path_buf()
     } else {
         std::env::current_dir()?.join(project_dir)
     };
-    
-    // 绝对环境文件路径
+
+    // Absolute environment file path
     let abs_env_file_path = if env_file_path.is_absolute() {
         env_file_path.clone()
     } else {
         abs_project_dir.join(environment_file)
     };
-    
-    // 确保工作目录正确
+
+    // Ensure working directory is correct
     let original_dir = std::env::current_dir()?;
     cli_ui::display_info(&format!("Current directory before: {:?}", original_dir));
-    
+
     if std::env::current_dir()? != abs_project_dir {
-        cli_ui::display_info(&format!("Changing working directory to: {:?}", abs_project_dir));
+        cli_ui::display_info(&format!(
+            "Changing working directory to: {:?}",
+            abs_project_dir
+        ));
         std::env::set_current_dir(&abs_project_dir)?;
     }
-    
-    // 使用Command::output捕获输出而不是只获取状态
-    cli_ui::display_info(&format!("Running: {} env create -f {:?}", conda_path, abs_env_file_path));
-    
-    // 使用环境文件的相对路径（相对于工作目录）
+
+    // Use Command::output to capture output instead of just getting status
+    cli_ui::display_info(&format!(
+        "Running: {} env create -f {:?}",
+        conda_path, abs_env_file_path
+    ));
+
+    // Use relative path of environment file (relative to working directory)
     let relative_env_file = environment_file;
-    
-    // 使用完整路径执行conda命令
+
+    // Execute conda command with full path
     cli_ui::display_info(&format!("Using conda executable: {}", conda_path));
     let conda_cmd = Command::new(&conda_path)
         .arg("env")
         .arg("create")
         .arg("-f")
-        .arg(relative_env_file) // 使用相对路径，因为已经设置了工作目录
-        .current_dir(&abs_project_dir) // 显式设置当前目录
+        .arg(relative_env_file) // Use relative path since working directory is set
+        .current_dir(&abs_project_dir) // Explicitly set current directory
         .output();
 
-    // 显示当前工作目录
-    cli_ui::display_info(&format!("Current directory during command: {:?}", std::env::current_dir()?));
-    
-    // 恢复原始工作目录
+    // Display current working directory
+    cli_ui::display_info(&format!(
+        "Current directory during command: {:?}",
+        std::env::current_dir()?
+    ));
+
+    // Restore original working directory
     std::env::set_current_dir(original_dir)?;
-    cli_ui::display_info(&format!("Current directory after: {:?}", std::env::current_dir()?));
+    cli_ui::display_info(&format!(
+        "Current directory after: {:?}",
+        std::env::current_dir()?
+    ));
 
     match conda_cmd {
         Ok(output) if output.status.success() => {
@@ -269,12 +286,12 @@ pub fn create_conda_environment(project_dir: &Path, environment_file: &str) -> R
             if !stderr.is_empty() {
                 cli_ui::display_error("Error details:");
                 for line in stderr.lines() {
-                    // 显示所有错误行
+                    // Display all error lines
                     cli_ui::display_warning(line);
                 }
             }
 
-            // 提供备选方案
+            // Provide alternative solution
             cli_ui::display_info("You can create the environment manually with this command:");
             cli_ui::display_info(&format!(
                 "cd {:?} && {} env create -f {}",
@@ -286,7 +303,7 @@ pub fn create_conda_environment(project_dir: &Path, environment_file: &str) -> R
             cli_ui::display_warning(&format!("Failed to execute conda command: {}", e));
             cli_ui::display_error(&format!("Error type: {:?}", e.kind()));
 
-            // 打印更多调试信息
+            // Print more debug information
             cli_ui::display_info(&format!("Conda path: {}", conda_path));
             cli_ui::display_info(&format!("Working directory: {:?}", abs_project_dir));
             cli_ui::display_info(&format!("Environment file: {}", environment_file));
@@ -295,7 +312,7 @@ pub fn create_conda_environment(project_dir: &Path, environment_file: &str) -> R
                 abs_env_file_path
             ));
 
-            // 检查文件权限
+            // Check file permissions
             #[cfg(unix)]
             {
                 use std::os::unix::fs::PermissionsExt;
@@ -305,7 +322,7 @@ pub fn create_conda_environment(project_dir: &Path, environment_file: &str) -> R
                 }
             }
 
-            // 检查conda可执行文件
+            // Check conda executable
             if let Ok(output) = Command::new(&conda_path).arg("--version").output() {
                 if output.status.success() {
                     let version = String::from_utf8_lossy(&output.stdout);
@@ -321,7 +338,7 @@ pub fn create_conda_environment(project_dir: &Path, environment_file: &str) -> R
                 );
             }
 
-            // 提供备选方案
+            // Provide alternative solution
             cli_ui::display_info("You can create the environment manually with this command:");
             cli_ui::display_info(&format!(
                 "cd {:?} && {} env create -f {}",
