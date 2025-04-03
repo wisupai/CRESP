@@ -76,6 +76,22 @@ jobs:
         with:
           targets: ${{ matrix.target }}
 
+      # Install dependencies for cross-compilation
+      - name: Install cross-compilation dependencies
+        if: runner.os == 'Linux' && matrix.cross
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y pkg-config libssl-dev
+
+          # Install additional libraries for cross-compiling OpenSSL
+          if [[ "${{ matrix.target }}" == "armv7-unknown-linux-gnueabihf" ]]; then
+            sudo apt-get install -y gcc-arm-linux-gnueabihf
+          elif [[ "${{ matrix.target }}" == "aarch64-unknown-linux-gnu" ]]; then
+            sudo apt-get install -y gcc-aarch64-linux-gnu
+          elif [[ "${{ matrix.target }}" == "i686-unknown-linux-gnu" ]]; then
+            sudo apt-get install -y gcc-multilib
+          fi
+
       - name: Install cross-compilation tools
         if: matrix.cross
         uses: taiki-e/setup-cross-toolchain-action@v1
@@ -91,8 +107,18 @@ jobs:
             target
           key: ${{ matrix.target }}-cargo-${{ hashFiles('**/Cargo.lock') }}
 
+      # Use cross instead of cargo for cross-compilation
+      - name: Install cross
+        if: matrix.cross
+        run: cargo install cross --git https://github.com/cross-rs/cross
+
       - name: Build release binary
-        run: cargo build --verbose --release --target ${{ matrix.target }}
+        run: |
+          if [[ "${{ matrix.cross }}" == "true" ]]; then
+            OPENSSL_STATIC=1 cross build --verbose --release --target ${{ matrix.target }}
+          else
+            cargo build --verbose --release --target ${{ matrix.target }}
+          fi
 
       - name: Run tests
         if: "!matrix.cross"  # Only run tests on native platforms
