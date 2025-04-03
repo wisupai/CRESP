@@ -1,6 +1,7 @@
 use super::super::config::{
     check_poetry_available, check_uv_available, PackageManager, UserConfig, VirtualEnvType,
 };
+use super::super::templates::conda_utils;
 use super::super::utils::write_file;
 use crate::error::Result;
 use crate::utils::cli_ui;
@@ -10,8 +11,16 @@ use std::process::Command;
 
 /// Create a Python project with the specified configuration
 pub fn create_python_project(project_dir: &PathBuf, config: &mut UserConfig) -> Result<()> {
-    // 添加检查conda版本功能
-    check_conda_version()?;
+    // Check conda version if available
+    if config.use_conda {
+        if let Some(version) = conda_utils::ensure_conda_available()? {
+            conda_utils::check_conda_version(&version)?;
+        } else if config.virtual_env_type == VirtualEnvType::Conda {
+            return Err(crate::error::Error::Environment(
+                "Conda is required but not found".to_string(),
+            ));
+        }
+    }
 
     // Check if required package managers are available
     let has_uv = config
@@ -445,27 +454,31 @@ def test_main():\n\
     match config.virtual_env_type {
         VirtualEnvType::Conda => {
             if config.use_conda {
-                // Get project name for conda environment
-                let project_name = project_dir
-                    .file_name()
-                    .and_then(|name| name.to_str())
-                    .unwrap_or("my-project");
+                // Find environment.yml file
+                let env_file = config
+                    .package_managers
+                    .iter()
+                    .find_map(|pm| {
+                        if let PackageManager::Conda {
+                            environment_file, ..
+                        } = pm
+                        {
+                            Some(environment_file.as_str())
+                        } else {
+                            None
+                        }
+                    })
+                    .unwrap_or("environment.yml");
 
-                // Create the Conda environment
-                let status = Command::new("conda")
-                    .arg("create")
-                    .arg("-n")
-                    .arg(&project_name)
-                    .arg(format!("python={}", config.python_version))
-                    .arg("-y")
-                    .status()?;
+                // Create conda environment
+                let env_created = conda_utils::create_conda_environment(project_dir, env_file)?;
 
-                if status.success() {
-                    println!(
-                        "✅ Successfully created Conda environment: {}",
-                        project_name
-                    );
-                    println!("ℹ️ Note: To use this environment, you'll need to activate it with 'conda activate {}'", project_name);
+                if env_created {
+                    // Get project name for conda environment
+                    let project_name = project_dir
+                        .file_name()
+                        .and_then(|name| name.to_str())
+                        .unwrap_or("my-project");
 
                     // Check if Poetry/UV is used alongside Conda
                     let has_poetry = config
@@ -478,7 +491,7 @@ def test_main():\n\
                         .iter()
                         .any(|pm| matches!(pm, PackageManager::Uv { .. }));
 
-                    // 确保每种平台上都先安装pip，然后通过pip安装UV和Poetry
+                    // Ensure pip is installed in the conda environment
                     let install_pip_first = Command::new("conda")
                         .arg("install")
                         .arg("-n")
@@ -491,79 +504,13 @@ def test_main():\n\
                         cli_ui::display_warning("Could not install pip in Conda environment. Some dependencies may not install correctly.");
                     }
 
-                    // Install Poetry in Conda environment if needed
+                    // Install and configure additional package managers in the conda environment
                     if has_poetry {
-                        println!("🔧 Installing Poetry in Conda environment...");
-
-                        let installation_success;
-
-                        // 统一优先使用conda run命令在Conda环境中安装Poetry
-                        let pip_status = Command::new("conda")
-                            .arg("run")
-                            .arg("-n")
-                            .arg(&project_name)
-                            .arg("pip")
-                            .arg("install")
-                            .arg("poetry")
-                            .status()?;
-
-                        if pip_status.success() {
-                            let config_status = Command::new("conda")
-                                .arg("run")
-                                .arg("-n")
-                                .arg(&project_name)
-                                .arg("poetry")
-                                .arg("config")
-                                .arg("virtualenvs.create")
-                                .arg("false")
-                                .status()?;
-
-                            installation_success = config_status.success();
-                        } else {
-                            installation_success = false;
-                        }
-
-                        if installation_success {
-                            println!("✅ Installed Poetry in Conda environment: {}", project_name);
-                            println!("📝 Poetry configured to use Conda environment (no separate virtualenv)");
-                        } else {
-                            println!("⚠️ Failed to install Poetry in Conda environment.");
-                            println!("📝 You can install it manually later using the commands in README.md");
-                        }
+                        install_poetry_in_conda_env(project_name)?;
                     }
 
-                    // Install UV in Conda environment if needed
                     if has_uv {
-                        cli_ui::display_info("Installing UV in Conda environment...");
-
-                        // 统一优先使用conda run命令在Conda环境中安装UV
-                        let pip_status = Command::new("conda")
-                            .arg("run")
-                            .arg("-n")
-                            .arg(&project_name)
-                            .arg("pip")
-                            .arg("install")
-                            .arg("uv")
-                            .status()?;
-
-                        let installation_success = pip_status.success();
-
-                        if installation_success {
-                            cli_ui::display_success(&format!(
-                                "Installed UV in Conda environment: {}",
-                                project_name
-                            ));
-                            cli_ui::display_info(
-                                "UV is now available within your Conda environment.",
-                            );
-                        } else {
-                            cli_ui::display_error("Failed to install UV in Conda environment.");
-                            cli_ui::display_info("You can install it manually later with:");
-                            cli_ui::display_info(&format!(
-                                "   conda activate {} && pip install uv",
-                                project_name
-                            ));
-                        }
+                        install_uv_in_conda_env(project_name)?;
                     }
                 }
             }
@@ -599,33 +546,6 @@ def test_main():\n\
     } else if has_uv && config.uv_installed {
         // 移除此部分，因为我们不再提供全局UV的支持，所有UV都安装在conda环境内
         cli_ui::display_info("Please activate your Conda environment to use UV.");
-    }
-
-    Ok(())
-}
-
-/// 检查conda版本并显示更新提示
-fn check_conda_version() -> Result<()> {
-    let output = Command::new("conda").arg("--version").output();
-
-    if let Ok(output) = output {
-        if output.status.success() {
-            let version_str = String::from_utf8_lossy(&output.stdout);
-            if let Some(version) = version_str.split_whitespace().nth(1) {
-                // 简单版本比较，只比较主版本号
-                let parts: Vec<&str> = version.split('.').collect();
-                if parts.len() >= 2 {
-                    if let Ok(major) = parts[0].parse::<u32>() {
-                        if major < 23 {
-                            cli_ui::display_warning(&format!("You are using an older version of conda ({}). Consider updating it for better performance and compatibility.", version));
-                            cli_ui::display_info(
-                                "To update conda, run: conda update -n base -c defaults conda",
-                            );
-                        }
-                    }
-                }
-            }
-        }
     }
 
     Ok(())
@@ -955,4 +875,73 @@ fn get_test_command(config: &UserConfig) -> String {
     }
 
     commands.join(" && ")
+}
+
+/// Install Poetry in Conda environment
+fn install_poetry_in_conda_env(env_name: &str) -> Result<bool> {
+    cli_ui::display_info("Installing Poetry in Conda environment...");
+
+    // Use conda run to install Poetry in the Conda environment
+    let pip_status = Command::new("conda")
+        .arg("run")
+        .arg("-n")
+        .arg(env_name)
+        .arg("pip")
+        .arg("install")
+        .arg("poetry")
+        .status()?;
+
+    if pip_status.success() {
+        // Configure Poetry to use the Conda environment instead of creating a new virtualenv
+        let config_status = Command::new("conda")
+            .arg("run")
+            .arg("-n")
+            .arg(env_name)
+            .arg("poetry")
+            .arg("config")
+            .arg("virtualenvs.create")
+            .arg("false")
+            .status()?;
+
+        if config_status.success() {
+            cli_ui::display_success(&format!(
+                "Installed Poetry in Conda environment: {}",
+                env_name
+            ));
+            cli_ui::display_info(
+                "Poetry configured to use Conda environment (no separate virtualenv)",
+            );
+            return Ok(true);
+        }
+    }
+
+    cli_ui::display_warning("Failed to install Poetry in Conda environment.");
+    cli_ui::display_info("You can install it manually later using the commands in README.md");
+    Ok(false)
+}
+
+/// Install UV in Conda environment
+fn install_uv_in_conda_env(env_name: &str) -> Result<bool> {
+    cli_ui::display_info("Installing UV in Conda environment...");
+
+    // Use conda run to install UV in the Conda environment
+    let pip_status = Command::new("conda")
+        .arg("run")
+        .arg("-n")
+        .arg(env_name)
+        .arg("pip")
+        .arg("install")
+        .arg("uv")
+        .status()?;
+
+    if pip_status.success() {
+        cli_ui::display_success(&format!("Installed UV in Conda environment: {}", env_name));
+        cli_ui::display_info("UV is now available within your Conda environment.");
+        return Ok(true);
+    }
+
+    cli_ui::display_error("Failed to install UV in Conda environment.");
+    cli_ui::display_info("You can install it manually later with:");
+    cli_ui::display_info(&format!("   conda activate {} && pip install uv", env_name));
+    Ok(false)
 }

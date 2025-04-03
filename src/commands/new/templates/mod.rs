@@ -3,9 +3,10 @@ use crate::error::Result;
 use crate::utils::cli_ui;
 use std::path::Path;
 
-mod matlab;
-mod python;
-mod r;
+pub mod conda_utils;
+pub mod matlab;
+pub mod python;
+pub mod r;
 
 pub use matlab::create_matlab_project;
 pub use python::create_python_project;

@@ -1,4 +1,4 @@
-use super::super::config::check_conda_available;
+use super::super::templates::conda_utils;
 use super::super::utils::write_file;
 use crate::error::Result;
 use crate::utils::cli_ui;
@@ -8,20 +8,17 @@ use std::process::Command;
 /// Create R project with the specified configuration
 pub fn create_r_project(project_dir: &Path) -> Result<()> {
     // Check conda availability (required for R projects)
-    let conda_available = check_conda_available()?;
+    let conda_version = match conda_utils::ensure_conda_available()? {
+        Some(version) => version,
+        None => {
+            return Err(crate::error::Error::Environment(
+                "Conda is required but not found".to_string(),
+            ));
+        }
+    };
 
-    if !conda_available {
-        cli_ui::display_error(
-            "Conda is required for CRESP R projects but not found on your system.",
-        );
-        cli_ui::display_info("Please install Conda (Miniconda or Anaconda) first:");
-        cli_ui::display_info(
-            "https://docs.conda.io/projects/conda/en/latest/user-guide/install/index.html",
-        );
-        return Err(crate::error::Error::Environment(
-            "Conda is required but not found".to_string(),
-        ));
-    }
+    // Check conda version and show warning if outdated
+    conda_utils::check_conda_version(&conda_version)?;
 
     // Setup R environment - get version from user
     let r_version = setup_r_environment()?;
@@ -73,21 +70,19 @@ pub fn create_r_project(project_dir: &Path) -> Result<()> {
         .and_then(|n| n.to_str())
         .unwrap_or("myresearch");
 
-    let environment_yml = format!(
-        r#"name: {}
-channels:
-  - r
-  - conda-forge
-  - defaults
-dependencies:
-  - r-base={}
-  - r-renv
-  - r-essentials
-  - r-devtools
-  - r-testthat
-"#,
-        project_name, r_version
-    );
+    // Using the new function to generate environment.yml content
+    let channels = ["r", "conda-forge", "defaults"];
+    let dependencies = [
+        &format!("r-base={}", r_version),
+        "r-renv",
+        "r-essentials",
+        "r-devtools",
+        "r-testthat",
+    ];
+
+    let environment_yml =
+        conda_utils::generate_base_environment_yml(project_name, &channels, &dependencies);
+
     write_file(&project_dir.join("environment.yml"), &environment_yml)?;
 
     // Create DESCRIPTION file
@@ -324,29 +319,9 @@ test_check("myresearch")
     // Optional: Create conda environment if user confirms
     let create_conda_env = cli_ui::prompt_confirm("Create conda environment now?", true)?;
     if create_conda_env {
-        cli_ui::display_info("Creating conda environment...");
-        let conda_cmd = Command::new("conda")
-            .args(&["env", "create", "-f", "environment.yml"])
-            .current_dir(project_dir)
-            .status();
-
-        match conda_cmd {
-            Ok(status) if status.success() => {
-                cli_ui::display_success(&format!(
-                    "Conda environment '{}' created successfully!",
-                    project_name
-                ));
-                cli_ui::display_info(&format!("To activate: conda activate {}", project_name));
-
-                // Verify if R is correctly installed in the conda environment
-                verify_r_installation()?;
-            }
-            _ => {
-                cli_ui::display_warning("Failed to create conda environment.");
-                cli_ui::display_info(
-                    "You can create it manually later with: conda env create -f environment.yml",
-                );
-            }
+        if conda_utils::create_conda_environment(project_dir, "environment.yml")? {
+            // Verify if R is correctly installed in the conda environment
+            verify_r_installation()?;
         }
     }
 
