@@ -906,8 +906,17 @@ fn get_test_command(config: &UserConfig) -> String {
 fn install_poetry_in_conda_env(env_name: &str) -> Result<bool> {
     cli_ui::display_info("Installing Poetry in Conda environment...");
 
+    // Get conda executable path
+    let conda_path = match conda_utils::find_conda_executable() {
+        Ok(path) => path,
+        Err(_) => {
+            cli_ui::display_warning("Cannot find conda executable to install Poetry");
+            return Ok(false);
+        }
+    };
+
     // Use conda run to install Poetry in the Conda environment
-    let pip_status = Command::new("conda")
+    let pip_status = Command::new(&conda_path)
         .arg("run")
         .arg("-n")
         .arg(env_name)
@@ -918,7 +927,7 @@ fn install_poetry_in_conda_env(env_name: &str) -> Result<bool> {
 
     if pip_status.success() {
         // Configure Poetry to use the Conda environment instead of creating a new virtualenv
-        let config_status = Command::new("conda")
+        let config_status = Command::new(&conda_path)
             .arg("run")
             .arg("-n")
             .arg(env_name)
@@ -949,8 +958,17 @@ fn install_poetry_in_conda_env(env_name: &str) -> Result<bool> {
 fn install_uv_in_conda_env(env_name: &str) -> Result<bool> {
     cli_ui::display_info("Installing UV in Conda environment...");
 
+    // Get conda executable path
+    let conda_path = match conda_utils::find_conda_executable() {
+        Ok(path) => path,
+        Err(_) => {
+            cli_ui::display_warning("Cannot find conda executable to install UV");
+            return Ok(false);
+        }
+    };
+
     // Use conda run to install UV in the Conda environment
-    let pip_status = Command::new("conda")
+    let pip_status = Command::new(&conda_path)
         .arg("run")
         .arg("-n")
         .arg(env_name)

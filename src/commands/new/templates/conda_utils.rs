@@ -7,7 +7,16 @@ use crate::utils::validation::exports::sanitize_for_conda_env;
 
 /// Check if conda is available and get its version
 pub fn ensure_conda_available() -> Result<Option<String>> {
-    let output = Command::new("conda").arg("--version").output();
+    // Try to find conda executable
+    let conda_path = match find_conda_executable() {
+        Ok(path) => path,
+        Err(_) => {
+            cli_ui::display_warning("Conda is not available on this system!");
+            return Ok(None);
+        }
+    };
+
+    let output = Command::new(&conda_path).arg("--version").output();
 
     match output {
         Ok(output) if output.status.success() => {
@@ -93,9 +102,12 @@ pub fn install_uv_in_conda_env(env_name: &str) -> Result<()> {
 /// Create conda environment from environment file
 pub fn create_conda_environment(project_dir: &Path, environment_file: &str) -> Result<bool> {
     cli_ui::display_info("Creating conda environment...");
-
+    
+    // Find conda executable path
+    let conda_path = find_conda_executable()?;
+    
     // Use Command::output instead of status to capture output
-    let conda_cmd = Command::new("conda")
+    let conda_cmd = Command::new(conda_path)
         .args(&["env", "create", "-f", environment_file])
         .current_dir(project_dir)
         .output();
@@ -121,7 +133,7 @@ pub fn create_conda_environment(project_dir: &Path, environment_file: &str) -> R
         Ok(output) => {
             // Show detailed error information
             cli_ui::display_warning("Failed to create conda environment.");
-
+            
             // Display command output which contains error information
             let stderr = String::from_utf8_lossy(&output.stderr);
             if !stderr.is_empty() {
@@ -131,7 +143,7 @@ pub fn create_conda_environment(project_dir: &Path, environment_file: &str) -> R
                     cli_ui::display_warning(line);
                 }
             }
-
+            
             cli_ui::display_info(&format!(
                 "You can create it manually later with: conda env create -f {}",
                 environment_file
@@ -147,6 +159,72 @@ pub fn create_conda_environment(project_dir: &Path, environment_file: &str) -> R
             Ok(false)
         }
     }
+}
+
+/// Find conda executable path
+pub fn find_conda_executable() -> Result<String> {
+    // Try to find conda executable
+    let possible_conda_commands = &["conda", "micromamba", "mamba"];
+    
+    // Try standard command first
+    for cmd in possible_conda_commands {
+        if let Ok(output) = Command::new(cmd).arg("--version").output() {
+            if output.status.success() {
+                return Ok(cmd.to_string());
+            }
+        }
+    }
+    
+    // If not found in PATH, look in common installation directories
+    let common_paths = if cfg!(target_os = "windows") {
+        vec![
+            r"C:\ProgramData\Anaconda3\Scripts\conda.exe",
+            r"C:\ProgramData\miniconda3\Scripts\conda.exe",
+            r"C:\Users\%USERNAME%\Anaconda3\Scripts\conda.exe",
+            r"C:\Users\%USERNAME%\miniconda3\Scripts\conda.exe",
+        ]
+    } else if cfg!(target_os = "macos") {
+        vec![
+            "/opt/anaconda3/bin/conda",
+            "/opt/miniconda3/bin/conda",
+            "/usr/local/anaconda3/bin/conda",
+            "/usr/local/miniconda3/bin/conda",
+            "/Users/$(whoami)/anaconda3/bin/conda",
+            "/Users/$(whoami)/miniconda3/bin/conda",
+            "/Users/$(whoami)/opt/anaconda3/bin/conda",
+            "/Users/$(whoami)/opt/miniconda3/bin/conda",
+        ]
+    } else {
+        vec![
+            "/opt/anaconda3/bin/conda",
+            "/opt/miniconda3/bin/conda",
+            "/usr/local/anaconda3/bin/conda",
+            "/usr/local/miniconda3/bin/conda",
+            "/home/$(whoami)/anaconda3/bin/conda",
+            "/home/$(whoami)/miniconda3/bin/conda",
+        ]
+    };
+    
+    for path in common_paths {
+        // Replace $(whoami) or %USERNAME% with actual username
+        let path = if path.contains("$(whoami)") || path.contains("%USERNAME%") {
+            match std::env::var("USER").or_else(|_| std::env::var("USERNAME")) {
+                Ok(username) => path.replace("$(whoami)", &username).replace("%USERNAME%", &username),
+                Err(_) => path.to_string(),
+            }
+        } else {
+            path.to_string()
+        };
+        
+        if std::path::Path::new(&path).exists() {
+            cli_ui::display_info(&format!("Found conda at: {}", path));
+            return Ok(path);
+        }
+    }
+    
+    // If still not found, use "conda" and hope for the best
+    cli_ui::display_warning("Could not find conda executable in common locations. Trying 'conda' command anyway.");
+    Ok("conda".to_string())
 }
 
 /// Generate base conda environment.yml content
