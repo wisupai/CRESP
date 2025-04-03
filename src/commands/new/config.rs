@@ -302,6 +302,8 @@ pub fn get_python_config() -> Result<UserConfig> {
     // Set Conda as the only option
     config.use_conda = true;
     config.virtual_env_type = VirtualEnvType::Conda;
+    
+    // Setup Conda environment first, which will add a Conda package manager to config
     setup_conda_environment(&mut config, conda_available)?;
 
     // 3. Ask about package management (always conda + another package manager)
@@ -309,24 +311,35 @@ pub fn get_python_config() -> Result<UserConfig> {
     cli_ui::display_info("Conda will be used as the base environment manager plus one of the following package managers:");
     cli_ui::display_info("Note: Using conda with PyPI package managers ensures compatibility with packages not available in conda channels.");
 
-    let pkg_options = vec![
-        "Conda + uv (recommended: fastest package manager with optimized dependency resolution)",
-        "Conda + Poetry (recommended for modern Python projects with structured dependencies)",
-    ];
+    // 修改交互方式：使用简单的数字选择而不是交互式UI
+    println!("\nSelect package management combination (enter the number):");
+    println!("1. Conda + uv (recommended: fastest package manager with optimized dependency resolution)");
+    println!("2. Conda + Poetry (recommended for modern Python projects with structured dependencies)");
+    
+    // 读取用户输入
+    let mut selection = 0;
+    loop {
+        let input: String = cli_ui::prompt_input("Enter 1 or 2:", None)?;
+        match input.trim() {
+            "1" => {
+                selection = 0;
+                break;
+            },
+            "2" => {
+                selection = 1;
+                break;
+            },
+            _ => {
+                cli_ui::display_warning("Invalid selection. Please enter 1 or 2.");
+            }
+        }
+    }
 
-    let selection = cli_ui::prompt_select("Select package management combination:", &pkg_options)?;
-
-    // Always add Conda as the first package manager
-    config.package_managers.push(PackageManager::Conda {
-        channels: Vec::new(), // Will be populated in setup_conda_environment
-        environment_file: "environment.yml".to_string(),
-        dev_environment_file: "environment-dev.yml".to_string(),
-    });
-
-    // Add the selected additional package manager - adjust indices since we've removed Conda-only option
+    // Do NOT add Conda package manager again as it was already added in setup_conda_environment
+    // Add only the selected additional package manager
     match selection {
         0 => {
-            // UV option (now first in the list)
+            // UV option
             // Check if UV is installed
             let uv_available = check_uv_available()?;
 
@@ -351,7 +364,7 @@ pub fn get_python_config() -> Result<UserConfig> {
             });
         }
         1 => {
-            // Poetry option (now second in the list)
+            // Poetry option
             // Check if Poetry is installed
             let poetry_available = check_poetry_available()?;
             if !poetry_available {
@@ -634,16 +647,22 @@ fn setup_conda_environment(config: &mut UserConfig, conda_available: bool) -> Re
         println!("Enter more channel numbers or type 'done' to finish selection");
     }
 
-    // Get existing Conda package manager and set channels
-    for pm in &mut config.package_managers {
-        if let PackageManager::Conda { channels, .. } = pm {
-            *channels = selected_channels.clone();
-            break;
-        }
-    }
+    // Check if we already have a Conda package manager in the config
+    let has_conda_pm = config
+        .package_managers
+        .iter()
+        .any(|pm| matches!(pm, PackageManager::Conda { .. }));
 
-    // Add new Conda package manager if not found
-    if !config.package_managers.iter().any(|pm| matches!(pm, PackageManager::Conda { .. })) {
+    if has_conda_pm {
+        // Update existing Conda package manager with selected channels
+        for pm in &mut config.package_managers {
+            if let PackageManager::Conda { channels, .. } = pm {
+                *channels = selected_channels.clone();
+                break;
+            }
+        }
+    } else {
+        // Add new Conda package manager with selected channels
         config.package_managers.push(PackageManager::Conda {
             channels: selected_channels,
             environment_file: "environment.yml".to_string(),

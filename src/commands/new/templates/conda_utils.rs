@@ -246,151 +246,155 @@ pub fn create_conda_environment(project_dir: &Path, environment_file: &str) -> R
         std::env::set_current_dir(&abs_project_dir)?;
     }
 
-    // Execute conda command with full path and inherited stdio to show real-time progress
-    let command_str = if use_faster_solver {
-        format!(
-            "{} env create --solver=libmamba -f {}",
-            conda_path, environment_file
-        )
-    } else {
-        format!("{} env create -f {}", conda_path, environment_file)
-    };
-
-    debug!("Running: {}", command_str);
-
-    // Use relative path of environment file (relative to working directory)
-    let relative_env_file = environment_file;
-
-    // Execute conda command with full path and inherit stdio to show real-time output
-    debug!("Using conda executable: {}", conda_path);
-    cli_ui::display_progress("Creating environment", "This may take a while...");
-
-    // Build the command with appropriate solver options
-    let mut cmd = Command::new(&conda_path);
-    cmd.arg("env").arg("create");
-
-    // Add faster solver if available
-    if use_faster_solver {
-        cmd.arg("--solver=libmamba");
+    // Read the current environment name
+    let mut env_name = String::new();
+    if let Ok(content) = std::fs::read_to_string(&abs_env_file_path) {
+        if let Some(name_line) = content.lines().find(|line| line.starts_with("name:")) {
+            if let Some(name) = name_line.split(':').nth(1) {
+                env_name = name.trim().to_string();
+            }
+        }
     }
 
-    // Add options for environment creation - remove --yes as it's not supported with conda env create
-    cmd.arg("-f")
-        .arg(relative_env_file)
-        .current_dir(&abs_project_dir)
-        .stdin(Stdio::inherit())
-        .stdout(Stdio::inherit())
-        .stderr(Stdio::inherit());
+    // 尝试创建环境，支持多次尝试
+    let mut attempt_count = 0;
+    let max_attempts = 3;
+    
+    while attempt_count < max_attempts {
+        attempt_count += 1;
+        
+        // Execute conda command with full path and inherited stdio to show real-time progress
+        let command_str = if use_faster_solver {
+            format!(
+                "{} env create --solver=libmamba -f {}",
+                conda_path, environment_file
+            )
+        } else {
+            format!("{} env create -f {}", conda_path, environment_file)
+        };
 
-    // Use spawn and wait with stdio inheritance to display real-time conda output
-    let conda_status = cmd.spawn().and_then(|mut child| child.wait());
+        debug!("Running: {}", command_str);
 
-    // Display current working directory - moved to trace level
-    trace!(
-        "Current directory during command: {:?}",
-        std::env::current_dir()?
-    );
+        // Use relative path of environment file (relative to working directory)
+        let relative_env_file = environment_file;
 
-    // Restore original working directory
-    std::env::set_current_dir(original_dir)?;
-    trace!("Current directory after: {:?}", std::env::current_dir()?);
+        // Execute conda command with full path and inherit stdio to show real-time output
+        debug!("Using conda executable: {}", conda_path);
+        cli_ui::display_progress("Creating environment", "This may take a while...");
 
-    match conda_status {
-        Ok(status) if status.success() => {
-            // Get project name for conda environment
-            let raw_project_name = project_dir
-                .file_name()
-                .and_then(|n| n.to_str())
-                .unwrap_or("my-project");
+        // Build the command with appropriate solver options
+        let mut cmd = Command::new(&conda_path);
+        cmd.arg("env").arg("create");
 
-            // Sanitize name for conda environment
-            let conda_env_name = sanitize_for_conda_env(raw_project_name);
-
-            cli_ui::display_success(&format!(
-                "Conda environment '{}' created successfully!",
-                conda_env_name
-            ));
-            cli_ui::display_message(&format!("To activate: conda activate {}", conda_env_name));
-            Ok(true)
+        // Add faster solver if available
+        if use_faster_solver {
+            cmd.arg("--solver=libmamba");
         }
-        Ok(status) => {
-            // Show error information
-            cli_ui::display_warning(&format!(
-                "Failed to create conda environment. Exit code: {:?}",
-                status.code()
-            ));
 
-            // Provide alternative solution
-            cli_ui::display_message("You can create the environment manually with this command:");
-            if use_faster_solver {
-                cli_ui::display_message(&format!(
-                    "cd {:?} && {} env create --solver=libmamba -f {}",
-                    abs_project_dir, conda_path, environment_file
+        // Add options for environment creation
+        cmd.arg("-f")
+            .arg(relative_env_file)
+            .current_dir(&abs_project_dir)
+            .stdin(Stdio::inherit())
+            .stdout(Stdio::inherit())
+            .stderr(Stdio::inherit());
+
+        // Use spawn and wait with stdio inheritance to display real-time conda output
+        let conda_status = cmd.spawn().and_then(|mut child| child.wait());
+
+        // Display current working directory - moved to trace level
+        trace!(
+            "Current directory during command: {:?}",
+            std::env::current_dir()?
+        );
+
+        match conda_status {
+            Ok(status) if status.success() => {
+                // Restore original working directory
+                std::env::set_current_dir(original_dir)?;
+                
+                cli_ui::display_success(&format!(
+                    "Conda environment '{}' created successfully!",
+                    env_name
                 ));
-            } else {
-                cli_ui::display_message(&format!(
-                    "cd {:?} && {} env create -f {}",
-                    abs_project_dir, conda_path, environment_file
-                ));
-                debug!("For faster environment solving, consider:");
-                debug!("1. Installing mamba: conda install -n base -c conda-forge mamba");
-                debug!("2. Upgrading to conda 22.11.0+ for libmamba solver");
+                cli_ui::display_message(&format!("To activate: conda activate {}", env_name));
+                return Ok(true);
             }
-            Ok(false)
-        }
-        Err(e) => {
-            cli_ui::display_warning(&format!("Failed to execute conda command: {}", e));
-            debug!("Error type: {:?}", e.kind());
-
-            // Print more debug information - moved to trace level
-            trace!("Conda path: {}", conda_path);
-            trace!("Working directory: {:?}", abs_project_dir);
-            trace!("Environment file: {}", environment_file);
-            trace!("Absolute environment file path: {:?}", abs_env_file_path);
-
-            // Check file permissions
-            #[cfg(unix)]
-            {
-                use std::os::unix::fs::PermissionsExt;
-                if let Ok(metadata) = std::fs::metadata(&abs_env_file_path) {
-                    let permissions = metadata.permissions();
-                    trace!("File permissions: {:o}", permissions.mode());
+            Ok(status) => {
+                // check if the environment already exists
+                cli_ui::display_warning(&format!(
+                    "Failed to create conda environment. Exit code: {:?}",
+                    status.code()
+                ));
+                
+                // ask the user if they want to try a different name
+                if attempt_count < max_attempts {
+                    let retry = cli_ui::prompt_confirm("Environment already exists. Would you like to try a different name?", true)?;
+                    
+                    if retry {
+                        // let the user input a new environment name
+                        let new_name: String = cli_ui::prompt_input(&format!("Enter new environment name (current: {}):", env_name), None)?;
+                        
+                        if !new_name.is_empty() {
+                            // update the name in the environment file
+                            if let Ok(content) = std::fs::read_to_string(&abs_env_file_path) {
+                                let new_content = content.replacen(&format!("name: {}", env_name), &format!("name: {}", new_name), 1);
+                                std::fs::write(&abs_env_file_path, new_content)?;
+                                env_name = new_name;
+                                cli_ui::display_info(&format!("Retrying with new environment name: {}", env_name));
+                                continue;  // 重试创建
+                            }
+                        }
+                    }
                 }
-            }
-
-            // Check conda executable
-            if let Ok(output) = Command::new(&conda_path).arg("--version").output() {
-                if output.status.success() {
-                    let version = String::from_utf8_lossy(&output.stdout);
-                    trace!("Conda version check: {}", version.trim());
+                
+                // recover the original working directory
+                std::env::set_current_dir(original_dir)?;
+                
+                // provide the command to create the environment manually
+                cli_ui::display_message("You can create the environment manually with this command:");
+                if use_faster_solver {
+                    cli_ui::display_message(&format!(
+                        "cd {:?} && {} env create --solver=libmamba -f {}",
+                        abs_project_dir, conda_path, environment_file
+                    ));
                 } else {
-                    debug!("Conda executable exists but could not run version check");
+                    cli_ui::display_message(&format!(
+                        "cd {:?} && {} env create -f {}",
+                        abs_project_dir, conda_path, environment_file
+                    ));
                 }
-            } else {
-                cli_ui::display_error(
-                    "Could not execute conda version check. The executable may not be valid.",
-                );
+                return Ok(false);
             }
-
-            // Provide alternative solution with tips for faster solving
-            cli_ui::display_message("You can create the environment manually with this command:");
-            if use_faster_solver {
-                cli_ui::display_message(&format!(
-                    "cd {:?} && {} env create --solver=libmamba -f {}",
-                    abs_project_dir, conda_path, environment_file
-                ));
-            } else {
-                cli_ui::display_message(&format!(
-                    "cd {:?} && {} env create -f {}",
-                    abs_project_dir, conda_path, environment_file
-                ));
-                cli_ui::display_message(
-                    "For faster environment solving, consider installing mamba or upgrading conda",
-                );
+            Err(e) => {
+                // recover the original working directory
+                std::env::set_current_dir(original_dir)?;
+                
+                cli_ui::display_warning(&format!("Failed to execute conda command: {}", e));
+                debug!("Error type: {:?}", e.kind());
+                
+                // provide the command to create the environment manually
+                cli_ui::display_message("You can create the environment manually with this command:");
+                if use_faster_solver {
+                    cli_ui::display_message(&format!(
+                        "cd {:?} && {} env create --solver=libmamba -f {}",
+                        abs_project_dir, conda_path, environment_file
+                    ));
+                } else {
+                    cli_ui::display_message(&format!(
+                        "cd {:?} && {} env create -f {}",
+                        abs_project_dir, conda_path, environment_file
+                    ));
+                }
+                return Ok(false);
             }
-            Ok(false)
         }
     }
+    
+    // Exceeded max attempts
+    cli_ui::display_warning(&format!("Failed to create conda environment after {} attempts", max_attempts));
+    std::env::set_current_dir(original_dir)?;
+    Ok(false)
 }
 
 /// Find conda executable path
@@ -644,19 +648,17 @@ pub fn create_language_conda_env(
 
 /// Setup package managers for Python
 fn setup_python_package_managers(conda_env_name: &str) -> Result<()> {
-    let install_poetry = cli_ui::prompt_confirm("Install Poetry in conda environment?", false)?;
-    let install_uv = cli_ui::prompt_confirm("Install UV package manager in conda environment?", true)?;
+    // 注意：这个函数只在通过conda_utils创建环境时被调用
+    // 如果是通过python.rs流程创建的项目，应该尊重用户已经做出的选择
+    // 因此我们需要跳过这些提示，避免重复询问
 
-    if install_poetry {
-        cli_ui::display_progress("Installing Poetry...", "This may take a moment...");
-        install_poetry_in_conda_env(conda_env_name)?;
-    }
-
-    if install_uv {
-        cli_ui::display_progress("Installing UV...", "This may take a moment...");
-        install_uv_in_conda_env(conda_env_name)?;
-    }
-
+    // Skip asking again since user would have already chosen via the main setup flow
+    // 将相关提示作为debug信息记录，而不是向用户展示
+    debug!("Package managers will be installed later if needed.");
+    debug!("If you want to install UV or Poetry manually, run:");
+    debug!("  conda activate {} && pip install uv", conda_env_name);
+    debug!("  conda activate {} && pip install poetry", conda_env_name);
+    
     Ok(())
 }
 

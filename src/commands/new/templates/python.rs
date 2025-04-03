@@ -415,6 +415,7 @@ fn setup_package_managers(
                 environment_file,
                 dev_environment_file,
             } => {
+                // Make sure we're only processing this once (in case there are somehow multiple Conda entries)
                 // use the generic conda environment setup function
                 // only create files but not immediately create environment, create it later
                 let env_content = conda_utils::generate_language_environment_yml(
