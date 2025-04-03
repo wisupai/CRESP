@@ -323,9 +323,9 @@ pub fn get_python_config() -> Result<UserConfig> {
     cli_ui::display_info("Conda will be used as the base package manager plus one of the following:");
     
     let pkg_options = vec![
+        "Conda only (use conda for all package management)",
         "Conda + Poetry (recommended for modern Python projects)",
         "Conda + uv (fastest package manager with optimized dependency resolution)",
-        "Conda + pip (traditional, recommended for simple projects)",
     ];
 
     let selection = cli_ui::prompt_select("Select package management combination:", &pkg_options)?;
@@ -340,6 +340,10 @@ pub fn get_python_config() -> Result<UserConfig> {
     // Add the selected additional package manager
     match selection {
         0 => {
+            // Conda only option - do nothing as we already added Conda
+            cli_ui::display_info("Using Conda for all package management.");
+        },
+        1 => {
             // Poetry option processing
             // Check if Poetry is installed
             let poetry_available = check_poetry_available()?;
@@ -395,7 +399,7 @@ pub fn get_python_config() -> Result<UserConfig> {
                 pyproject_file: "pyproject.toml".to_string(),
             });
         }
-        1 => {
+        2 => {
             // Check if UV is installed
             let uv_available = check_uv_available()?;
 
@@ -470,12 +474,6 @@ pub fn get_python_config() -> Result<UserConfig> {
             }
 
             config.package_managers.push(PackageManager::Uv {
-                requirements_file: "requirements.txt".to_string(),
-                dev_requirements_file: "requirements-dev.txt".to_string(),
-            });
-        }
-        2 => {
-            config.package_managers.push(PackageManager::Pip {
                 requirements_file: "requirements.txt".to_string(),
                 dev_requirements_file: "requirements-dev.txt".to_string(),
             });

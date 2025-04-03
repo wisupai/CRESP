@@ -141,8 +141,8 @@ pub fn create_python_project(project_dir: &PathBuf, config: &UserConfig) -> Resu
         .map(|pm| match pm {
             PackageManager::Conda { .. } => "Conda",
             PackageManager::Poetry { .. } => "Poetry",
-            PackageManager::Pip { .. } => "pip",
             PackageManager::Uv { .. } => "uv",
+            PackageManager::Pip { .. } => "pip",
         })
         .collect::<Vec<_>>()
         .join(" + ");
@@ -475,11 +475,7 @@ def test_main():\n\
                     // For pure Poetry projects, we typically want Poetry to manage its own virtualenvs
                 }
             }
-            PackageManager::Pip {
-                requirements_file,
-                dev_requirements_file,
-            }
-            | PackageManager::Uv {
+            PackageManager::Uv {
                 requirements_file,
                 dev_requirements_file,
             } => {
@@ -506,6 +502,9 @@ def test_main():\n\
                     isort>=5.0.0\n\
                     flake8>=6.0.0\n";
                 write_file(&Path::new(dev_requirements_file), dev_req_content)?;
+            }
+            PackageManager::Pip { .. } => {
+                // 已弃用pip选项，不需要处理
             }
         }
     }
@@ -845,12 +844,6 @@ fn get_install_command(config: &UserConfig) -> String {
                     commands.push("poetry install".to_string());
                 }
             }
-            PackageManager::Pip {
-                requirements_file, ..
-            } => {
-                commands.push("# Install pip dependencies".to_string());
-                commands.push(format!("pip install -r {}", requirements_file));
-            }
             PackageManager::Uv {
                 requirements_file, ..
             } => {
@@ -902,6 +895,9 @@ fn get_install_command(config: &UserConfig) -> String {
                 } else {
                     commands.push(format!("uv pip install -r {}", requirements_file));
                 }
+            }
+            PackageManager::Pip { .. } => {
+                // 已弃用pip选项，不做任何处理
             }
         }
     }
@@ -1005,13 +1001,6 @@ fn get_dev_install_command(config: &UserConfig) -> String {
                     commands.push("poetry install --with dev".to_string());
                 }
             }
-            PackageManager::Pip {
-                dev_requirements_file,
-                ..
-            } => {
-                commands.push("# Install pip development dependencies".to_string());
-                commands.push(format!("pip install -r {}", dev_requirements_file));
-            }
             PackageManager::Uv {
                 dev_requirements_file,
                 ..
@@ -1057,6 +1046,9 @@ fn get_dev_install_command(config: &UserConfig) -> String {
                     commands.push(format!("uv pip install -r {}", dev_requirements_file));
                 }
             }
+            PackageManager::Pip { .. } => {
+                // 已弃用pip选项，不做任何处理
+            }
         }
     }
 
@@ -1075,7 +1067,10 @@ fn get_test_command(config: &UserConfig) -> String {
             PackageManager::Poetry { .. } => {
                 commands.push("poetry run pytest".to_string());
             }
-            PackageManager::Pip { .. } | PackageManager::Uv { .. } => {
+            PackageManager::Uv { .. } => {
+                commands.push("pytest".to_string());
+            }
+            PackageManager::Pip { .. } => {
                 commands.push("pytest".to_string());
             }
         }
