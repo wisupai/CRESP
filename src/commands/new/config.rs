@@ -834,10 +834,10 @@ pub fn check_system_r() -> Result<Option<String>> {
     }
 }
 
-/// Check if rig is available
+/// Check if rig (R Installation Manager) is available on the system
 pub fn check_rig_available() -> Result<bool> {
-    let output = Command::new("rig").arg("--version").output();
-    Ok(output.is_ok() && output.unwrap().status.success())
+    let cmd = Command::new("rig").arg("--version").status();
+    Ok(cmd.is_ok() && cmd.unwrap().success())
 }
 
 /// Check system MATLAB installation
