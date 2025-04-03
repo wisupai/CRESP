@@ -17,6 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - Simplified README.md by removing Quick Start section
 - Updated project description in README.md to better reflect the purpose and functionality of CRESP
+- Refactored CRESP configuration generation to use toml_edit API instead of string templates for better maintainability and type safety
 
 ### Fixed
 - Fixed package management selection UI issues that caused repeated options display
