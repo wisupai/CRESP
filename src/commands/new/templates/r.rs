@@ -42,21 +42,21 @@ pub fn create_r_project(project_dir: &Path) -> Result<()> {
 
     // PHASE 3: Setup environment (if requested)
     if config.create_conda_env {
-        // 确保写入的文件都已刷新到磁盘
+        // Ensure all written files are flushed to disk
         std::io::stdout().flush().ok();
         std::io::stderr().flush().ok();
-        
-        // 强制文件系统同步
+
+        // Force filesystem sync on Unix systems
         #[cfg(unix)]
         {
             use std::process::Command;
             let _ = Command::new("sync").status();
         }
-        
-        // 让系统短暂休息，确保文件写入操作已完成
+
+        // Brief pause to ensure file write operations are complete
         thread::sleep(Duration::from_millis(100));
-        
-        // 检查环境文件是否存在
+
+        // Check if environment file exists
         let env_file_path = project_dir.join("environment.yml");
         if !env_file_path.exists() {
             cli_ui::display_warning(&format!(
@@ -65,7 +65,7 @@ pub fn create_r_project(project_dir: &Path) -> Result<()> {
             ));
             return Ok(());
         }
-        
+
         if conda_utils::create_conda_environment(project_dir, "environment.yml")? {
             // Verify if R is correctly installed in the conda environment
             verify_r_installation()?;
