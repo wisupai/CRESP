@@ -12,6 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added PowerShell installation script (install.ps1) for Windows platform
 - Enhanced README.md with comprehensive project description and installation instructions
 - Added CRESP configuration template for better project standardization
+- Added conda installed packages list to generated cresp.toml for better environment reproducibility
 
 ### Changed
 - Simplified README.md by removing Quick Start section
