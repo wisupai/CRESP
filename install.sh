@@ -98,13 +98,70 @@ rm -rf "$TMP_DIR"
 
 echo -e "${GREEN}CRESP ${VERSION} has been installed to ${INSTALL_DIR}/cresp${EXT:-}${NC}"
 
-# Show usage instructions
+# Check if directory is in PATH
+PATH_UPDATED=0
 if [[ ":$PATH:" != *":${INSTALL_DIR}:"* ]]; then
-    echo -e "${YELLOW}Please make sure that ${INSTALL_DIR} is in your PATH.${NC}"
-    echo -e "${YELLOW}You can add it by running:${NC}"
-    echo -e "${YELLOW}  export PATH=\"\$PATH:${INSTALL_DIR}\"${NC}"
-    echo -e "${YELLOW}Add this to your .bashrc, .zshrc or equivalent to make it permanent.${NC}"
+    echo -e "${YELLOW}Adding ${INSTALL_DIR} to your PATH for current session...${NC}"
+    export PATH="$PATH:${INSTALL_DIR}"
+    PATH_UPDATED=1
+    
+    # Detect shell and update config file
+    SHELL_CONFIG=""
+    if [ -n "$BASH_VERSION" ]; then
+        if [ -f "$HOME/.bashrc" ]; then
+            SHELL_CONFIG="$HOME/.bashrc"
+        elif [ -f "$HOME/.bash_profile" ]; then
+            SHELL_CONFIG="$HOME/.bash_profile"
+        fi
+    elif [ -n "$ZSH_VERSION" ]; then
+        SHELL_CONFIG="$HOME/.zshrc"
+    fi
+    
+    if [ -n "$SHELL_CONFIG" ]; then
+        if ! grep -q "export PATH=.*${INSTALL_DIR}" "$SHELL_CONFIG"; then
+            echo -e "${YELLOW}Updating ${SHELL_CONFIG} to add ${INSTALL_DIR} to PATH permanently...${NC}"
+            echo "" >> "$SHELL_CONFIG"
+            echo "# Added by CRESP installer" >> "$SHELL_CONFIG"
+            echo "export PATH=\"\$PATH:${INSTALL_DIR}\"" >> "$SHELL_CONFIG"
+            echo -e "${GREEN}PATH has been updated in ${SHELL_CONFIG}.${NC}"
+            echo -e "${YELLOW}To apply changes to current session, run:${NC}"
+            echo -e "${YELLOW}  source ${SHELL_CONFIG}${NC}"
+        else
+            echo -e "${GREEN}${INSTALL_DIR} is already in your PATH configuration.${NC}"
+        fi
+    else
+        echo -e "${YELLOW}Could not detect shell configuration file.${NC}"
+        echo -e "${YELLOW}Please add the following to your shell configuration file:${NC}"
+        echo -e "${YELLOW}  export PATH=\"\$PATH:${INSTALL_DIR}\"${NC}"
+    fi
 fi
 
-echo -e "${GREEN}You can now use CRESP by running 'cresp'.${NC}"
-echo -e "${GREEN}Run 'cresp --help' to see available commands.${NC}" 
+# Verify installation
+if command -v cresp &> /dev/null || [ -x "${INSTALL_DIR}/cresp${EXT:-}" ]; then
+    echo -e "${GREEN}Installation successful! You can now use CRESP by running 'cresp'.${NC}"
+    echo -e "${GREEN}Run 'cresp --help' to see available commands.${NC}"
+    
+    # Show PATH note only if we didn't update it
+    if [ "$PATH_UPDATED" -eq 0 ]; then
+        echo -e "${GREEN}${INSTALL_DIR} is already in your PATH.${NC}"
+    fi
+    
+    # Print version to verify executable works
+    echo -e "${BLUE}Installed version:${NC}"
+    if [ "$PATH_UPDATED" -eq 1 ]; then
+        # Use full path if PATH was just updated (safer)
+        "${INSTALL_DIR}/cresp${EXT:-}" --version
+    else
+        cresp --version
+    fi
+else
+    echo -e "${RED}Installation may have completed, but 'cresp' command is not available.${NC}"
+    echo -e "${RED}Please ensure ${INSTALL_DIR} is in your PATH and try again.${NC}"
+    echo -e "${YELLOW}You can run the command directly using:${NC}"
+    echo -e "${YELLOW}  ${INSTALL_DIR}/cresp${EXT:-}${NC}"
+fi
+
+# For sourced scripts to work without breaking the terminal session
+if [[ "${BASH_SOURCE[0]}" != "${0}" ]]; then
+    echo -e "${YELLOW}PATH will be updated for current session.${NC}"
+fi 

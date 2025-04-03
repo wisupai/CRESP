@@ -48,18 +48,51 @@ try {
     Copy-Item "$tempDir\cresp.exe" -Destination "$installDir\cresp.exe" -Force
     
     # Add to PATH if it's not already there
-    $paths = [Environment]::GetEnvironmentVariable("Path", [EnvironmentVariableTarget]::User).Split(";")
-    if (-not $paths.Contains($installDir)) {
+    $userPath = [Environment]::GetEnvironmentVariable("Path", [EnvironmentVariableTarget]::User)
+    $pathUpdated = $false
+    
+    # Check if path is already in the PATH variable
+    if ($userPath -notlike "*$installDir*") {
         Write-Host "Adding $installDir to user PATH..." -ForegroundColor Yellow
-        $newPath = [Environment]::GetEnvironmentVariable("Path", [EnvironmentVariableTarget]::User) + ";$installDir"
+        $newPath = $userPath + ";$installDir"
         [Environment]::SetEnvironmentVariable("Path", $newPath, [EnvironmentVariableTarget]::User)
-        
-        # Update the current session's PATH
+        $pathUpdated = $true
+    } else {
+        Write-Host "$installDir is already in your PATH." -ForegroundColor Green
+    }
+    
+    # Update the current session's PATH
+    if ($env:Path -notlike "*$installDir*") {
         $env:Path += ";$installDir"
+        Write-Host "Updated PATH for current session." -ForegroundColor Yellow
     }
     
     Write-Host "CRESP $version has been installed to $installDir\cresp.exe" -ForegroundColor Green
-    Write-Host "You can now use CRESP by running 'cresp' from a new terminal window." -ForegroundColor Green
+    
+    # Verify installation
+    try {
+        $installed = Get-Command -Name "cresp" -ErrorAction SilentlyContinue
+        if ($installed) {
+            Write-Host "Installation verified! CRESP is available in your PATH." -ForegroundColor Green
+            
+            # Display version
+            Write-Host "Installed version:" -ForegroundColor Blue
+            & cresp --version
+        } else {
+            # Try using full path
+            Write-Host "Testing installation with full path..." -ForegroundColor Yellow
+            & "$installDir\cresp.exe" --version
+            
+            if ($pathUpdated) {
+                Write-Host "CRESP has been installed, but you may need to restart your PowerShell session to use it." -ForegroundColor Yellow
+                Write-Host "Alternatively, you can run it using the full path: $installDir\cresp.exe" -ForegroundColor Yellow
+            }
+        }
+    } catch {
+        Write-Host "Installation completed, but there was an issue verifying the installation: $_" -ForegroundColor Red
+        Write-Host "You may need to restart your PowerShell session, or run CRESP using the full path: $installDir\cresp.exe" -ForegroundColor Yellow
+    }
+    
     Write-Host "Run 'cresp --help' to see available commands." -ForegroundColor Green
     
 } catch {
