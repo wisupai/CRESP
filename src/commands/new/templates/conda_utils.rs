@@ -52,13 +52,15 @@ pub fn check_conda_version(version: &str) -> Result<()> {
 /// Create conda environment from environment file
 pub fn create_conda_environment(project_dir: &Path, environment_file: &str) -> Result<bool> {
     cli_ui::display_info("Creating conda environment...");
+
+    // Use Command::output instead of status to capture output
     let conda_cmd = Command::new("conda")
         .args(&["env", "create", "-f", environment_file])
         .current_dir(project_dir)
-        .status();
+        .output();
 
     match conda_cmd {
-        Ok(status) if status.success() => {
+        Ok(output) if output.status.success() => {
             // Get project name for conda environment
             let raw_project_name = project_dir
                 .file_name()
@@ -75,8 +77,28 @@ pub fn create_conda_environment(project_dir: &Path, environment_file: &str) -> R
             cli_ui::display_info(&format!("To activate: conda activate {}", conda_env_name));
             Ok(true)
         }
-        _ => {
+        Ok(output) => {
+            // Show detailed error information
             cli_ui::display_warning("Failed to create conda environment.");
+
+            // Display command output which contains error information
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            if !stderr.is_empty() {
+                cli_ui::display_error("Error details:");
+                for line in stderr.lines().take(5) {
+                    // Limit to first 5 lines to avoid flooding
+                    cli_ui::display_warning(line);
+                }
+            }
+
+            cli_ui::display_info(&format!(
+                "You can create it manually later with: conda env create -f {}",
+                environment_file
+            ));
+            Ok(false)
+        }
+        Err(e) => {
+            cli_ui::display_warning(&format!("Failed to execute conda command: {}", e));
             cli_ui::display_info(&format!(
                 "You can create it manually later with: conda env create -f {}",
                 environment_file

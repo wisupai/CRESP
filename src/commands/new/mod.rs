@@ -42,8 +42,37 @@ impl NewCommand {
 
         // Interactive prompts for basic project information
         let name = match &self.name {
-            Some(name) => name.clone(),
-            None => cli_ui::prompt_input("Project name", None::<String>)?,
+            Some(name) => {
+                // Also validate project name provided via command line
+                let (is_valid, message) = validate_project_name(name);
+                if !is_valid {
+                    cli_ui::display_error(&message);
+                    cli_ui::display_error(
+                        "Please provide a valid project name without spaces or special characters.",
+                    );
+                    return Err(crate::error::Error::Validation(
+                        "Invalid project name provided via command line.".to_string(),
+                    ));
+                }
+                name.clone()
+            }
+            None => {
+                // Ask for project name with validation
+                let mut project_name: String;
+                loop {
+                    project_name = cli_ui::prompt_input("Project name", None::<String>)?;
+
+                    // Validate project name (especially important for conda environments)
+                    let (is_valid, message) = validate_project_name(&project_name);
+                    if is_valid {
+                        break;
+                    } else {
+                        cli_ui::display_warning(&message);
+                        cli_ui::display_info("Please enter a valid project name without spaces or special characters.");
+                    }
+                }
+                project_name
+            }
         };
 
         let description = match &self.description {
@@ -425,4 +454,36 @@ package_manager = {{ type = "{}", config_file = "{}", lock_file = "{}" }}
 
     utils::write_file(&project_dir.join("cresp.toml"), &cresp_toml)?;
     Ok(())
+}
+
+// Validate project name for conda compatibility
+fn validate_project_name(name: &str) -> (bool, String) {
+    // Check if name contains spaces
+    if name.contains(' ') {
+        return (
+            false,
+            "Project name cannot contain spaces when using Conda environments. Spaces will cause environment creation to fail.".to_string()
+        );
+    }
+
+    // Check for other invalid characters
+    let has_invalid_chars = name
+        .chars()
+        .any(|c| !c.is_alphanumeric() && c != '_' && c != '-');
+    if has_invalid_chars {
+        return (
+            false,
+            "Project name contains invalid characters. Only alphanumeric characters, underscore, and hyphen are allowed.".to_string()
+        );
+    }
+
+    // Check if name starts with a valid character
+    if !name.is_empty() && !name.chars().next().unwrap().is_alphanumeric() {
+        return (
+            false,
+            "Project name must start with an alphanumeric character.".to_string(),
+        );
+    }
+
+    (true, "Project name is valid.".to_string())
 }
