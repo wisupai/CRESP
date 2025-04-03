@@ -10,61 +10,10 @@ env:
   RELEASE_BIN: cresp
 
 jobs:
-  build:
-    name: Build Release Binary (${{ matrix.target }})
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          # Linux builds
-          - target: x86_64-unknown-linux-gnu
-            os: ubuntu-latest
-            name: cresp-x86_64-linux-gnu.tar.gz
-            cross: false
-            
-          - target: aarch64-unknown-linux-gnu
-            os: ubuntu-latest
-            name: cresp-aarch64-linux-gnu.tar.gz
-            cross: true
-            
-          - target: i686-unknown-linux-gnu
-            os: ubuntu-latest
-            name: cresp-i686-linux-gnu.tar.gz
-            cross: true
-            
-          - target: armv7-unknown-linux-gnueabihf
-            os: ubuntu-latest
-            name: cresp-armv7-linux-gnueabihf.tar.gz
-            cross: true
-            
-          # macOS builds
-          - target: x86_64-apple-darwin
-            os: macos-latest
-            name: cresp-x86_64-darwin.tar.gz
-            cross: false
-            
-          - target: aarch64-apple-darwin
-            os: macos-latest
-            name: cresp-aarch64-darwin.tar.gz
-            cross: true
-            
-          # Windows builds
-          - target: x86_64-pc-windows-msvc
-            os: windows-latest
-            name: cresp-x86_64-windows-msvc.zip
-            cross: false
-            
-          - target: i686-pc-windows-msvc
-            os: windows-latest
-            name: cresp-i686-windows-msvc.zip
-            cross: true
-            
-          - target: aarch64-pc-windows-msvc
-            os: windows-latest
-            name: cresp-aarch64-windows-msvc.zip
-            cross: true
-
+  # Build for Linux (x86_64)
+  build-linux:
+    name: Build for Linux (x86_64)
+    runs-on: ubuntu-latest
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -73,80 +22,95 @@ jobs:
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: ${{ matrix.target }}
 
-      # Install dependencies for cross-compilation
-      - name: Install cross-compilation dependencies
-        if: runner.os == 'Linux' && matrix.cross
+      - name: Install dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y pkg-config libssl-dev
 
-          # Install additional libraries for cross-compiling OpenSSL
-          if [[ "${{ matrix.target }}" == "armv7-unknown-linux-gnueabihf" ]]; then
-            sudo apt-get install -y gcc-arm-linux-gnueabihf
-          elif [[ "${{ matrix.target }}" == "aarch64-unknown-linux-gnu" ]]; then
-            sudo apt-get install -y gcc-aarch64-linux-gnu
-          elif [[ "${{ matrix.target }}" == "i686-unknown-linux-gnu" ]]; then
-            sudo apt-get install -y gcc-multilib
-          fi
-
-      - name: Install cross-compilation tools
-        if: matrix.cross
-        uses: taiki-e/setup-cross-toolchain-action@v1
-        with:
-          target: ${{ matrix.target }}
-        
-      - name: Cache dependencies
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            target
-          key: ${{ matrix.target }}-cargo-${{ hashFiles('**/Cargo.lock') }}
-
-      # Use cross instead of cargo for cross-compilation
-      - name: Install cross
-        if: matrix.cross
-        run: cargo install cross --git https://github.com/cross-rs/cross
-
-      - name: Build release binary
-        run: |
-          if [[ "${{ matrix.cross }}" == "true" ]]; then
-            OPENSSL_STATIC=1 cross build --verbose --release --target ${{ matrix.target }}
-          else
-            cargo build --verbose --release --target ${{ matrix.target }}
-          fi
+      - name: Build
+        run: cargo build --release
 
       - name: Run tests
-        if: "!matrix.cross"  # Only run tests on native platforms
-        run: cargo test --verbose --release --target ${{ matrix.target }}
+        run: cargo test --release
 
-      - name: Prepare release archive (Unix)
-        if: matrix.os != 'windows-latest'
+      - name: Prepare archive
         run: |
-          cd target/${{ matrix.target }}/release
-          tar czvf ../../../${{ matrix.name }} ${{ env.RELEASE_BIN }}
+          cd target/release
+          tar czvf ../../cresp-x86_64-linux-gnu.tar.gz ${{ env.RELEASE_BIN }}
           cd -
 
-      - name: Prepare release archive (Windows)
-        if: matrix.os == 'windows-latest'
-        run: |
-          cd target/${{ matrix.target }}/release
-          7z a ../../../${{ matrix.name }} ${{ env.RELEASE_BIN }}.exe
-          cd -
-
-      - name: Upload build artifact
-        uses: actions/upload-artifact@v4
+      - name: Upload artifact
+        uses: actions/upload-artifact@v3
         with:
-          name: ${{ matrix.name }}
-          path: ${{ matrix.name }}
+          name: cresp-x86_64-linux-gnu.tar.gz
+          path: cresp-x86_64-linux-gnu.tar.gz
 
+  # Build for macOS (x86_64)
+  build-macos:
+    name: Build for macOS (x86_64)
+    runs-on: macos-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Build
+        run: cargo build --release
+
+      - name: Run tests
+        run: cargo test --release
+
+      - name: Prepare archive
+        run: |
+          cd target/release
+          tar czvf ../../cresp-x86_64-darwin.tar.gz ${{ env.RELEASE_BIN }}
+          cd -
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: cresp-x86_64-darwin.tar.gz
+          path: cresp-x86_64-darwin.tar.gz
+
+  # Build for Windows (x86_64)
+  build-windows:
+    name: Build for Windows (x86_64)
+    runs-on: windows-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Build
+        run: cargo build --release
+
+      - name: Run tests
+        run: cargo test --release
+
+      - name: Prepare archive
+        shell: pwsh
+        run: |
+          Compress-Archive -Path "target\release\${{ env.RELEASE_BIN }}.exe" -DestinationPath "cresp-x86_64-windows-msvc.zip"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: cresp-x86_64-windows-msvc.zip
+          path: cresp-x86_64-windows-msvc.zip
+
+  # Create Release
   release:
     name: Create Release
-    needs: build
+    needs: [build-linux, build-macos, build-windows]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -155,7 +119,6 @@ jobs:
           fetch-depth: 0
 
       - name: Determine version type
-        id: version_type
         run: |
           # Get the current ref and branch
           echo "VERSION=${GITHUB_REF#refs/tags/v}" >> $GITHUB_ENV
@@ -175,30 +138,23 @@ jobs:
           echo "Branch: $BRANCH, Release type: $RELEASE_TYPE"
 
       - name: Generate release notes
-        id: release_notes
         run: |
           echo "NOTES<<EOF" >> $GITHUB_ENV
           sed -n "/## \[${{ env.VERSION }}/,/## \[/p" CHANGELOG.md | sed '$ d' >> $GITHUB_ENV
           echo "EOF" >> $GITHUB_ENV
 
       - name: Download all artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v3
 
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v1
         with:
           name: ${{ env.RELEASE_TYPE == 'stable' && 'Release' || 'Development Release' }} ${{ env.VERSION }}
           body: ${{ env.NOTES }}
           files: |
             cresp-x86_64-linux-gnu.tar.gz
-            cresp-aarch64-linux-gnu.tar.gz
-            cresp-i686-linux-gnu.tar.gz
-            cresp-armv7-linux-gnueabihf.tar.gz
             cresp-x86_64-darwin.tar.gz
-            cresp-aarch64-darwin.tar.gz
             cresp-x86_64-windows-msvc.zip
-            cresp-i686-windows-msvc.zip
-            cresp-aarch64-windows-msvc.zip
           draft: false
           prerelease: ${{ env.IS_PRERELEASE }}
         env:
