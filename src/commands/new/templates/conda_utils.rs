@@ -284,9 +284,8 @@ pub fn create_conda_environment(project_dir: &Path, environment_file: &str) -> R
         cmd.arg("--solver=libmamba");
     }
     
-    // Add other options to potentially speed up environment creation
-    cmd.arg("--yes")  // Auto-confirm prompts
-       .arg("-f")
+    // Add options for environment creation - remove --yes as it's not supported with conda env create
+    cmd.arg("-f")
        .arg(relative_env_file)
        .current_dir(&abs_project_dir)
        .stdin(Stdio::inherit())
