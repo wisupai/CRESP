@@ -7,8 +7,11 @@ use crate::error::Result;
 use crate::utils::cli_ui;
 use crate::utils::validation::exports::sanitize_for_conda_env;
 use std::fs;
+use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::thread;
+use std::time::Duration;
 
 /// Create a Python project with the specified configuration
 pub fn create_python_project(project_dir: &PathBuf, config: &mut UserConfig) -> Result<()> {
@@ -489,50 +492,73 @@ def test_main():\n\
                     })
                     .unwrap_or("environment.yml");
 
-                // Create conda environment
-                let env_created = conda_utils::create_conda_environment(project_dir, env_file)?;
+                // 确保写入的文件都已刷新到磁盘
+                std::io::stdout().flush().ok();
+                std::io::stderr().flush().ok();
+                
+                // 强制文件系统同步
+                #[cfg(unix)]
+                {
+                    use std::process::Command;
+                    let _ = Command::new("sync").status();
+                }
+                
+                // 让系统短暂休息，确保文件写入操作已完成
+                std::thread::sleep(std::time::Duration::from_millis(100));
+                
+                // 创建前检查环境文件是否存在
+                let env_file_path = project_dir.join(env_file);
+                if !env_file_path.exists() {
+                    cli_ui::display_warning(&format!(
+                        "Environment file not found: {:?}. Cannot create conda environment.",
+                        env_file_path
+                    ));
+                } else {
+                    // Create conda environment
+                    let env_created = conda_utils::create_conda_environment(project_dir, env_file)?;
 
-                if env_created {
-                    // Get project name for conda environment
-                    let project_name = project_dir
-                        .file_name()
-                        .and_then(|name| name.to_str())
-                        .unwrap_or("my-project");
+                    if env_created {
+                        // Get project name for conda environment
+                        let project_name = project_dir
+                            .file_name()
+                            .and_then(|name| name.to_str())
+                            .unwrap_or("my-project");
 
-                    // Sanitize project name for conda environment
-                    let conda_env_name = sanitize_for_conda_env(project_name);
+                        // Sanitize project name for conda environment
+                        let conda_env_name = sanitize_for_conda_env(project_name);
 
-                    // Check if Poetry/UV is used alongside Conda
-                    let has_poetry = config
-                        .package_managers
-                        .iter()
-                        .any(|pm| matches!(pm, PackageManager::Poetry { .. }));
+                        // Check if Poetry/UV is used alongside Conda
+                        let has_poetry = config
+                            .package_managers
+                            .iter()
+                            .any(|pm| matches!(pm, PackageManager::Poetry { .. }));
 
-                    let has_uv = config
-                        .package_managers
-                        .iter()
-                        .any(|pm| matches!(pm, PackageManager::Uv { .. }));
+                        let has_uv = config
+                            .package_managers
+                            .iter()
+                            .any(|pm| matches!(pm, PackageManager::Uv { .. }));
 
-                    // Ensure pip is installed in the conda environment
-                    let install_pip_first = Command::new("conda")
-                        .arg("install")
-                        .arg("-n")
-                        .arg(&conda_env_name)
-                        .arg("pip")
-                        .arg("-y")
-                        .status()?;
+                        // Ensure pip is installed in the conda environment
+                        let install_pip_first = Command::new("conda")
+                            .arg("install")
+                            .arg("-n")
+                            .arg(&conda_env_name)
+                            .arg("pip")
+                            .arg("-y")
+                            .status()?;
 
-                    if !install_pip_first.success() {
-                        cli_ui::display_warning("Could not install pip in Conda environment. Some dependencies may not install correctly.");
-                    }
+                        if !install_pip_first.success() {
+                            cli_ui::display_warning("Could not install pip in Conda environment. Some dependencies may not install correctly.");
+                        }
 
-                    // Install and configure additional package managers in the conda environment
-                    if has_poetry {
-                        install_poetry_in_conda_env(&conda_env_name)?;
-                    }
+                        // Install and configure additional package managers in the conda environment
+                        if has_poetry {
+                            conda_utils::install_poetry_in_conda_env(&conda_env_name)?;
+                        }
 
-                    if has_uv {
-                        install_uv_in_conda_env(&conda_env_name)?;
+                        if has_uv {
+                            conda_utils::install_uv_in_conda_env(&conda_env_name)?;
+                        }
                     }
                 }
             }

@@ -3,8 +3,11 @@ use super::super::utils::write_file;
 use crate::error::Result;
 use crate::utils::cli_ui;
 use crate::utils::validation::exports::sanitize_for_conda_env;
+use std::io::Write;
 use std::path::Path;
 use std::process::Command;
+use std::thread;
+use std::time::Duration;
 
 /// Configuration for R project
 #[derive(Debug)]
@@ -39,6 +42,30 @@ pub fn create_r_project(project_dir: &Path) -> Result<()> {
 
     // PHASE 3: Setup environment (if requested)
     if config.create_conda_env {
+        // 确保写入的文件都已刷新到磁盘
+        std::io::stdout().flush().ok();
+        std::io::stderr().flush().ok();
+        
+        // 强制文件系统同步
+        #[cfg(unix)]
+        {
+            use std::process::Command;
+            let _ = Command::new("sync").status();
+        }
+        
+        // 让系统短暂休息，确保文件写入操作已完成
+        thread::sleep(Duration::from_millis(100));
+        
+        // 检查环境文件是否存在
+        let env_file_path = project_dir.join("environment.yml");
+        if !env_file_path.exists() {
+            cli_ui::display_warning(&format!(
+                "Environment file not found: {:?}. Cannot create conda environment.",
+                env_file_path
+            ));
+            return Ok(());
+        }
+        
         if conda_utils::create_conda_environment(project_dir, "environment.yml")? {
             // Verify if R is correctly installed in the conda environment
             verify_r_installation()?;
