@@ -6,6 +6,7 @@ use super::super::utils::write_file;
 use crate::error::Result;
 use crate::utils::cli_ui;
 use crate::utils::validation::exports::sanitize_for_conda_env;
+use log::{debug, info, trace};
 use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -41,7 +42,7 @@ pub fn create_python_project(project_dir: &PathBuf, config: &mut UserConfig) -> 
     if has_uv && !config.uv_installed {
         let uv_available = check_uv_available()?;
         if !uv_available {
-            cli_ui::display_info("UV package manager will be installed in your Conda environment.");
+            info!("UV package manager will be installed in your Conda environment.");
         } else {
             cli_ui::display_success("UV package manager found on your system.");
             config.uv_installed = true;
@@ -51,9 +52,7 @@ pub fn create_python_project(project_dir: &PathBuf, config: &mut UserConfig) -> 
     if has_poetry && !config.poetry_installed {
         let poetry_available = check_poetry_available()?;
         if !poetry_available {
-            cli_ui::display_info(
-                "Poetry package manager will be installed in your Conda environment.",
-            );
+            info!("Poetry package manager will be installed in your Conda environment.");
         } else {
             cli_ui::display_success("Poetry package manager found on your system.");
             config.poetry_installed = true;
@@ -64,7 +63,7 @@ pub fn create_python_project(project_dir: &PathBuf, config: &mut UserConfig) -> 
     fs::create_dir_all(project_dir)?;
     std::env::set_current_dir(project_dir)?;
 
-    cli_ui::display_info("Creating basic Python project structure...");
+    cli_ui::display_progress("1/4", "Creating Python project structure...");
     // Create basic project structure
     let dirs = [
         "src",
@@ -77,9 +76,10 @@ pub fn create_python_project(project_dir: &PathBuf, config: &mut UserConfig) -> 
     ];
     for dir in &dirs {
         fs::create_dir_all(dir)?;
+        trace!("Created directory: {}", dir);
     }
 
-    cli_ui::display_info("Generating project files...");
+    cli_ui::display_progress("2/4", "Generating project files...");
     // Create README.md
     // Get package manager information
     let package_managers_desc = config
@@ -107,10 +107,10 @@ pub fn create_python_project(project_dir: &PathBuf, config: &mut UserConfig) -> 
                 "Project name '{}' contains characters not allowed in conda environment names.",
                 project_name
             ));
-            cli_ui::display_info(&format!(
+            info!(
                 "Using '{}' as the conda environment name instead.",
                 sanitized
-            ));
+            );
         }
         sanitized
     } else {
@@ -393,11 +393,9 @@ def test_main():\n\
                 std::io::stdout().flush().ok();
                 std::io::stderr().flush().ok();
 
-                // 记录日志，帮助排查问题
-                cli_ui::display_info(&format!(
-                    "Created environment file at: {:?}",
-                    env_file_abs_path
-                ));
+                // 详细日志移至调试级别
+                debug!("Created environment file at: {:?}", env_file_abs_path);
+                trace!("Environment file content:\n{}", env_content);
 
                 // Create dev-environment.yml
                 let mut dev_env_content = format!(
@@ -463,11 +461,12 @@ def test_main():\n\
                 let dev_env_file_abs_path = project_dir.join(dev_environment_file);
                 write_file(&dev_env_file_abs_path, &dev_env_content)?;
 
-                // 记录日志，帮助排查问题
-                cli_ui::display_info(&format!(
+                // 详细日志移至调试级别
+                debug!(
                     "Created dev environment file at: {:?}",
                     dev_env_file_abs_path
-                ));
+                );
+                trace!("Dev environment file content:\n{}", dev_env_content);
             }
             PackageManager::Poetry { pyproject_file } => {
                 // Create pyproject.toml
@@ -564,7 +563,7 @@ def test_main():\n\
                 }
 
                 // 让系统短暂休息，确保文件写入操作已完成
-                std::thread::sleep(std::time::Duration::from_secs(2));
+                std::thread::sleep(std::time::Duration::from_secs(1));
 
                 // 检查项目目录是否绝对路径，转换为绝对路径
                 let abs_project_dir = if project_dir.is_absolute() {
@@ -576,10 +575,7 @@ def test_main():\n\
                 // 创建前检查环境文件是否存在
                 let env_file_path = abs_project_dir.join(env_file);
 
-                cli_ui::display_info(&format!(
-                    "Checking for environment file at: {:?}",
-                    env_file_path
-                ));
+                debug!("Checking for environment file at: {:?}", env_file_path);
 
                 if !env_file_path.exists() {
                     cli_ui::display_warning(&format!(
@@ -587,25 +583,26 @@ def test_main():\n\
                         env_file_path
                     ));
 
-                    // 遍历目录内容，打印日志帮助调试
-                    cli_ui::display_info(&format!(
+                    // 遍历目录内容移至调试级别
+                    debug!(
                         "Checking contents of project directory: {:?}",
                         abs_project_dir
-                    ));
+                    );
                     if let Ok(entries) = std::fs::read_dir(&abs_project_dir) {
                         for entry in entries {
                             if let Ok(entry) = entry {
-                                cli_ui::display_info(&format!("Found file: {:?}", entry.path()));
+                                trace!("Found file: {:?}", entry.path());
                             }
                         }
                     }
                 } else {
-                    cli_ui::display_info(&format!("Found environment file: {:?}", env_file_path));
-                    // 显示文件内容
+                    debug!("Found environment file: {:?}", env_file_path);
+                    // 显示文件内容移至调试级别
                     if let Ok(content) = std::fs::read_to_string(&env_file_path) {
-                        cli_ui::display_info(&format!("Environment file content:\n{}", content));
+                        trace!("Environment file content:\n{}", content);
                     }
 
+                    cli_ui::display_progress("3/4", "Creating conda environment...");
                     // Create conda environment
                     let env_created =
                         conda_utils::create_conda_environment(&abs_project_dir, env_file)?;
@@ -646,10 +643,18 @@ def test_main():\n\
 
                         // Install and configure additional package managers in the conda environment
                         if has_poetry {
+                            cli_ui::display_progress(
+                                "4/4",
+                                "Installing Poetry in conda environment...",
+                            );
                             conda_utils::install_poetry_in_conda_env(&conda_env_name)?;
                         }
 
                         if has_uv {
+                            cli_ui::display_progress(
+                                "4/4",
+                                "Installing UV in conda environment...",
+                            );
                             conda_utils::install_uv_in_conda_env(&conda_env_name)?;
                         }
                     }
@@ -669,27 +674,27 @@ def test_main():\n\
         // Sanitize project name for conda environment
         let conda_env_name = sanitize_for_conda_env(project_name);
 
-        cli_ui::display_info("\nTo use this project and its installed tools:");
-        cli_ui::display_info(&format!("  conda activate {}", conda_env_name));
+        cli_ui::display_message("\nTo use this project and its installed tools:");
+        cli_ui::display_message(&format!("  conda activate {}", conda_env_name));
 
         if has_uv {
-            cli_ui::display_info("After activating the Conda environment, UV will be available for managing packages.");
-            cli_ui::display_info(&format!(
-                "  Example: conda activate {} && uv pip install numpy pandas",
+            cli_ui::display_message("After activating the Conda environment, UV will be available for managing packages.");
+            cli_ui::display_message(&format!(
+                "Example: conda activate {} && uv pip install numpy pandas",
                 conda_env_name
             ));
         }
 
         if has_poetry {
-            cli_ui::display_info("After activating the Conda environment, Poetry will be available for managing packages.");
-            cli_ui::display_info(&format!(
-                "  Example: conda activate {} && poetry add numpy pandas",
+            cli_ui::display_message("After activating the Conda environment, Poetry will be available for managing packages.");
+            cli_ui::display_message(&format!(
+                "Example: conda activate {} && poetry add numpy pandas",
                 conda_env_name
             ));
         }
     } else if has_uv && config.uv_installed {
         // 移除此部分，因为我们不再提供全局UV的支持，所有UV都安装在conda环境内
-        cli_ui::display_info("Please activate your Conda environment to use UV.");
+        info!("Please activate your Conda environment to use UV.");
     }
 
     Ok(())
@@ -1023,7 +1028,7 @@ fn get_test_command(config: &UserConfig) -> String {
 
 /// Install Poetry in Conda environment
 fn install_poetry_in_conda_env(env_name: &str) -> Result<bool> {
-    cli_ui::display_info("Installing Poetry in Conda environment...");
+    info!("Installing Poetry in Conda environment...");
 
     // Get conda executable path
     let conda_path = match conda_utils::find_conda_executable() {
@@ -1061,21 +1066,19 @@ fn install_poetry_in_conda_env(env_name: &str) -> Result<bool> {
                 "Installed Poetry in Conda environment: {}",
                 env_name
             ));
-            cli_ui::display_info(
-                "Poetry configured to use Conda environment (no separate virtualenv)",
-            );
+            debug!("Poetry configured to use Conda environment (no separate virtualenv)");
             return Ok(true);
         }
     }
 
     cli_ui::display_warning("Failed to install Poetry in Conda environment.");
-    cli_ui::display_info("You can install it manually later using the commands in README.md");
+    info!("You can install it manually later using the commands in README.md");
     Ok(false)
 }
 
 /// Install UV in Conda environment
 fn install_uv_in_conda_env(env_name: &str) -> Result<bool> {
-    cli_ui::display_info("Installing UV in Conda environment...");
+    info!("Installing UV in Conda environment...");
 
     // Get conda executable path
     let conda_path = match conda_utils::find_conda_executable() {
@@ -1098,12 +1101,12 @@ fn install_uv_in_conda_env(env_name: &str) -> Result<bool> {
 
     if pip_status.success() {
         cli_ui::display_success(&format!("Installed UV in Conda environment: {}", env_name));
-        cli_ui::display_info("UV is now available within your Conda environment.");
+        debug!("UV is now available within your Conda environment.");
         return Ok(true);
     }
 
     cli_ui::display_error("Failed to install UV in Conda environment.");
-    cli_ui::display_info("You can install it manually later with:");
-    cli_ui::display_info(&format!("   conda activate {} && pip install uv", env_name));
+    info!("You can install it manually later with:");
+    info!("   conda activate {} && pip install uv", env_name);
     Ok(false)
 }

@@ -20,26 +20,37 @@ pub fn display_header(title: &str, emoji: &str) {
 
 /// Display a styled success message with emoji
 pub fn display_success(message: &str) {
-    println!("{} {}", style("✅").green().bold(), style(message).green());
+    println!("{} {}", style("✓").green().bold(), style(message).green());
 }
 
 /// Display a styled error message with emoji
 pub fn display_error(message: &str) {
-    eprintln!("{} {}", style("❌").red().bold(), style(message).red());
+    eprintln!("{} {}", style("x").red().bold(), style(message).red());
 }
 
 /// Display a styled warning message with emoji
 pub fn display_warning(message: &str) {
-    eprintln!(
-        "{} {}",
-        style("⚠️").yellow().bold(),
-        style(message).yellow()
-    );
+    eprintln!("{} {}", style("!").yellow().bold(), style(message).yellow());
 }
 
 /// Display a styled info message with emoji
 pub fn display_info(message: &str) {
-    println!("{} {}", style("ℹ️").blue().bold(), style(message).blue());
+    println!("{}", style(message).blue());
+}
+
+/// Display a styled debug message
+pub fn display_debug(message: &str) {
+    println!("{}", style(message).dim());
+}
+
+/// Display a simple message without styling
+pub fn display_message(message: &str) {
+    println!("{}", message);
+}
+
+/// Display a progress message
+pub fn display_progress(step: &str, message: &str) {
+    println!("{} {}", style(step).cyan().bold(), message);
 }
 
 /// Prompt for text input with validation

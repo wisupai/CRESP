@@ -1,5 +1,7 @@
 use clap::Parser;
+use env_logger::fmt::Color;
 use log::LevelFilter;
+use std::io::Write;
 
 mod commands;
 mod config;
@@ -39,9 +41,36 @@ async fn main() -> Result<()> {
             _ => LevelFilter::Trace,
         }
     };
+
+    // 获取 verbose 值用于日志格式化
+    let verbose_level = cli.verbose;
+
+    // 配置自定义日志格式，不显示时间戳和模块路径
     env_logger::Builder::new()
         .filter_level(log_level)
-        .format_timestamp(None)
+        .format(move |buf, record| {
+            // 只有调试级别及以上才显示模块路径和级别
+            if verbose_level >= 1 {
+                let mut level_style = buf.style();
+                match record.level() {
+                    log::Level::Error => level_style.set_color(Color::Red).set_bold(true),
+                    log::Level::Warn => level_style.set_color(Color::Yellow).set_bold(true),
+                    log::Level::Info => level_style.set_color(Color::Blue),
+                    log::Level::Debug => level_style.set_color(Color::Cyan),
+                    log::Level::Trace => level_style.set_color(Color::White),
+                };
+
+                writeln!(
+                    buf,
+                    "[{}] {}",
+                    level_style.value(record.level()),
+                    record.args()
+                )
+            } else {
+                // 正常用户模式：只显示消息内容，不显示模块路径和日志级别
+                writeln!(buf, "{}", record.args())
+            }
+        })
         .init();
 
     // Show welcome message

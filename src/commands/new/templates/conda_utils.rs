@@ -4,6 +4,7 @@ use std::process::{Command, Stdio};
 use crate::error::Result;
 use crate::utils::cli_ui;
 use crate::utils::validation::exports::sanitize_for_conda_env;
+use log::{debug, info, trace};
 
 /// Check if conda is available and get its version
 pub fn ensure_conda_available() -> Result<Option<String>> {
@@ -37,9 +38,7 @@ pub fn ensure_conda_available() -> Result<Option<String>> {
         }
         _ => {
             cli_ui::display_warning("Conda is not working properly on this system!");
-            cli_ui::display_info(
-                "Please ensure that conda is correctly installed and in your PATH.",
-            );
+            info!("Please ensure that conda is correctly installed and in your PATH.");
             Ok(None)
         }
     }
@@ -66,10 +65,8 @@ pub fn check_conda_version(version: &str) -> Result<()> {
 /// Check if conda supports faster solver
 fn check_faster_solver_support(conda_path: &str) -> bool {
     // Check if conda version supports the libmamba solver
-    let output = Command::new(conda_path)
-        .args(&["--version"])
-        .output();
-    
+    let output = Command::new(conda_path).args(&["--version"]).output();
+
     if let Ok(output) = output {
         let version_str = String::from_utf8_lossy(&output.stdout);
         // Parse version from string like "conda 23.1.0"
@@ -78,31 +75,31 @@ fn check_faster_solver_support(conda_path: &str) -> bool {
             if let Some(major_str) = version.split('.').next() {
                 if let Ok(major) = major_str.parse::<u32>() {
                     // libmamba solver is supported in conda 22.11.0+
-                    return major >= 23 || (major == 22 && version.contains("22.11.") || version.contains("22.12."));
+                    return major >= 23
+                        || (major == 22 && version.contains("22.11.")
+                            || version.contains("22.12."));
                 }
             }
         }
     }
-    
+
     // Also check if mamba is installed separately
-    let mamba_check = Command::new("mamba")
-        .args(&["--version"])
-        .output();
-    
+    let mamba_check = Command::new("mamba").args(&["--version"]).output();
+
     mamba_check.is_ok() && mamba_check.unwrap().status.success()
 }
 
 /// Install poetry in conda environment
 pub fn install_poetry_in_conda_env(env_name: &str) -> Result<()> {
-    cli_ui::display_info("Installing Poetry in Conda environment...");
+    info!("Installing Poetry in Conda environment...");
 
     // Find conda executable path
     let conda_path = match find_conda_executable() {
         Ok(path) => path,
         Err(e) => {
             cli_ui::display_warning(&format!("Failed to find conda executable: {}", e));
-            cli_ui::display_info(
-                "You can install Poetry manually later with: conda run -n <env> pip install poetry",
+            info!(
+                "You can install Poetry manually later with: conda run -n <env> pip install poetry"
             );
             return Ok(());
         }
@@ -119,9 +116,7 @@ pub fn install_poetry_in_conda_env(env_name: &str) -> Result<()> {
         }
         _ => {
             cli_ui::display_warning("Failed to install Poetry in conda environment.");
-            cli_ui::display_info(
-                "You can install it manually later with: conda run -n <env> pip install poetry",
-            );
+            info!("You can install it manually later with: conda run -n <env> pip install poetry");
             Ok(())
         }
     }
@@ -129,16 +124,14 @@ pub fn install_poetry_in_conda_env(env_name: &str) -> Result<()> {
 
 /// Install uv in conda environment
 pub fn install_uv_in_conda_env(env_name: &str) -> Result<()> {
-    cli_ui::display_info("Installing UV in Conda environment...");
+    info!("Installing UV in Conda environment...");
 
     // Find conda executable path
     let conda_path = match find_conda_executable() {
         Ok(path) => path,
         Err(e) => {
             cli_ui::display_warning(&format!("Failed to find conda executable: {}", e));
-            cli_ui::display_info(
-                "You can install UV manually later with: conda run -n <env> pip install uv",
-            );
+            info!("You can install UV manually later with: conda run -n <env> pip install uv");
             return Ok(());
         }
     };
@@ -154,9 +147,7 @@ pub fn install_uv_in_conda_env(env_name: &str) -> Result<()> {
         }
         _ => {
             cli_ui::display_warning("Failed to install UV in conda environment.");
-            cli_ui::display_info(
-                "You can install it manually later with: conda run -n <env> pip install uv",
-            );
+            info!("You can install it manually later with: conda run -n <env> pip install uv");
             Ok(())
         }
     }
@@ -164,9 +155,9 @@ pub fn install_uv_in_conda_env(env_name: &str) -> Result<()> {
 
 /// Create conda environment from environment file
 pub fn create_conda_environment(project_dir: &Path, environment_file: &str) -> Result<bool> {
-    cli_ui::display_info("Creating conda environment...");
+    info!("Creating conda environment...");
 
-    // Add delay after file write operations
+    // Add delay after file write operations (reduced from 2s to 1s)
     std::thread::sleep(std::time::Duration::from_secs(1));
 
     // Find conda executable path - need to use full path instead of simple "conda" command
@@ -174,7 +165,7 @@ pub fn create_conda_environment(project_dir: &Path, environment_file: &str) -> R
         Ok(path) => path,
         Err(e) => {
             cli_ui::display_error(&format!("Failed to find conda executable: {}", e));
-            cli_ui::display_info(
+            cli_ui::display_message(
                 "Please make sure conda is correctly installed and available in your PATH.",
             );
             return Ok(false);
@@ -184,10 +175,10 @@ pub fn create_conda_environment(project_dir: &Path, environment_file: &str) -> R
     // Check if faster solver is available
     let use_faster_solver = check_faster_solver_support(&conda_path);
     if use_faster_solver {
-        cli_ui::display_info("Using faster dependency solver (libmamba) for conda");
+        debug!("Using faster dependency solver (libmamba) for conda");
     } else {
-        cli_ui::display_info("Using standard conda solver (this might take some time)");
-        cli_ui::display_info("For faster environment creation, consider installing conda 22.11.0+ or mamba");
+        debug!("Using standard conda solver (this might take some time)");
+        debug!("For faster environment creation, consider installing conda 22.11.0+ or mamba");
     }
 
     // Ensure environment file exists
@@ -202,12 +193,12 @@ pub fn create_conda_environment(project_dir: &Path, environment_file: &str) -> R
                 project_dir
             ));
         } else {
-            // List directory contents for debugging
-            cli_ui::display_info(&format!("Project directory contents at {:?}:", project_dir));
+            // List directory contents for debugging - moved to trace level
+            trace!("Project directory contents at {:?}:", project_dir);
             if let Ok(entries) = std::fs::read_dir(project_dir) {
                 for entry in entries {
                     if let Ok(entry) = entry {
-                        cli_ui::display_info(&format!("  - {:?}", entry.path()));
+                        trace!("  - {:?}", entry.path());
                     }
                 }
             }
@@ -216,10 +207,10 @@ pub fn create_conda_environment(project_dir: &Path, environment_file: &str) -> R
         return Ok(false);
     }
 
-    // Log environment file contents for debugging
-    cli_ui::display_info(&format!("Using environment file: {:?}", env_file_path));
+    // Log environment file contents for debugging - moved to trace level
+    debug!("Using environment file: {:?}", env_file_path);
     if let Ok(content) = std::fs::read_to_string(&env_file_path) {
-        cli_ui::display_info(&format!("Environment file content:\n{}", content));
+        trace!("Environment file content:\n{}", content);
     }
 
     // Force flush filesystem cache to ensure file is written to disk
@@ -248,65 +239,61 @@ pub fn create_conda_environment(project_dir: &Path, environment_file: &str) -> R
 
     // Ensure working directory is correct
     let original_dir = std::env::current_dir()?;
-    cli_ui::display_info(&format!("Current directory before: {:?}", original_dir));
+    trace!("Current directory before: {:?}", original_dir);
 
     if std::env::current_dir()? != abs_project_dir {
-        cli_ui::display_info(&format!(
-            "Changing working directory to: {:?}",
-            abs_project_dir
-        ));
+        debug!("Changing working directory to: {:?}", abs_project_dir);
         std::env::set_current_dir(&abs_project_dir)?;
     }
 
     // Execute conda command with full path and inherited stdio to show real-time progress
     let command_str = if use_faster_solver {
-        format!("{} env create --solver=libmamba -f {}", conda_path, environment_file)
+        format!(
+            "{} env create --solver=libmamba -f {}",
+            conda_path, environment_file
+        )
     } else {
         format!("{} env create -f {}", conda_path, environment_file)
     };
-    
-    cli_ui::display_info(&format!("Running: {}", command_str));
+
+    debug!("Running: {}", command_str);
 
     // Use relative path of environment file (relative to working directory)
     let relative_env_file = environment_file;
 
     // Execute conda command with full path and inherit stdio to show real-time output
-    cli_ui::display_info(&format!("Using conda executable: {}", conda_path));
-    cli_ui::display_info("Starting conda environment creation (showing real-time progress):");
-    
+    debug!("Using conda executable: {}", conda_path);
+    cli_ui::display_progress("Creating environment", "This may take a while...");
+
     // Build the command with appropriate solver options
     let mut cmd = Command::new(&conda_path);
-    cmd.arg("env")
-       .arg("create");
-    
+    cmd.arg("env").arg("create");
+
     // Add faster solver if available
     if use_faster_solver {
         cmd.arg("--solver=libmamba");
     }
-    
+
     // Add options for environment creation - remove --yes as it's not supported with conda env create
     cmd.arg("-f")
-       .arg(relative_env_file)
-       .current_dir(&abs_project_dir)
-       .stdin(Stdio::inherit())
-       .stdout(Stdio::inherit())
-       .stderr(Stdio::inherit());
-    
+        .arg(relative_env_file)
+        .current_dir(&abs_project_dir)
+        .stdin(Stdio::inherit())
+        .stdout(Stdio::inherit())
+        .stderr(Stdio::inherit());
+
     // Use spawn and wait with stdio inheritance to display real-time conda output
     let conda_status = cmd.spawn().and_then(|mut child| child.wait());
 
-    // Display current working directory
-    cli_ui::display_info(&format!(
+    // Display current working directory - moved to trace level
+    trace!(
         "Current directory during command: {:?}",
         std::env::current_dir()?
-    ));
+    );
 
     // Restore original working directory
     std::env::set_current_dir(original_dir)?;
-    cli_ui::display_info(&format!(
-        "Current directory after: {:?}",
-        std::env::current_dir()?
-    ));
+    trace!("Current directory after: {:?}", std::env::current_dir()?);
 
     match conda_status {
         Ok(status) if status.success() => {
@@ -323,7 +310,7 @@ pub fn create_conda_environment(project_dir: &Path, environment_file: &str) -> R
                 "Conda environment '{}' created successfully!",
                 conda_env_name
             ));
-            cli_ui::display_info(&format!("To activate: conda activate {}", conda_env_name));
+            cli_ui::display_message(&format!("To activate: conda activate {}", conda_env_name));
             Ok(true)
         }
         Ok(status) => {
@@ -334,35 +321,32 @@ pub fn create_conda_environment(project_dir: &Path, environment_file: &str) -> R
             ));
 
             // Provide alternative solution
-            cli_ui::display_info("You can create the environment manually with this command:");
+            cli_ui::display_message("You can create the environment manually with this command:");
             if use_faster_solver {
-                cli_ui::display_info(&format!(
+                cli_ui::display_message(&format!(
                     "cd {:?} && {} env create --solver=libmamba -f {}",
                     abs_project_dir, conda_path, environment_file
                 ));
             } else {
-                cli_ui::display_info(&format!(
+                cli_ui::display_message(&format!(
                     "cd {:?} && {} env create -f {}",
                     abs_project_dir, conda_path, environment_file
                 ));
-                cli_ui::display_info("For faster environment solving, consider:");
-                cli_ui::display_info("1. Installing mamba: conda install -n base -c conda-forge mamba");
-                cli_ui::display_info("2. Upgrading to conda 22.11.0+ for libmamba solver");
+                debug!("For faster environment solving, consider:");
+                debug!("1. Installing mamba: conda install -n base -c conda-forge mamba");
+                debug!("2. Upgrading to conda 22.11.0+ for libmamba solver");
             }
             Ok(false)
         }
         Err(e) => {
             cli_ui::display_warning(&format!("Failed to execute conda command: {}", e));
-            cli_ui::display_error(&format!("Error type: {:?}", e.kind()));
+            debug!("Error type: {:?}", e.kind());
 
-            // Print more debug information
-            cli_ui::display_info(&format!("Conda path: {}", conda_path));
-            cli_ui::display_info(&format!("Working directory: {:?}", abs_project_dir));
-            cli_ui::display_info(&format!("Environment file: {}", environment_file));
-            cli_ui::display_info(&format!(
-                "Absolute environment file path: {:?}",
-                abs_env_file_path
-            ));
+            // Print more debug information - moved to trace level
+            trace!("Conda path: {}", conda_path);
+            trace!("Working directory: {:?}", abs_project_dir);
+            trace!("Environment file: {}", environment_file);
+            trace!("Absolute environment file path: {:?}", abs_env_file_path);
 
             // Check file permissions
             #[cfg(unix)]
@@ -370,7 +354,7 @@ pub fn create_conda_environment(project_dir: &Path, environment_file: &str) -> R
                 use std::os::unix::fs::PermissionsExt;
                 if let Ok(metadata) = std::fs::metadata(&abs_env_file_path) {
                     let permissions = metadata.permissions();
-                    cli_ui::display_info(&format!("File permissions: {:o}", permissions.mode()));
+                    trace!("File permissions: {:o}", permissions.mode());
                 }
             }
 
@@ -378,11 +362,9 @@ pub fn create_conda_environment(project_dir: &Path, environment_file: &str) -> R
             if let Ok(output) = Command::new(&conda_path).arg("--version").output() {
                 if output.status.success() {
                     let version = String::from_utf8_lossy(&output.stdout);
-                    cli_ui::display_info(&format!("Conda version check: {}", version.trim()));
+                    trace!("Conda version check: {}", version.trim());
                 } else {
-                    cli_ui::display_warning(
-                        "Conda executable exists but could not run version check",
-                    );
+                    debug!("Conda executable exists but could not run version check");
                 }
             } else {
                 cli_ui::display_error(
@@ -391,20 +373,20 @@ pub fn create_conda_environment(project_dir: &Path, environment_file: &str) -> R
             }
 
             // Provide alternative solution with tips for faster solving
-            cli_ui::display_info("You can create the environment manually with this command:");
+            cli_ui::display_message("You can create the environment manually with this command:");
             if use_faster_solver {
-                cli_ui::display_info(&format!(
+                cli_ui::display_message(&format!(
                     "cd {:?} && {} env create --solver=libmamba -f {}",
                     abs_project_dir, conda_path, environment_file
                 ));
             } else {
-                cli_ui::display_info(&format!(
+                cli_ui::display_message(&format!(
                     "cd {:?} && {} env create -f {}",
                     abs_project_dir, conda_path, environment_file
                 ));
-                cli_ui::display_info("For faster environment solving, consider:");
-                cli_ui::display_info("1. Installing mamba: conda install -n base -c conda-forge mamba");
-                cli_ui::display_info("2. Upgrading to conda 22.11.0+ for libmamba solver");
+                cli_ui::display_message(
+                    "For faster environment solving, consider installing mamba or upgrading conda",
+                );
             }
             Ok(false)
         }
@@ -420,7 +402,7 @@ pub fn find_conda_executable() -> Result<String> {
     for cmd in possible_conda_commands {
         if let Ok(output) = Command::new(cmd).arg("--version").output() {
             if output.status.success() {
-                cli_ui::display_info(&format!("Found conda command: {}", cmd));
+                debug!("Found conda command: {}", cmd);
                 return Ok(cmd.to_string());
             }
         }
@@ -480,7 +462,7 @@ pub fn find_conda_executable() -> Result<String> {
             // Verify the path is executable by running version command
             if let Ok(output) = Command::new(path).arg("--version").output() {
                 if output.status.success() {
-                    cli_ui::display_info(&format!("Found conda at: {}", path));
+                    debug!("Found conda at: {}", path);
                     return Ok(path.to_string());
                 }
             }
@@ -514,7 +496,7 @@ pub fn find_conda_executable() -> Result<String> {
             // Verify the path is executable by running version command
             if let Ok(output) = Command::new(path).arg("--version").output() {
                 if output.status.success() {
-                    cli_ui::display_info(&format!("Found conda at: {}", path));
+                    debug!("Found conda at: {}", path);
                     return Ok(path.to_string());
                 }
             }
@@ -523,33 +505,21 @@ pub fn find_conda_executable() -> Result<String> {
 
     // If still not found, display comprehensive installation options
     cli_ui::display_warning("Could not find conda executable in common locations.");
-    cli_ui::display_info("Please install one of the following conda distributions:");
-    
-    cli_ui::display_info("\n1. Miniconda (RECOMMENDED):");
-    cli_ui::display_info("   • Lightweight installation with conda and Python only");
-    cli_ui::display_info("   • Minimal size (~60-100MB) and fast to install");
-    cli_ui::display_info("   • Perfect for most scientific computing needs");
-    cli_ui::display_info("   • Install from: https://docs.conda.io/en/latest/miniconda.html");
-    
-    cli_ui::display_info("\n2. Anaconda:");
-    cli_ui::display_info("   • Full installation with 250+ packages pre-installed");
-    cli_ui::display_info("   • Large size (~3GB) and slower to install");
-    cli_ui::display_info("   • Includes Spyder IDE, Jupyter Notebook, and many scientific packages");
-    cli_ui::display_info("   • Install from: https://www.anaconda.com/download");
-    
-    cli_ui::display_info("\n3. Miniforge:");
-    cli_ui::display_info("   • Like Miniconda but uses conda-forge as default channel");
-    cli_ui::display_info("   • More up-to-date packages than default channels");
-    cli_ui::display_info("   • Lightweight and community-maintained");
-    cli_ui::display_info("   • Install from: https://github.com/conda-forge/miniforge");
-    
-    cli_ui::display_info("\n4. Mambaforge:");
-    cli_ui::display_info("   • Like Miniforge but includes mamba for faster environment solving");
-    cli_ui::display_info("   • Best option for fast dependency resolution");
-    cli_ui::display_info("   • Significantly speeds up conda operations");
-    cli_ui::display_info("   • Install from: https://github.com/conda-forge/miniforge#mambaforge");
-    
-    cli_ui::display_info("\nAfter installation, ensure conda is in your PATH and restart your terminal.");
+    info!("Please install one of the following conda distributions:");
+
+    info!("1. Miniconda (RECOMMENDED): Lightweight installation");
+    debug!("   • Minimal size (~60-100MB) and fast to install");
+    debug!("   • Perfect for most scientific computing needs");
+    debug!("   • Install from: https://docs.conda.io/en/latest/miniconda.html");
+
+    debug!("2. Anaconda: Full installation with 250+ packages pre-installed");
+    debug!("   • Large size (~3GB) and slower to install");
+    debug!("   • Install from: https://www.anaconda.com/download");
+
+    debug!("3. Miniforge or Mambaforge: Like Miniconda but with conda-forge channel");
+    debug!("   • Install from: https://github.com/conda-forge/miniforge");
+
+    info!("After installation, ensure conda is in your PATH and restart your terminal.");
 
     // Return error with informative message
     Err(crate::error::Error::Command(
@@ -572,10 +542,10 @@ pub fn generate_base_environment_yml(
             "Project name '{}' contains characters not allowed in conda environment names.",
             project_name
         ));
-        cli_ui::display_info(&format!(
+        info!(
             "Using '{}' as the conda environment name instead.",
             conda_env_name
-        ));
+        );
     }
 
     let mut content = format!("name: {}\nchannels:\n", conda_env_name);
