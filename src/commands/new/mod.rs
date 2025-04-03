@@ -291,10 +291,8 @@ package_manager = {{ type = "{}", config_file = "{}", lock_file = "{}" }}
                 user_config.pip_index_url.as_ref().unwrap_or(&"https://pypi.org/simple".to_string()),
                 user_config.pip_trusted_hosts.as_ref().and_then(|hosts| hosts.first()).unwrap_or(&"pypi.org".to_string()),
                 match user_config.virtual_env_type {
-                    config::VirtualEnvType::Venv => "venv",
-                    config::VirtualEnvType::Virtualenv => "virtualenv",
                     config::VirtualEnvType::Conda => "conda",
-                    config::VirtualEnvType::None => "none"
+                    config::VirtualEnvType::None => "none",
                 }
             ));
 

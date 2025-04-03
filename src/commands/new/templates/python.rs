@@ -192,11 +192,7 @@ pub fn create_python_project(project_dir: &PathBuf, config: &UserConfig) -> Resu
         if config.use_conda {
             "Conda"
         } else {
-            match config.virtual_env_type {
-                VirtualEnvType::Venv => "venv",
-                VirtualEnvType::Virtualenv => "virtualenv",
-                _ => "System Python",
-            }
+            "System Python"
         },
         package_managers_desc,
         project_dir.display(),
@@ -516,21 +512,6 @@ def test_main():\n\
 
     // Create virtual environment
     match config.virtual_env_type {
-        VirtualEnvType::Venv => {
-            let python_cmd = if config.use_conda {
-                format!("conda run python={}", config.python_version)
-            } else {
-                "python".to_string()
-            };
-            Command::new(&python_cmd)
-                .arg("-m")
-                .arg("venv")
-                .arg(".venv")
-                .status()?;
-        }
-        VirtualEnvType::Virtualenv => {
-            Command::new("virtualenv").arg(".venv").status()?;
-        }
         VirtualEnvType::Conda => {
             if config.use_conda {
                 // Get project name for conda environment

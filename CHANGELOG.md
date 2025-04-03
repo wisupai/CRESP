@@ -38,6 +38,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Enhanced Python project README with direnv usage instructions
 - Improved mirror configuration for UV package manager
 - Removed automatic generation of .envrc files for simplicity and compatibility
+- Modified Python project creation to enforce Conda as the environment management tool with standardized package manager combinations
 
 ### Fixed
 - Fixed auto-activation of UV in current terminal session after installation
