@@ -63,6 +63,35 @@ pub fn check_conda_version(version: &str) -> Result<()> {
     Ok(())
 }
 
+/// Check if conda supports faster solver
+fn check_faster_solver_support(conda_path: &str) -> bool {
+    // Check if conda version supports the libmamba solver
+    let output = Command::new(conda_path)
+        .args(&["--version"])
+        .output();
+    
+    if let Ok(output) = output {
+        let version_str = String::from_utf8_lossy(&output.stdout);
+        // Parse version from string like "conda 23.1.0"
+        if let Some(version) = version_str.split_whitespace().nth(1) {
+            // Extract major version
+            if let Some(major_str) = version.split('.').next() {
+                if let Ok(major) = major_str.parse::<u32>() {
+                    // libmamba solver is supported in conda 22.11.0+
+                    return major >= 23 || (major == 22 && version.contains("22.11.") || version.contains("22.12."));
+                }
+            }
+        }
+    }
+    
+    // Also check if mamba is installed separately
+    let mamba_check = Command::new("mamba")
+        .args(&["--version"])
+        .output();
+    
+    mamba_check.is_ok() && mamba_check.unwrap().status.success()
+}
+
 /// Install poetry in conda environment
 pub fn install_poetry_in_conda_env(env_name: &str) -> Result<()> {
     cli_ui::display_info("Installing Poetry in Conda environment...");
@@ -152,6 +181,15 @@ pub fn create_conda_environment(project_dir: &Path, environment_file: &str) -> R
         }
     };
 
+    // Check if faster solver is available
+    let use_faster_solver = check_faster_solver_support(&conda_path);
+    if use_faster_solver {
+        cli_ui::display_info("Using faster dependency solver (libmamba) for conda");
+    } else {
+        cli_ui::display_info("Using standard conda solver (this might take some time)");
+        cli_ui::display_info("For faster environment creation, consider installing conda 22.11.0+ or mamba");
+    }
+
     // Ensure environment file exists
     let env_file_path = project_dir.join(environment_file);
     if !env_file_path.exists() {
@@ -221,10 +259,13 @@ pub fn create_conda_environment(project_dir: &Path, environment_file: &str) -> R
     }
 
     // Execute conda command with full path and inherited stdio to show real-time progress
-    cli_ui::display_info(&format!(
-        "Running: {} env create -f {}",
-        conda_path, environment_file
-    ));
+    let command_str = if use_faster_solver {
+        format!("{} env create --solver=libmamba -f {}", conda_path, environment_file)
+    } else {
+        format!("{} env create -f {}", conda_path, environment_file)
+    };
+    
+    cli_ui::display_info(&format!("Running: {}", command_str));
 
     // Use relative path of environment file (relative to working directory)
     let relative_env_file = environment_file;
@@ -233,18 +274,27 @@ pub fn create_conda_environment(project_dir: &Path, environment_file: &str) -> R
     cli_ui::display_info(&format!("Using conda executable: {}", conda_path));
     cli_ui::display_info("Starting conda environment creation (showing real-time progress):");
     
+    // Build the command with appropriate solver options
+    let mut cmd = Command::new(&conda_path);
+    cmd.arg("env")
+       .arg("create");
+    
+    // Add faster solver if available
+    if use_faster_solver {
+        cmd.arg("--solver=libmamba");
+    }
+    
+    // Add other options to potentially speed up environment creation
+    cmd.arg("--yes")  // Auto-confirm prompts
+       .arg("-f")
+       .arg(relative_env_file)
+       .current_dir(&abs_project_dir)
+       .stdin(Stdio::inherit())
+       .stdout(Stdio::inherit())
+       .stderr(Stdio::inherit());
+    
     // Use spawn and wait with stdio inheritance to display real-time conda output
-    let conda_status = Command::new(&conda_path)
-        .arg("env")
-        .arg("create")
-        .arg("-f")
-        .arg(relative_env_file) // Use relative path since working directory is set
-        .current_dir(&abs_project_dir) // Explicitly set current directory
-        .stdin(Stdio::inherit())
-        .stdout(Stdio::inherit())
-        .stderr(Stdio::inherit())
-        .spawn()
-        .and_then(|mut child| child.wait());
+    let conda_status = cmd.spawn().and_then(|mut child| child.wait());
 
     // Display current working directory
     cli_ui::display_info(&format!(
@@ -286,10 +336,20 @@ pub fn create_conda_environment(project_dir: &Path, environment_file: &str) -> R
 
             // Provide alternative solution
             cli_ui::display_info("You can create the environment manually with this command:");
-            cli_ui::display_info(&format!(
-                "cd {:?} && {} env create -f {}",
-                abs_project_dir, conda_path, environment_file
-            ));
+            if use_faster_solver {
+                cli_ui::display_info(&format!(
+                    "cd {:?} && {} env create --solver=libmamba -f {}",
+                    abs_project_dir, conda_path, environment_file
+                ));
+            } else {
+                cli_ui::display_info(&format!(
+                    "cd {:?} && {} env create -f {}",
+                    abs_project_dir, conda_path, environment_file
+                ));
+                cli_ui::display_info("For faster environment solving, consider:");
+                cli_ui::display_info("1. Installing mamba: conda install -n base -c conda-forge mamba");
+                cli_ui::display_info("2. Upgrading to conda 22.11.0+ for libmamba solver");
+            }
             Ok(false)
         }
         Err(e) => {
@@ -331,12 +391,22 @@ pub fn create_conda_environment(project_dir: &Path, environment_file: &str) -> R
                 );
             }
 
-            // Provide alternative solution
+            // Provide alternative solution with tips for faster solving
             cli_ui::display_info("You can create the environment manually with this command:");
-            cli_ui::display_info(&format!(
-                "cd {:?} && {} env create -f {}",
-                abs_project_dir, conda_path, environment_file
-            ));
+            if use_faster_solver {
+                cli_ui::display_info(&format!(
+                    "cd {:?} && {} env create --solver=libmamba -f {}",
+                    abs_project_dir, conda_path, environment_file
+                ));
+            } else {
+                cli_ui::display_info(&format!(
+                    "cd {:?} && {} env create -f {}",
+                    abs_project_dir, conda_path, environment_file
+                ));
+                cli_ui::display_info("For faster environment solving, consider:");
+                cli_ui::display_info("1. Installing mamba: conda install -n base -c conda-forge mamba");
+                cli_ui::display_info("2. Upgrading to conda 22.11.0+ for libmamba solver");
+            }
             Ok(false)
         }
     }
