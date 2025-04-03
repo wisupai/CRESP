@@ -16,6 +16,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Simplified README.md by removing Quick Start section
 - Updated project description in README.md to better reflect the purpose and functionality of CRESP
 
+### Fixed
+- Fixed installation scripts to automatically update PATH environment variable
+- Added installation verification to both shell and PowerShell scripts
+- Enhanced user feedback during installation process
+- Added automatic shell detection for better PATH configuration
+
 ## [0.1.0] - Unreleased
 Same as 0.1.0-dev.1, will be merged from the develop branch to the main branch after development stabilizes.
 
