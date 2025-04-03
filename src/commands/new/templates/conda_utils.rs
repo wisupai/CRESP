@@ -1,5 +1,5 @@
 use std::path::Path;
-use std::process::Command;
+use std::process::{Command, Stdio};
 
 use crate::error::Result;
 use crate::utils::cli_ui;
@@ -220,24 +220,31 @@ pub fn create_conda_environment(project_dir: &Path, environment_file: &str) -> R
         std::env::set_current_dir(&abs_project_dir)?;
     }
 
-    // Use Command::output to capture output instead of just getting status
+    // Execute conda command with full path and inherited stdio to show real-time progress
     cli_ui::display_info(&format!(
-        "Running: {} env create -f {:?}",
-        conda_path, abs_env_file_path
+        "Running: {} env create -f {}",
+        conda_path, environment_file
     ));
 
     // Use relative path of environment file (relative to working directory)
     let relative_env_file = environment_file;
 
-    // Execute conda command with full path
+    // Execute conda command with full path and inherit stdio to show real-time output
     cli_ui::display_info(&format!("Using conda executable: {}", conda_path));
-    let conda_cmd = Command::new(&conda_path)
+    cli_ui::display_info("Starting conda environment creation (showing real-time progress):");
+    
+    // Use spawn and wait with stdio inheritance to display real-time conda output
+    let conda_status = Command::new(&conda_path)
         .arg("env")
         .arg("create")
         .arg("-f")
         .arg(relative_env_file) // Use relative path since working directory is set
         .current_dir(&abs_project_dir) // Explicitly set current directory
-        .output();
+        .stdin(Stdio::inherit())
+        .stdout(Stdio::inherit())
+        .stderr(Stdio::inherit())
+        .spawn()
+        .and_then(|mut child| child.wait());
 
     // Display current working directory
     cli_ui::display_info(&format!(
@@ -252,8 +259,8 @@ pub fn create_conda_environment(project_dir: &Path, environment_file: &str) -> R
         std::env::current_dir()?
     ));
 
-    match conda_cmd {
-        Ok(output) if output.status.success() => {
+    match conda_status {
+        Ok(status) if status.success() => {
             // Get project name for conda environment
             let raw_project_name = project_dir
                 .file_name()
@@ -270,26 +277,12 @@ pub fn create_conda_environment(project_dir: &Path, environment_file: &str) -> R
             cli_ui::display_info(&format!("To activate: conda activate {}", conda_env_name));
             Ok(true)
         }
-        Ok(output) => {
-            // Show detailed error information
-            cli_ui::display_warning("Failed to create conda environment.");
-
-            // Display command output which contains error information
-            let stdout = String::from_utf8_lossy(&output.stdout);
-            let stderr = String::from_utf8_lossy(&output.stderr);
-
-            cli_ui::display_info("Command output:");
-            if !stdout.is_empty() {
-                cli_ui::display_info(&format!("stdout: {}", stdout));
-            }
-
-            if !stderr.is_empty() {
-                cli_ui::display_error("Error details:");
-                for line in stderr.lines() {
-                    // Display all error lines
-                    cli_ui::display_warning(line);
-                }
-            }
+        Ok(status) => {
+            // Show error information
+            cli_ui::display_warning(&format!(
+                "Failed to create conda environment. Exit code: {:?}",
+                status.code()
+            ));
 
             // Provide alternative solution
             cli_ui::display_info("You can create the environment manually with this command:");
