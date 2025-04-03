@@ -1,4 +1,4 @@
-use super::super::config::{check_conda_available, check_system_r};
+use super::super::config::check_conda_available;
 use super::super::utils::write_file;
 use crate::error::Result;
 use crate::utils::cli_ui;
@@ -7,8 +7,7 @@ use std::process::Command;
 
 /// Create R project with the specified configuration
 pub fn create_r_project(project_dir: &Path) -> Result<()> {
-    // Check system R and conda availability
-    let (system_r, r_info) = get_r_info()?;
+    // Check conda availability (required for R projects)
     let conda_available = check_conda_available()?;
 
     if !conda_available {
@@ -24,8 +23,8 @@ pub fn create_r_project(project_dir: &Path) -> Result<()> {
         ));
     }
 
-    // Setup R environment
-    let r_version = setup_r_environment(system_r, r_info)?;
+    // Setup R environment - get version from user
+    let r_version = setup_r_environment()?;
 
     cli_ui::display_info("Creating R project structure...");
     // Create basic R project structure
@@ -354,186 +353,14 @@ test_check("myresearch")
     Ok(())
 }
 
-/// Get detailed information about installed R
-fn get_r_info() -> Result<(Option<String>, Option<RInfo>)> {
-    // Check basic R version
-    let system_r = check_system_r()?;
-
-    if system_r.is_none() {
-        return Ok((None, None));
-    }
-
-    // Try to get more detailed information
-    let version = system_r.as_ref().unwrap().clone();
-
-    // Get R executable path
-    let r_path = get_r_path()?;
-
-    // Determine installation method
-    let install_method = if let Some(path) = &r_path {
-        determine_install_method(path)
-    } else {
-        "Unknown".to_string()
-    };
-
-    // Get R arch if possible
-    let r_arch = get_r_arch(&version, &r_path)?;
-
-    Ok((
-        system_r,
-        Some(RInfo {
-            _version: version,
-            path: r_path,
-            install_method,
-            arch: r_arch,
-        }),
-    ))
-}
-
-/// Struct to hold detailed R information
-#[derive(Debug, Clone)]
-struct RInfo {
-    _version: String,
-    path: Option<String>,
-    install_method: String,
-    arch: String,
-}
-
-/// Get R executable path
-fn get_r_path() -> Result<Option<String>> {
-    let cmd = if cfg!(target_os = "windows") {
-        Command::new("where").arg("R.exe").output()
-    } else {
-        Command::new("which").arg("R").output()
-    };
-
-    match cmd {
-        Ok(output) if output.status.success() => {
-            let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
-            if !path.is_empty() {
-                Ok(Some(path))
-            } else {
-                Ok(None)
-            }
-        }
-        _ => Ok(None),
-    }
-}
-
-/// Determine how R was installed based on its path
-fn determine_install_method(path: &str) -> String {
-    if cfg!(target_os = "macos") {
-        if path.contains("/usr/local/bin") {
-            // Could be Homebrew
-            if std::path::Path::new("/usr/local/Cellar/r").exists()
-                || std::path::Path::new("/opt/homebrew/Cellar/r").exists()
-            {
-                return "Homebrew".to_string();
-            }
-        }
-
-        if path.contains("/Library/Frameworks/R.framework") {
-            return "Official installer".to_string();
-        }
-
-        if path.contains(".rig/") || path.contains("/.r/") {
-            return "rig (R Installation Manager)".to_string();
-        }
-    } else if cfg!(target_os = "windows") {
-        if path.contains("\\Program Files\\R\\") {
-            return "Official installer".to_string();
-        }
-    } else {
-        // Linux
-        if path.contains("/usr/bin") {
-            if std::path::Path::new("/etc/debian_version").exists() {
-                return "apt (Debian/Ubuntu package)".to_string();
-            }
-            if std::path::Path::new("/etc/fedora-release").exists() {
-                return "dnf (Fedora package)".to_string();
-            }
-            if std::path::Path::new("/etc/arch-release").exists() {
-                return "pacman (Arch Linux package)".to_string();
-            }
-            return "System package manager".to_string();
-        }
-
-        if path.contains("/.rig/") || path.contains("/.r/") {
-            return "rig (R Installation Manager)".to_string();
-        }
-    }
-
-    "Unknown source".to_string()
-}
-
-/// Get R architecture
-fn get_r_arch(_version: &str, _path: &Option<String>) -> Result<String> {
-    // Try to run R --version to get architecture info
-    let output = Command::new("R").arg("--version").output();
-
-    match output {
-        Ok(output) if output.status.success() => {
-            let version_str = String::from_utf8_lossy(&output.stdout);
-
-            // Check for architecture information
-            if version_str.contains("x86_64") {
-                Ok("x86_64 (64-bit)".to_string())
-            } else if version_str.contains("i386") || version_str.contains("i686") {
-                Ok("i386/i686 (32-bit)".to_string())
-            } else if version_str.contains("aarch64") || version_str.contains("arm64") {
-                Ok("ARM64".to_string())
-            } else {
-                // Default to platform-specific architecture
-                if cfg!(target_arch = "x86_64") {
-                    Ok("x86_64 (64-bit)".to_string())
-                } else if cfg!(target_arch = "aarch64") {
-                    Ok("ARM64".to_string())
-                } else {
-                    Ok("Unknown".to_string())
-                }
-            }
-        }
-        _ => {
-            // Fallback to platform-specific architecture
-            if cfg!(target_arch = "x86_64") {
-                Ok("x86_64 (64-bit)".to_string())
-            } else if cfg!(target_arch = "aarch64") {
-                Ok("ARM64".to_string())
-            } else {
-                Ok("Unknown".to_string())
-            }
-        }
-    }
-}
-
-/// Setup R environment by checking existing installation and selecting version
-/// Simplified to only use conda + renv for environment management
-fn setup_r_environment(system_r: Option<String>, r_info: Option<RInfo>) -> Result<String> {
+/// Setup R environment - only use conda for R management
+fn setup_r_environment() -> Result<String> {
     cli_ui::display_header("R Configuration", "📊");
 
     // Default R version
     let default_version = "4.3.2".to_string();
 
-    if let Some(ver) = &system_r {
-        cli_ui::display_info(&format!("Detected installed R version: {}", ver));
-
-        // Display additional R information if available
-        if let Some(info) = &r_info {
-            if let Some(path) = &info.path {
-                cli_ui::display_info(&format!("R location: {}", path));
-            }
-            cli_ui::display_info(&format!("Installation method: {}", info.install_method));
-            cli_ui::display_info(&format!("Architecture: {}", info.arch));
-        }
-
-        // Since we're using conda, we don't need to use the detected R version.
-        // We'll inform the user that conda will manage the R installation.
-        cli_ui::display_info("We'll use conda to manage the R environment, which provides better isolation and reproducibility.");
-    } else {
-        cli_ui::display_info(
-            "No R installation detected. Conda will be used to install and manage R.",
-        );
-    }
+    cli_ui::display_info("Conda will be used to manage the R environment, providing better isolation and reproducibility.");
 
     // Present R version options
     let r_options = vec![
