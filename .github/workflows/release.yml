@@ -17,11 +17,28 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          # Linux builds
           - target: x86_64-unknown-linux-gnu
             os: ubuntu-latest
             name: cresp-x86_64-linux-gnu.tar.gz
             cross: false
             
+          - target: aarch64-unknown-linux-gnu
+            os: ubuntu-latest
+            name: cresp-aarch64-linux-gnu.tar.gz
+            cross: true
+            
+          - target: i686-unknown-linux-gnu
+            os: ubuntu-latest
+            name: cresp-i686-linux-gnu.tar.gz
+            cross: true
+            
+          - target: armv7-unknown-linux-gnueabihf
+            os: ubuntu-latest
+            name: cresp-armv7-linux-gnueabihf.tar.gz
+            cross: true
+            
+          # macOS builds
           - target: x86_64-apple-darwin
             os: macos-latest
             name: cresp-x86_64-darwin.tar.gz
@@ -32,10 +49,21 @@ jobs:
             name: cresp-aarch64-darwin.tar.gz
             cross: true
             
+          # Windows builds
           - target: x86_64-pc-windows-msvc
             os: windows-latest
             name: cresp-x86_64-windows-msvc.zip
             cross: false
+            
+          - target: i686-pc-windows-msvc
+            os: windows-latest
+            name: cresp-i686-windows-msvc.zip
+            cross: true
+            
+          - target: aarch64-pc-windows-msvc
+            os: windows-latest
+            name: cresp-aarch64-windows-msvc.zip
+            cross: true
 
     steps:
       - name: Checkout code
@@ -121,9 +149,14 @@ jobs:
           body: ${{ env.NOTES }}
           files: |
             cresp-x86_64-linux-gnu.tar.gz
+            cresp-aarch64-linux-gnu.tar.gz
+            cresp-i686-linux-gnu.tar.gz
+            cresp-armv7-linux-gnueabihf.tar.gz
             cresp-x86_64-darwin.tar.gz
             cresp-aarch64-darwin.tar.gz
             cresp-x86_64-windows-msvc.zip
+            cresp-i686-windows-msvc.zip
+            cresp-aarch64-windows-msvc.zip
           draft: false
           prerelease: false
         env:
