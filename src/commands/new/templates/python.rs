@@ -11,6 +11,9 @@ use std::process::Command;
 
 /// Create a Python project with the specified configuration
 pub fn create_python_project(project_dir: &PathBuf, config: &UserConfig) -> Result<()> {
+    // 添加检查conda版本功能
+    check_conda_version()?;
+    
     // Check if required package managers are available
     let has_uv = config
         .package_managers
@@ -180,7 +183,7 @@ pub fn create_python_project(project_dir: &PathBuf, config: &UserConfig) -> Resu
         ```\n\n\
         ## Important Notes\n\
         - If using Conda: Remember to activate the environment before running commands with `conda activate {}`\n\
-        - The environment name matches the project directory name by default\n\n\
+        - The environment name matches the project directory name by default\n{}\n\n\
         ## License\n\
         MIT\n",
         project_dir.display(),
@@ -200,7 +203,12 @@ pub fn create_python_project(project_dir: &PathBuf, config: &UserConfig) -> Resu
         get_install_command(config),
         get_dev_install_command(config),
         get_test_command(config),
-        project_name
+        project_name,
+        if config.use_conda {
+            "\n- If using direnv: Run `direnv allow` in the project directory to enable automatic environment activation when entering the directory"
+        } else {
+            ""
+        }
     );
     write_file(&Path::new("README.md"), &readme_content)?;
 
@@ -708,11 +716,16 @@ def test_main():\n\
 
         if has_uv {
             cli_ui::display_info("After activating the Conda environment, UV will be available for managing packages.");
+            cli_ui::display_info(&format!("  Example: conda activate {} && uv pip install numpy pandas", project_name));
         }
 
         if has_poetry {
             cli_ui::display_info("After activating the Conda environment, Poetry will be available for managing packages.");
+            cli_ui::display_info(&format!("  Example: conda activate {} && poetry add numpy pandas", project_name));
         }
+        
+        // 检查direnv并给出合适的提示
+        check_direnv_and_prompt(project_dir)?;
     } else if has_uv && config.uv_installed {
         // Only check global UV installation for non-Conda environments
         let uv_check = Command::new("sh").arg("-c").arg("command -v uv").output();
@@ -730,6 +743,11 @@ def test_main():\n\
                         cli_ui::display_info(&format!("UV is installed at: {}", path));
                     }
                 }
+                
+                // 添加UV使用示例
+                cli_ui::display_info("Example usage of UV for package management:");
+                cli_ui::display_info("  uv pip install numpy pandas    # Install packages");
+                cli_ui::display_info("  uv pip freeze > requirements.txt    # Generate requirements file");
             }
             _ => {
                 cli_ui::display_warning(
@@ -762,6 +780,71 @@ def test_main():\n\
         }
     }
 
+    Ok(())
+}
+
+/// 检查conda版本并显示更新提示
+fn check_conda_version() -> Result<()> {
+    let output = Command::new("conda").arg("--version").output();
+    
+    if let Ok(output) = output {
+        if output.status.success() {
+            let version_str = String::from_utf8_lossy(&output.stdout);
+            if let Some(version) = version_str.split_whitespace().nth(1) {
+                // 简单版本比较，只比较主版本号
+                let parts: Vec<&str> = version.split('.').collect();
+                if parts.len() >= 2 {
+                    if let Ok(major) = parts[0].parse::<u32>() {
+                        if major < 23 {
+                            cli_ui::display_warning(&format!("You are using an older version of conda ({}). Consider updating it for better performance and compatibility.", version));
+                            cli_ui::display_info("To update conda, run: conda update -n base -c defaults conda");
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
+    Ok(())
+}
+
+/// 检查direnv并提示用户如何启用它
+fn check_direnv_and_prompt(project_dir: &Path) -> Result<()> {
+    if Path::new(".envrc").exists() {
+        // 检查direnv是否安装
+        let direnv_check = Command::new("sh").arg("-c").arg("command -v direnv").output();
+        
+        match direnv_check {
+            Ok(output) if output.status.success() => {
+                cli_ui::display_info("\nA .envrc file has been created for automatic environment activation.");
+                cli_ui::display_warning("Important: You need to run the following command to enable it:");
+                cli_ui::display_info(&format!("  cd {} && direnv allow", project_dir.display()));
+                cli_ui::display_info("This will allow automatic activation of the conda environment when you enter the project directory.");
+            },
+            _ => {
+                cli_ui::display_info("\nA .envrc file has been created, but direnv is not installed on your system.");
+                cli_ui::display_info("direnv allows automatic environment switching when entering project directories.");
+                cli_ui::display_info("To install direnv:");
+                
+                if cfg!(target_os = "macos") {
+                    cli_ui::display_info("  brew install direnv");
+                } else if cfg!(target_os = "linux") {
+                    cli_ui::display_info("  sudo apt-get install direnv  # For Debian/Ubuntu");
+                    cli_ui::display_info("  sudo yum install direnv      # For CentOS/RHEL");
+                } else {
+                    cli_ui::display_info("  Visit https://direnv.net/docs/installation.html");
+                }
+                
+                cli_ui::display_info("\nAfter installation, add to your shell profile (~/.bashrc, ~/.zshrc, etc.):");
+                cli_ui::display_info("  eval \"$(direnv hook bash)\"  # For bash");
+                cli_ui::display_info("  eval \"$(direnv hook zsh)\"   # For zsh");
+                
+                cli_ui::display_info("\nThen run:");
+                cli_ui::display_info(&format!("  cd {} && direnv allow", project_dir.display()));
+            }
+        }
+    }
+    
     Ok(())
 }
 
@@ -898,8 +981,24 @@ fn get_install_command(config: &UserConfig) -> String {
                     );
                 }
 
-                commands.push("# UV is up to 10x faster than pip for installations".to_string());
-                commands.push(format!("uv pip install -r {}", requirements_file));
+                // 添加镜像配置
+                if let Some(index_url) = &config.pip_index_url {
+                    commands.push("\n# Configure UV to use specified mirror".to_string());
+                    commands.push(format!("# Set mirror: {}", index_url));
+                    
+                    if cfg!(target_os = "windows") {
+                        commands.push(format!("uv pip config set global.index-url {}", index_url));
+                    } else {
+                        commands.push(format!("uv pip config set global.index-url {}", index_url));
+                    }
+                }
+
+                // 如果设置了pip镜像，使用这个镜像安装
+                if let Some(index_url) = &config.pip_index_url {
+                    commands.push(format!("uv pip install -r {} --index-url {}", requirements_file, index_url));
+                } else {
+                    commands.push(format!("uv pip install -r {}", requirements_file));
+                }
             }
         }
     }
@@ -1047,7 +1146,13 @@ fn get_dev_install_command(config: &UserConfig) -> String {
                     );
                 }
 
-                commands.push(format!("uv pip install -r {}", dev_requirements_file));
+                // 最后部分需要修改，确保使用镜像配置
+                // 如果设置了pip镜像，使用这个镜像安装
+                if let Some(index_url) = &config.pip_index_url {
+                    commands.push(format!("uv pip install -r {} --index-url {}", dev_requirements_file, index_url));
+                } else {
+                    commands.push(format!("uv pip install -r {}", dev_requirements_file));
+                }
             }
         }
     }

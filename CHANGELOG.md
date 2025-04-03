@@ -18,6 +18,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - MATLAB version detection and configuration functions
 - Automated MATLAB installer download and execution with credential handling
 - Platform-specific MATLAB installation assistance (DMG mounting, EXE execution, ZIP extraction)
+- Added direnv detection and configuration guidance for Python projects
+- Added conda version checking with update recommendations
+- Added more comprehensive UV usage examples
 
 ### Changed
 - Improved R project creation with better rig package manager handling
@@ -32,6 +35,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Automated MATLAB installation process with direct credential input and installer execution
 - Enhanced MATLAB installation process with automatic script execution and cleanup
 - Improved security handling for MATLAB installation credentials
+- Enhanced Python project README with direnv usage instructions
+- Improved mirror configuration for UV package manager
 
 ### Fixed
 - Fixed auto-activation of UV in current terminal session after installation
@@ -39,6 +44,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fixed formatting error in command generation for UV installation
 - Fixed MATLAB installer download script to handle platform-specific installers
 - Fixed compiler warnings by removing unused code and marking unused variables
+- Fixed Python mirror configuration issue when using UV package manager
+- Fixed missing direnv documentation and guidance after project creation
 
 ### Removed
 - None
