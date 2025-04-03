@@ -42,14 +42,14 @@ async fn main() -> Result<()> {
         }
     };
 
-    // 获取 verbose 值用于日志格式化
+    // Get verbose level for log formatting
     let verbose_level = cli.verbose;
 
-    // 配置自定义日志格式，不显示时间戳和模块路径
+    // Configure custom log format without timestamp and module path
     env_logger::Builder::new()
         .filter_level(log_level)
         .format(move |buf, record| {
-            // 只有调试级别及以上才显示模块路径和级别
+            // Only show module path and level for debug and above
             if verbose_level >= 1 {
                 let mut level_style = buf.style();
                 match record.level() {
@@ -67,7 +67,7 @@ async fn main() -> Result<()> {
                     record.args()
                 )
             } else {
-                // 正常用户模式：只显示消息内容，不显示模块路径和日志级别
+                // Normal user mode: only show message content without module path and log level
                 writeln!(buf, "{}", record.args())
             }
         })
@@ -86,7 +86,7 @@ async fn main() -> Result<()> {
     // Execute command
     match cli.command.execute().await {
         Ok(_) => {
-            // 成功消息已由各子命令显示，这里不再重复
+            // Success message already shown by subcommands, no need to repeat here
             Ok(())
         }
         Err(e) => {
