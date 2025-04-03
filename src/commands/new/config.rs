@@ -41,10 +41,6 @@ pub enum PackageManager {
     Poetry {
         pyproject_file: String,
     },
-    Pip {
-        requirements_file: String,
-        dev_requirements_file: String,
-    },
     Uv {
         requirements_file: String,
         dev_requirements_file: String,
@@ -495,7 +491,6 @@ pub fn get_python_config() -> Result<UserConfig> {
             }
             PackageManager::Poetry { .. } => println!("  - Poetry"),
             PackageManager::Uv { .. } => println!("  - uv"),
-            PackageManager::Pip { .. } => println!("  - pip"),
         }
     }
     if config.use_cuda {
@@ -760,12 +755,6 @@ pub fn check_system_r() -> Result<Option<String>> {
         }
         _ => Ok(None),
     }
-}
-
-/// Check if rig (R Installation Manager) is available on the system
-pub fn check_rig_available() -> Result<bool> {
-    let cmd = Command::new("rig").arg("--version").status();
-    Ok(cmd.is_ok() && cmd.unwrap().success())
 }
 
 /// Check system MATLAB installation

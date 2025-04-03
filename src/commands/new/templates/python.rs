@@ -142,7 +142,6 @@ pub fn create_python_project(project_dir: &PathBuf, config: &UserConfig) -> Resu
             PackageManager::Conda { .. } => "Conda",
             PackageManager::Poetry { .. } => "Poetry",
             PackageManager::Uv { .. } => "uv",
-            PackageManager::Pip { .. } => "pip",
         })
         .collect::<Vec<_>>()
         .join(" + ");
@@ -502,9 +501,6 @@ def test_main():\n\
                     isort>=5.0.0\n\
                     flake8>=6.0.0\n";
                 write_file(&Path::new(dev_requirements_file), dev_req_content)?;
-            }
-            PackageManager::Pip { .. } => {
-                // 已弃用pip选项，不需要处理
             }
         }
     }
@@ -896,9 +892,6 @@ fn get_install_command(config: &UserConfig) -> String {
                     commands.push(format!("uv pip install -r {}", requirements_file));
                 }
             }
-            PackageManager::Pip { .. } => {
-                // 已弃用pip选项，不做任何处理
-            }
         }
     }
 
@@ -1046,9 +1039,6 @@ fn get_dev_install_command(config: &UserConfig) -> String {
                     commands.push(format!("uv pip install -r {}", dev_requirements_file));
                 }
             }
-            PackageManager::Pip { .. } => {
-                // 已弃用pip选项，不做任何处理
-            }
         }
     }
 
@@ -1068,9 +1058,6 @@ fn get_test_command(config: &UserConfig) -> String {
                 commands.push("poetry run pytest".to_string());
             }
             PackageManager::Uv { .. } => {
-                commands.push("pytest".to_string());
-            }
-            PackageManager::Pip { .. } => {
                 commands.push("pytest".to_string());
             }
         }
