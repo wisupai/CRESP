@@ -37,14 +37,14 @@ jobs:
       - name: Prepare archive
         run: |
           cd target/release
-          tar czvf ../../cresp-x86_64-linux-gnu.tar.gz ${{ env.RELEASE_BIN }}
+          tar czvf ../../cresp-linux-x86_64.tar.gz ${{ env.RELEASE_BIN }}
           cd -
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: cresp-x86_64-linux-gnu.tar.gz
-          path: cresp-x86_64-linux-gnu.tar.gz
+          name: cresp-linux-x86_64
+          path: cresp-linux-x86_64.tar.gz
 
   # Build for macOS (Intel)
   build-macos-intel:
@@ -73,14 +73,14 @@ jobs:
       - name: Prepare archive
         run: |
           cd target/x86_64-apple-darwin/release
-          tar czvf ../../../cresp-x86_64-darwin.tar.gz ${{ env.RELEASE_BIN }}
+          tar czvf ../../../cresp-darwin-x86_64.tar.gz ${{ env.RELEASE_BIN }}
           cd -
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: cresp-x86_64-darwin.tar.gz
-          path: cresp-x86_64-darwin.tar.gz
+          name: cresp-darwin-x86_64
+          path: cresp-darwin-x86_64.tar.gz
 
   # Build for macOS (Apple Silicon)
   build-macos-apple-silicon:
@@ -106,14 +106,14 @@ jobs:
       - name: Prepare archive
         run: |
           cd target/aarch64-apple-darwin/release
-          tar czvf ../../../cresp-aarch64-darwin.tar.gz ${{ env.RELEASE_BIN }}
+          tar czvf ../../../cresp-darwin-aarch64.tar.gz ${{ env.RELEASE_BIN }}
           cd -
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: cresp-aarch64-darwin.tar.gz
-          path: cresp-aarch64-darwin.tar.gz
+          name: cresp-darwin-aarch64
+          path: cresp-darwin-aarch64.tar.gz
 
   # Build for Windows (x86_64)
   build-windows:
@@ -137,19 +137,21 @@ jobs:
       - name: Prepare archive
         shell: pwsh
         run: |
-          Compress-Archive -Path "target\release\${{ env.RELEASE_BIN }}.exe" -DestinationPath "cresp-x86_64-windows-msvc.zip"
+          Compress-Archive -Path "target\release\${{ env.RELEASE_BIN }}.exe" -DestinationPath "cresp-windows-x86_64.zip"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: cresp-x86_64-windows-msvc.zip
-          path: cresp-x86_64-windows-msvc.zip
+          name: cresp-windows-x86_64
+          path: cresp-windows-x86_64.zip
 
   # Create Release
   release:
     name: Create Release
     needs: [build-linux, build-macos-intel, build-macos-apple-silicon, build-windows]
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -181,8 +183,28 @@ jobs:
           sed -n "/## \[${{ env.VERSION }}/,/## \[/p" CHANGELOG.md | sed '$ d' >> $GITHUB_ENV
           echo "EOF" >> $GITHUB_ENV
 
-      - name: Download all artifacts
+      - name: Download Linux artifact
         uses: actions/download-artifact@v4
+        with:
+          name: cresp-linux-x86_64
+
+      - name: Download macOS Intel artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: cresp-darwin-x86_64
+
+      - name: Download macOS Apple Silicon artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: cresp-darwin-aarch64
+
+      - name: Download Windows artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: cresp-windows-x86_64
+
+      - name: List files
+        run: ls -la
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v1
@@ -190,10 +212,10 @@ jobs:
           name: ${{ env.RELEASE_TYPE == 'stable' && 'Release' || 'Development Release' }} ${{ env.VERSION }}
           body: ${{ env.NOTES }}
           files: |
-            cresp-x86_64-linux-gnu.tar.gz
-            cresp-x86_64-darwin.tar.gz
-            cresp-aarch64-darwin.tar.gz
-            cresp-x86_64-windows-msvc.zip
+            cresp-linux-x86_64.tar.gz
+            cresp-darwin-x86_64.tar.gz
+            cresp-darwin-aarch64.tar.gz
+            cresp-windows-x86_64.zip
           draft: false
           prerelease: ${{ env.IS_PRERELEASE }}
         env:
