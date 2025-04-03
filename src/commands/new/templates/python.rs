@@ -10,8 +10,6 @@ use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::thread;
-use std::time::Duration;
 
 /// Create a Python project with the specified configuration
 pub fn create_python_project(project_dir: &PathBuf, config: &mut UserConfig) -> Result<()> {
@@ -361,11 +359,45 @@ def test_main():\n\
                     .iter()
                     .any(|pm| !matches!(pm, PackageManager::Conda { .. }))
                 {
-                    env_content.push_str("  - pip:\n");
-                    env_content.push_str("    - -e .\n"); // Install current project
+                    // 不再添加pip安装当前项目的命令
+                    env_content.push_str("  - pip\n");
+
+                    // 如果使用Poetry，添加poetry安装命令
+                    if config
+                        .package_managers
+                        .iter()
+                        .any(|pm| matches!(pm, PackageManager::Poetry { .. }))
+                    {
+                        env_content.push_str("  - pip:\n");
+                        env_content.push_str("    - poetry\n");
+                    }
+
+                    // 如果使用UV，添加uv安装命令
+                    if config
+                        .package_managers
+                        .iter()
+                        .any(|pm| matches!(pm, PackageManager::Uv { .. }))
+                    {
+                        if !env_content.contains("  - pip:\n") {
+                            env_content.push_str("  - pip:\n");
+                        }
+                        env_content.push_str("    - uv\n");
+                    }
                 }
 
-                write_file(&Path::new(environment_file), &env_content)?;
+                // 确保使用绝对路径写入文件
+                let env_file_abs_path = project_dir.join(environment_file);
+                write_file(&env_file_abs_path, &env_content)?;
+
+                // 确保文件已写入磁盘
+                std::io::stdout().flush().ok();
+                std::io::stderr().flush().ok();
+
+                // 记录日志，帮助排查问题
+                cli_ui::display_info(&format!(
+                    "Created environment file at: {:?}",
+                    env_file_abs_path
+                ));
 
                 // Create dev-environment.yml
                 let mut dev_env_content = format!(
@@ -403,11 +435,39 @@ def test_main():\n\
                     .iter()
                     .any(|pm| !matches!(pm, PackageManager::Conda { .. }))
                 {
-                    dev_env_content.push_str("  - pip:\n");
-                    dev_env_content.push_str("    - -e .\n"); // Install current project
+                    // 不再添加pip安装当前项目的命令
+                    // 如果使用Poetry，添加poetry安装命令
+                    if config
+                        .package_managers
+                        .iter()
+                        .any(|pm| matches!(pm, PackageManager::Poetry { .. }))
+                    {
+                        dev_env_content.push_str("  - pip:\n");
+                        dev_env_content.push_str("    - poetry\n");
+                    }
+
+                    // 如果使用UV，添加uv安装命令
+                    if config
+                        .package_managers
+                        .iter()
+                        .any(|pm| matches!(pm, PackageManager::Uv { .. }))
+                    {
+                        if !dev_env_content.contains("  - pip:\n") {
+                            dev_env_content.push_str("  - pip:\n");
+                        }
+                        dev_env_content.push_str("    - uv\n");
+                    }
                 }
 
-                write_file(&Path::new(dev_environment_file), &dev_env_content)?;
+                // 确保使用绝对路径写入文件
+                let dev_env_file_abs_path = project_dir.join(dev_environment_file);
+                write_file(&dev_env_file_abs_path, &dev_env_content)?;
+
+                // 记录日志，帮助排查问题
+                cli_ui::display_info(&format!(
+                    "Created dev environment file at: {:?}",
+                    dev_env_file_abs_path
+                ));
             }
             PackageManager::Poetry { pyproject_file } => {
                 // Create pyproject.toml
@@ -495,27 +555,60 @@ def test_main():\n\
                 // 确保写入的文件都已刷新到磁盘
                 std::io::stdout().flush().ok();
                 std::io::stderr().flush().ok();
-                
+
                 // 强制文件系统同步
                 #[cfg(unix)]
                 {
                     use std::process::Command;
                     let _ = Command::new("sync").status();
                 }
-                
+
                 // 让系统短暂休息，确保文件写入操作已完成
-                std::thread::sleep(std::time::Duration::from_millis(100));
-                
+                std::thread::sleep(std::time::Duration::from_secs(2));
+
+                // 检查项目目录是否绝对路径，转换为绝对路径
+                let abs_project_dir = if project_dir.is_absolute() {
+                    project_dir.clone()
+                } else {
+                    std::env::current_dir()?.join(project_dir)
+                };
+
                 // 创建前检查环境文件是否存在
-                let env_file_path = project_dir.join(env_file);
+                let env_file_path = abs_project_dir.join(env_file);
+
+                cli_ui::display_info(&format!(
+                    "Checking for environment file at: {:?}",
+                    env_file_path
+                ));
+
                 if !env_file_path.exists() {
                     cli_ui::display_warning(&format!(
                         "Environment file not found: {:?}. Cannot create conda environment.",
                         env_file_path
                     ));
+
+                    // 遍历目录内容，打印日志帮助调试
+                    cli_ui::display_info(&format!(
+                        "Checking contents of project directory: {:?}",
+                        abs_project_dir
+                    ));
+                    if let Ok(entries) = std::fs::read_dir(&abs_project_dir) {
+                        for entry in entries {
+                            if let Ok(entry) = entry {
+                                cli_ui::display_info(&format!("Found file: {:?}", entry.path()));
+                            }
+                        }
+                    }
                 } else {
+                    cli_ui::display_info(&format!("Found environment file: {:?}", env_file_path));
+                    // 显示文件内容
+                    if let Ok(content) = std::fs::read_to_string(&env_file_path) {
+                        cli_ui::display_info(&format!("Environment file content:\n{}", content));
+                    }
+
                     // Create conda environment
-                    let env_created = conda_utils::create_conda_environment(project_dir, env_file)?;
+                    let env_created =
+                        conda_utils::create_conda_environment(&abs_project_dir, env_file)?;
 
                     if env_created {
                         // Get project name for conda environment

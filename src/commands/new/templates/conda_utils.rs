@@ -137,13 +137,39 @@ pub fn install_uv_in_conda_env(env_name: &str) -> Result<()> {
 pub fn create_conda_environment(project_dir: &Path, environment_file: &str) -> Result<bool> {
     cli_ui::display_info("Creating conda environment...");
     
-    // Find conda executable path
-    let conda_path = find_conda_executable()?;
+    // 先确保存在文件写入操作之后的延迟
+    std::thread::sleep(std::time::Duration::from_secs(1));
+    
+    // Find conda executable path - 需要使用完整路径，而不是简单的"conda"命令
+    let conda_path = match find_conda_executable() {
+        Ok(path) => path,
+        Err(e) => {
+            cli_ui::display_error(&format!("Failed to find conda executable: {}", e));
+            cli_ui::display_info("Please make sure conda is correctly installed and available in your PATH.");
+            return Ok(false);
+        }
+    };
     
     // 确保环境文件存在
     let env_file_path = project_dir.join(environment_file);
     if !env_file_path.exists() {
         cli_ui::display_error(&format!("Environment file not found: {:?}", env_file_path));
+        
+        // 检查目录是否存在
+        if !project_dir.exists() {
+            cli_ui::display_error(&format!("Project directory does not exist: {:?}", project_dir));
+        } else {
+            // 列出目录内容以便调试
+            cli_ui::display_info(&format!("Project directory contents at {:?}:", project_dir));
+            if let Ok(entries) = std::fs::read_dir(project_dir) {
+                for entry in entries {
+                    if let Ok(entry) = entry {
+                        cli_ui::display_info(&format!("  - {:?}", entry.path()));
+                    }
+                }
+            }
+        }
+        
         return Ok(false);
     }
     
@@ -160,17 +186,54 @@ pub fn create_conda_environment(project_dir: &Path, environment_file: &str) -> R
         let _ = Command::new("sync").status();
     }
     
+    // 再次等待，确保文件系统完全同步
+    std::thread::sleep(std::time::Duration::from_secs(1));
+    
+    // 使用绝对路径
+    let abs_project_dir = if project_dir.is_absolute() {
+        project_dir.to_path_buf()
+    } else {
+        std::env::current_dir()?.join(project_dir)
+    };
+    
+    // 绝对环境文件路径
+    let abs_env_file_path = if env_file_path.is_absolute() {
+        env_file_path.clone()
+    } else {
+        abs_project_dir.join(environment_file)
+    };
+    
+    // 确保工作目录正确
+    let original_dir = std::env::current_dir()?;
+    cli_ui::display_info(&format!("Current directory before: {:?}", original_dir));
+    
+    if std::env::current_dir()? != abs_project_dir {
+        cli_ui::display_info(&format!("Changing working directory to: {:?}", abs_project_dir));
+        std::env::set_current_dir(&abs_project_dir)?;
+    }
+    
     // 使用Command::output捕获输出而不是只获取状态
-    cli_ui::display_info(&format!("Running: {} env create -f {:?}", conda_path, env_file_path));
+    cli_ui::display_info(&format!("Running: {} env create -f {:?}", conda_path, abs_env_file_path));
     
-    // 使用绝对路径并显式转换
-    let env_file_str = env_file_path.to_str().ok_or_else(|| {
-        crate::error::Error::Validation("Invalid environment file path".into())
-    })?;
+    // 使用环境文件的相对路径（相对于工作目录）
+    let relative_env_file = environment_file;
     
+    // 使用完整路径执行conda命令
+    cli_ui::display_info(&format!("Using conda executable: {}", conda_path));
     let conda_cmd = Command::new(&conda_path)
-        .args(&["env", "create", "-f", env_file_str])
+        .arg("env")
+        .arg("create")
+        .arg("-f")
+        .arg(relative_env_file) // 使用相对路径，因为已经设置了工作目录
+        .current_dir(&abs_project_dir) // 显式设置当前目录
         .output();
+
+    // 显示当前工作目录
+    cli_ui::display_info(&format!("Current directory during command: {:?}", std::env::current_dir()?));
+    
+    // 恢复原始工作目录
+    std::env::set_current_dir(original_dir)?;
+    cli_ui::display_info(&format!("Current directory after: {:?}", std::env::current_dir()?));
 
     match conda_cmd {
         Ok(output) if output.status.success() => {
@@ -193,43 +256,77 @@ pub fn create_conda_environment(project_dir: &Path, environment_file: &str) -> R
         Ok(output) => {
             // Show detailed error information
             cli_ui::display_warning("Failed to create conda environment.");
-            
+
             // Display command output which contains error information
             let stdout = String::from_utf8_lossy(&output.stdout);
             let stderr = String::from_utf8_lossy(&output.stderr);
-            
+
             cli_ui::display_info("Command output:");
             if !stdout.is_empty() {
                 cli_ui::display_info(&format!("stdout: {}", stdout));
             }
-            
+
             if !stderr.is_empty() {
                 cli_ui::display_error("Error details:");
-                for line in stderr.lines().take(10) {
-                    // 显示更多行以便更好地诊断
+                for line in stderr.lines() {
+                    // 显示所有错误行
                     cli_ui::display_warning(line);
                 }
             }
-            
+
             // 提供备选方案
             cli_ui::display_info("You can create the environment manually with this command:");
-            cli_ui::display_info(&format!("cd {:?} && conda env create -f {}", 
-                                          project_dir, environment_file));
+            cli_ui::display_info(&format!(
+                "cd {:?} && {} env create -f {}",
+                abs_project_dir, conda_path, environment_file
+            ));
             Ok(false)
         }
         Err(e) => {
             cli_ui::display_warning(&format!("Failed to execute conda command: {}", e));
             cli_ui::display_error(&format!("Error type: {:?}", e.kind()));
-            
+
             // 打印更多调试信息
             cli_ui::display_info(&format!("Conda path: {}", conda_path));
-            cli_ui::display_info(&format!("Working directory: {:?}", project_dir));
+            cli_ui::display_info(&format!("Working directory: {:?}", abs_project_dir));
             cli_ui::display_info(&format!("Environment file: {}", environment_file));
-            
+            cli_ui::display_info(&format!(
+                "Absolute environment file path: {:?}",
+                abs_env_file_path
+            ));
+
+            // 检查文件权限
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                if let Ok(metadata) = std::fs::metadata(&abs_env_file_path) {
+                    let permissions = metadata.permissions();
+                    cli_ui::display_info(&format!("File permissions: {:o}", permissions.mode()));
+                }
+            }
+
+            // 检查conda可执行文件
+            if let Ok(output) = Command::new(&conda_path).arg("--version").output() {
+                if output.status.success() {
+                    let version = String::from_utf8_lossy(&output.stdout);
+                    cli_ui::display_info(&format!("Conda version check: {}", version.trim()));
+                } else {
+                    cli_ui::display_warning(
+                        "Conda executable exists but could not run version check",
+                    );
+                }
+            } else {
+                cli_ui::display_error(
+                    "Could not execute conda version check. The executable may not be valid.",
+                );
+            }
+
             // 提供备选方案
             cli_ui::display_info("You can create the environment manually with this command:");
-            cli_ui::display_info(&format!("cd {:?} && conda env create -f {}", 
-                                          project_dir, environment_file));
+            cli_ui::display_info(&format!(
+                "cd {:?} && {} env create -f {}",
+                abs_project_dir, conda_path, environment_file
+            ));
             Ok(false)
         }
     }
@@ -239,7 +336,7 @@ pub fn create_conda_environment(project_dir: &Path, environment_file: &str) -> R
 pub fn find_conda_executable() -> Result<String> {
     // Try to find conda executable
     let possible_conda_commands = &["conda", "micromamba", "mamba"];
-    
+
     // Try standard command first (which uses PATH environment variable)
     for cmd in possible_conda_commands {
         if let Ok(output) = Command::new(cmd).arg("--version").output() {
@@ -249,7 +346,7 @@ pub fn find_conda_executable() -> Result<String> {
             }
         }
     }
-    
+
     // If not found in PATH, look in common installation directories
     let common_paths = if cfg!(target_os = "windows") {
         vec![
@@ -289,7 +386,7 @@ pub fn find_conda_executable() -> Result<String> {
             "/usr/local/bin/conda",
         ]
     };
-    
+
     // Check the common paths first
     for path in &common_paths {
         if std::path::Path::new(path).exists() {
@@ -302,7 +399,7 @@ pub fn find_conda_executable() -> Result<String> {
             }
         }
     }
-    
+
     // Add user home directory paths
     let mut home_paths = Vec::new();
     if let Ok(home) = std::env::var("HOME").or_else(|_| std::env::var("USERPROFILE")) {
@@ -319,7 +416,7 @@ pub fn find_conda_executable() -> Result<String> {
             home_paths.push(format!("{}/.conda/bin/conda", home));
         }
     }
-    
+
     // Check home directory paths
     for path_string in &home_paths {
         let path = path_string.as_str();
@@ -333,14 +430,18 @@ pub fn find_conda_executable() -> Result<String> {
             }
         }
     }
-    
+
     // If still not found, throw an error with helpful message
     cli_ui::display_warning("Could not find conda executable in common locations.");
     cli_ui::display_info("Please make sure conda is installed and in your PATH.");
-    cli_ui::display_info("You can install conda from: https://docs.conda.io/en/latest/miniconda.html");
-    
+    cli_ui::display_info(
+        "You can install conda from: https://docs.conda.io/en/latest/miniconda.html",
+    );
+
     // Return error with informative message
-    Err(crate::error::Error::Command("Conda executable not found".into()))
+    Err(crate::error::Error::Command(
+        "Conda executable not found".into(),
+    ))
 }
 
 /// Generate base conda environment.yml content
