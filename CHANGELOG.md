@@ -30,6 +30,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fixed type mismatch in Python project template when passing channels to conda environment creation function
 - Removed unused imports in conda_utils.rs to improve code quality
 - Fixed Python project creation workflow to properly install package managers (Poetry or UV) within the Conda environment instead of system-wide
+- Removed all system-level package manager checks for Poetry and UV, ensuring they are only installed and used within Conda environments
 
 ## [0.1.0] - Unreleased
 Same as 0.1.0-dev.1, will be merged from the develop branch to the main branch after development stabilizes.

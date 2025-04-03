@@ -1,5 +1,5 @@
 use super::super::config::{
-    check_poetry_available, check_uv_available, PackageManager, UserConfig, VirtualEnvType,
+    PackageManager, UserConfig, VirtualEnvType,
 };
 use super::super::templates::conda_utils;
 use super::super::templates::conda_utils::Language;
@@ -126,13 +126,13 @@ pub fn create_python_project(project_dir: &PathBuf, config: &mut UserConfig) -> 
         if !env_created {
             cli_ui::display_warning("Failed to create conda environment. You may need to create it manually.");
         } else {
-            // 使用实际创建的环境名称，而非原始名称
+            // use the actual created environment name, not the original name
             conda_env_name = actual_env_name;
             
-            // 现在在新创建的conda环境中安装包管理器
+            // now install package managers in the newly created conda environment
             cli_ui::display_progress("4/4", "Installing package managers in conda environment...");
             
-            // 安装Poetry（如果需要）
+            // install Poetry (if needed)
             if has_poetry {
                 if let Ok(installed) = install_poetry_in_conda_env(&conda_env_name) {
                     if installed {
@@ -144,7 +144,7 @@ pub fn create_python_project(project_dir: &PathBuf, config: &mut UserConfig) -> 
                 }
             }
             
-            // 安装UV（如果需要）
+            // install UV (if needed)
             if has_uv {
                 if let Ok(installed) = install_uv_in_conda_env(&conda_env_name) {
                     if installed {
@@ -557,7 +557,7 @@ fn get_install_command(config: &UserConfig) -> String {
                     commands.push("pip install poetry".to_string());
                     commands.push("poetry config virtualenvs.create false".to_string());
                     
-                    // 添加诗歌装配的命令
+                    // 添加Poetry安装依赖的命令
                     commands.push("\n# Install project dependencies using Poetry".to_string());
                     commands.push("poetry install --no-interaction".to_string());
                 }
@@ -592,94 +592,12 @@ fn get_install_command(config: &UserConfig) -> String {
         
         // 已经在conda环境内安装了包管理器，不需要再单独处理
         return commands.join("\n");
+    } else {
+        // 非 conda 环境情况下，我们不提供任何命令，因为我们只支持 conda 环境
+        commands.push("# This project requires Conda".to_string());
+        commands.push("# Please install Conda first: https://docs.conda.io/en/latest/miniconda.html".to_string());
+        return commands.join("\n");
     }
-
-    // 如果没有使用conda，则处理其他独立的包管理器安装
-    for package_manager in &config.package_managers {
-        match package_manager {
-            PackageManager::Conda { .. } => {
-                // Already handled
-            }
-            PackageManager::Poetry { .. } => {
-                commands.push("# Install Poetry dependencies".to_string());
-
-                // Check if poetry is installed
-                if cfg!(target_os = "windows") {
-                    commands.push("# Check if poetry is installed".to_string());
-                    commands.push("where poetry >nul 2>&1".to_string());
-                    commands.push("if %ERRORLEVEL% neq 0 (".to_string());
-                    commands
-                        .push("    echo Poetry not found. Installing Poetry...".to_string());
-                    commands.push("    powershell -Command \"(Invoke-WebRequest -Uri https://install.python-poetry.org -UseBasicParsing).Content | py -\"".to_string());
-                    commands.push(")".to_string());
-                } else {
-                    commands.push("# Check if poetry is installed".to_string());
-                    commands.push("if ! command -v poetry &> /dev/null; then".to_string());
-                    commands.push(
-                        "    echo \"Poetry not found. Installing Poetry...\"".to_string(),
-                    );
-                    commands.push(
-                        "    curl -sSL https://install.python-poetry.org | python3 -"
-                            .to_string(),
-                    );
-                    commands.push("fi".to_string());
-                }
-
-                // Add the Poetry install command
-                commands.push("# Install project dependencies using Poetry".to_string());
-                commands.push("poetry install".to_string());
-            }
-            PackageManager::Uv {
-                requirements_file, ..
-            } => {
-                commands.push("# Install uv - the fastest Python package manager with optimized dependency resolution".to_string());
-
-                if cfg!(target_os = "windows") {
-                    commands.push("# Check if uv is installed".to_string());
-                    commands.push("where uv >nul 2>&1".to_string());
-                    commands.push("if %ERRORLEVEL% neq 0 (".to_string());
-                    commands.push("    echo UV not found. Installing UV...".to_string());
-                    commands.push("    powershell -ExecutionPolicy ByPass -c \"irm https://astral.sh/uv/install.ps1 | iex\"".to_string());
-                    commands.push("    echo To use UV in this terminal session, please restart the terminal or run a new command prompt".to_string());
-                    commands.push(")".to_string());
-                } else {
-                    commands.push("# Check if uv is installed".to_string());
-                    commands.push("if ! command -v uv &> /dev/null; then".to_string());
-                    commands.push("    echo \"UV not found. Installing UV...\"".to_string());
-                    commands.push(
-                        "    curl -LsSf https://astral.sh/uv/install.sh | sh".to_string(),
-                    );
-                    commands.push("    echo \"To use UV in this terminal session, run: source $HOME/.local/bin/env\"".to_string());
-                    commands.push("    source $HOME/.local/bin/env || true".to_string());
-                    commands.push("fi".to_string());
-                }
-
-                // 添加镜像配置
-                if let Some(index_url) = &config.pip_index_url {
-                    commands.push("\n# Configure UV to use specified mirror".to_string());
-                    commands.push(format!("# Set mirror: {}", index_url));
-
-                    if cfg!(target_os = "windows") {
-                        commands.push(format!("uv pip config set global.index-url {}", index_url));
-                    } else {
-                        commands.push(format!("uv pip config set global.index-url {}", index_url));
-                    }
-                }
-
-                // 如果设置了pip镜像，使用这个镜像安装
-                if let Some(index_url) = &config.pip_index_url {
-                    commands.push(format!(
-                        "uv pip install -r {} --index-url {}",
-                        requirements_file, index_url
-                    ));
-                } else {
-                    commands.push(format!("uv pip install -r {}", requirements_file));
-                }
-            }
-        }
-    }
-
-    commands.join("\n")
 }
 
 /// Generate development installation command based on user configuration
@@ -756,86 +674,12 @@ fn get_dev_install_command(config: &UserConfig) -> String {
         
         // 已经在conda环境内安装了包管理器，不需要再单独处理
         return commands.join("\n");
+    } else {
+        // 非 conda 环境情况下，我们不提供任何命令，因为我们只支持 conda 环境
+        commands.push("# This project requires Conda".to_string());
+        commands.push("# Please install Conda first: https://docs.conda.io/en/latest/miniconda.html".to_string());
+        return commands.join("\n");
     }
-
-    // 如果没有使用conda，则处理其他独立的包管理器安装
-    for package_manager in &config.package_managers {
-        match package_manager {
-            PackageManager::Conda { .. } => {
-                // Already handled
-            }
-            PackageManager::Poetry { .. } => {
-                commands.push("# Install Poetry development dependencies".to_string());
-
-                // Check if poetry is installed
-                if cfg!(target_os = "windows") {
-                    commands.push("# Check if poetry is installed".to_string());
-                    commands.push("where poetry >nul 2>&1".to_string());
-                    commands.push("if %ERRORLEVEL% neq 0 (".to_string());
-                    commands
-                        .push("    echo Poetry not found. Installing Poetry...".to_string());
-                    commands.push("    powershell -Command \"(Invoke-WebRequest -Uri https://install.python-poetry.org -UseBasicParsing).Content | py -\"".to_string());
-                    commands.push(")".to_string());
-                } else {
-                    commands.push("# Check if poetry is installed".to_string());
-                    commands.push("if ! command -v poetry &> /dev/null; then".to_string());
-                    commands.push(
-                        "    echo \"Poetry not found. Installing Poetry...\"".to_string(),
-                    );
-                    commands.push(
-                        "    curl -sSL https://install.python-poetry.org | python3 -"
-                            .to_string(),
-                    );
-                    commands.push("fi".to_string());
-                }
-
-                // Add the Poetry install command
-                commands
-                    .push("# Install project development dependencies using Poetry".to_string());
-                commands.push("poetry install --with dev".to_string());
-            }
-            PackageManager::Uv {
-                dev_requirements_file,
-                ..
-            } => {
-                commands.push(
-                    "# Install uv development dependencies with fast resolution".to_string(),
-                );
-
-                if cfg!(target_os = "windows") {
-                    commands.push("# Check if uv is installed".to_string());
-                    commands.push("where uv >nul 2>&1".to_string());
-                    commands.push("if %ERRORLEVEL% neq 0 (".to_string());
-                    commands.push("    echo UV not found. Installing UV...".to_string());
-                    commands.push("    powershell -ExecutionPolicy ByPass -c \"irm https://astral.sh/uv/install.ps1 | iex\"".to_string());
-                    commands.push("    echo To use UV in this terminal session, please restart the terminal or run a new command prompt".to_string());
-                    commands.push(")".to_string());
-                } else {
-                    commands.push("# Check if uv is installed".to_string());
-                    commands.push("if ! command -v uv &> /dev/null; then".to_string());
-                    commands.push("    echo \"UV not found. Installing UV...\"".to_string());
-                    commands.push(
-                        "    curl -LsSf https://astral.sh/uv/install.sh | sh".to_string(),
-                    );
-                    commands.push("    echo \"To use UV in this terminal session, run: source $HOME/.local/bin/env\"".to_string());
-                    commands.push("    source $HOME/.local/bin/env || true".to_string());
-                    commands.push("fi".to_string());
-                }
-
-                // 如果设置了pip镜像，使用这个镜像安装
-                if let Some(index_url) = &config.pip_index_url {
-                    commands.push(format!(
-                        "uv pip install -r {} --index-url {}",
-                        dev_requirements_file, index_url
-                    ));
-                } else {
-                    commands.push(format!("uv pip install -r {}", dev_requirements_file));
-                }
-            }
-        }
-    }
-
-    commands.join("\n")
 }
 
 /// Generate test command based on user configuration  
