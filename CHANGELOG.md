@@ -21,6 +21,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added direnv detection and configuration guidance for Python projects
 - Added conda version checking with update recommendations
 - Added more comprehensive UV usage examples
+- docs: Added CONTRIBUTING.md with comprehensive contribution guidelines including branch naming conventions and workflow
 
 ### Changed
 - Improved R project creation with better rig package manager handling

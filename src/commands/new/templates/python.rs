@@ -1,6 +1,5 @@
 use super::super::config::{
-    check_poetry_available, check_uv_available, PackageManager,
-    UserConfig, VirtualEnvType,
+    check_poetry_available, check_uv_available, PackageManager, UserConfig, VirtualEnvType,
 };
 use super::super::utils::write_file;
 use crate::error::Result;
@@ -13,7 +12,7 @@ use std::process::Command;
 pub fn create_python_project(project_dir: &PathBuf, config: &mut UserConfig) -> Result<()> {
     // 添加检查conda版本功能
     check_conda_version()?;
-    
+
     // Check if required package managers are available
     let has_uv = config
         .package_managers
@@ -41,7 +40,9 @@ pub fn create_python_project(project_dir: &PathBuf, config: &mut UserConfig) -> 
     if has_poetry && !config.poetry_installed {
         let poetry_available = check_poetry_available()?;
         if !poetry_available {
-            cli_ui::display_info("Poetry package manager will be installed in your Conda environment.");
+            cli_ui::display_info(
+                "Poetry package manager will be installed in your Conda environment.",
+            );
         } else {
             cli_ui::display_success("Poetry package manager found on your system.");
             config.poetry_installed = true;
@@ -485,7 +486,7 @@ def test_main():\n\
                         .arg("pip")
                         .arg("-y")
                         .status()?;
-                    
+
                     if !install_pip_first.success() {
                         cli_ui::display_warning("Could not install pip in Conda environment. Some dependencies may not install correctly.");
                     }
@@ -582,12 +583,18 @@ def test_main():\n\
 
         if has_uv {
             cli_ui::display_info("After activating the Conda environment, UV will be available for managing packages.");
-            cli_ui::display_info(&format!("  Example: conda activate {} && uv pip install numpy pandas", project_name));
+            cli_ui::display_info(&format!(
+                "  Example: conda activate {} && uv pip install numpy pandas",
+                project_name
+            ));
         }
 
         if has_poetry {
             cli_ui::display_info("After activating the Conda environment, Poetry will be available for managing packages.");
-            cli_ui::display_info(&format!("  Example: conda activate {} && poetry add numpy pandas", project_name));
+            cli_ui::display_info(&format!(
+                "  Example: conda activate {} && poetry add numpy pandas",
+                project_name
+            ));
         }
     } else if has_uv && config.uv_installed {
         // 移除此部分，因为我们不再提供全局UV的支持，所有UV都安装在conda环境内
@@ -600,7 +607,7 @@ def test_main():\n\
 /// 检查conda版本并显示更新提示
 fn check_conda_version() -> Result<()> {
     let output = Command::new("conda").arg("--version").output();
-    
+
     if let Ok(output) = output {
         if output.status.success() {
             let version_str = String::from_utf8_lossy(&output.stdout);
@@ -611,14 +618,16 @@ fn check_conda_version() -> Result<()> {
                     if let Ok(major) = parts[0].parse::<u32>() {
                         if major < 23 {
                             cli_ui::display_warning(&format!("You are using an older version of conda ({}). Consider updating it for better performance and compatibility.", version));
-                            cli_ui::display_info("To update conda, run: conda update -n base -c defaults conda");
+                            cli_ui::display_info(
+                                "To update conda, run: conda update -n base -c defaults conda",
+                            );
                         }
                     }
                 }
             }
         }
     }
-    
+
     Ok(())
 }
 
@@ -753,7 +762,7 @@ fn get_install_command(config: &UserConfig) -> String {
                 if let Some(index_url) = &config.pip_index_url {
                     commands.push("\n# Configure UV to use specified mirror".to_string());
                     commands.push(format!("# Set mirror: {}", index_url));
-                    
+
                     if cfg!(target_os = "windows") {
                         commands.push(format!("uv pip config set global.index-url {}", index_url));
                     } else {
@@ -763,7 +772,10 @@ fn get_install_command(config: &UserConfig) -> String {
 
                 // 如果设置了pip镜像，使用这个镜像安装
                 if let Some(index_url) = &config.pip_index_url {
-                    commands.push(format!("uv pip install -r {} --index-url {}", requirements_file, index_url));
+                    commands.push(format!(
+                        "uv pip install -r {} --index-url {}",
+                        requirements_file, index_url
+                    ));
                 } else {
                     commands.push(format!("uv pip install -r {}", requirements_file));
                 }
@@ -910,7 +922,10 @@ fn get_dev_install_command(config: &UserConfig) -> String {
                 // 最后部分需要修改，确保使用镜像配置
                 // 如果设置了pip镜像，使用这个镜像安装
                 if let Some(index_url) = &config.pip_index_url {
-                    commands.push(format!("uv pip install -r {} --index-url {}", dev_requirements_file, index_url));
+                    commands.push(format!(
+                        "uv pip install -r {} --index-url {}",
+                        dev_requirements_file, index_url
+                    ));
                 } else {
                     commands.push(format!("uv pip install -r {}", dev_requirements_file));
                 }

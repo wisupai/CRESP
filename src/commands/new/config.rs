@@ -280,24 +280,25 @@ pub fn get_python_config() -> Result<UserConfig> {
     // 2. Enforce Conda as environment management method
     println!("\n🔧 Environment management:");
     cli_ui::display_info("Conda will be used as the environment management tool for this project.");
-    
+
     if !conda_available {
         cli_ui::display_warning("Conda is not installed on your system.");
         cli_ui::display_info("You need to install Conda to continue with project creation.");
-        
+
         let install_now = cli_ui::prompt_confirm("Would you like to install Conda now?", true)?;
-        
+
         if !install_now {
             cli_ui::display_error("Conda is required for project creation. Exiting configuration.");
             return Err(std::io::Error::new(
                 std::io::ErrorKind::Other,
                 "Conda installation was cancelled by user",
-            ).into());
+            )
+            .into());
         }
-        
+
         // Setup Conda environment will handle installation
     }
-    
+
     // Set Conda as the only option
     config.use_conda = true;
     config.virtual_env_type = VirtualEnvType::Conda;
@@ -307,14 +308,14 @@ pub fn get_python_config() -> Result<UserConfig> {
     println!("\n📦 Python package management:");
     cli_ui::display_info("Conda will be used as the base environment manager plus one of the following package managers:");
     cli_ui::display_info("Note: Using conda with PyPI package managers ensures compatibility with packages not available in conda channels.");
-    
+
     let pkg_options = vec![
         "Conda + uv (recommended: fastest package manager with optimized dependency resolution)",
         "Conda + Poetry (recommended for modern Python projects with structured dependencies)",
     ];
 
     let selection = cli_ui::prompt_select("Select package management combination:", &pkg_options)?;
-    
+
     // Always add Conda as the first package manager
     config.package_managers.push(PackageManager::Conda {
         channels: Vec::new(), // Will be populated in setup_conda_environment
@@ -333,10 +334,12 @@ pub fn get_python_config() -> Result<UserConfig> {
             if !uv_available {
                 cli_ui::display_warning("UV package manager not found on your system.");
                 cli_ui::display_info("UV will be installed in your Conda environment later.");
-                
+
                 // Since uv will be installed in conda env anyway, we don't need to install it globally
                 // Just inform the user
-                cli_ui::display_info("UV will be installed in the Conda environment during project setup.");
+                cli_ui::display_info(
+                    "UV will be installed in the Conda environment during project setup.",
+                );
             } else {
                 cli_ui::display_success("UV package manager found on your system.");
                 config.uv_installed = true;
@@ -346,7 +349,7 @@ pub fn get_python_config() -> Result<UserConfig> {
                 requirements_file: "requirements.txt".to_string(),
                 dev_requirements_file: "requirements-dev.txt".to_string(),
             });
-        },
+        }
         1 => {
             // Poetry option (now second in the list)
             // Check if Poetry is installed

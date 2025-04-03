@@ -10,12 +10,18 @@ pub fn create_r_project(project_dir: &Path) -> Result<()> {
     // Check system R and conda availability
     let (system_r, r_info) = get_r_info()?;
     let conda_available = check_conda_available()?;
-    
+
     if !conda_available {
-        cli_ui::display_error("Conda is required for CRESP R projects but not found on your system.");
+        cli_ui::display_error(
+            "Conda is required for CRESP R projects but not found on your system.",
+        );
         cli_ui::display_info("Please install Conda (Miniconda or Anaconda) first:");
-        cli_ui::display_info("https://docs.conda.io/projects/conda/en/latest/user-guide/install/index.html");
-        return Err(crate::error::Error::Environment("Conda is required but not found".to_string()));
+        cli_ui::display_info(
+            "https://docs.conda.io/projects/conda/en/latest/user-guide/install/index.html",
+        );
+        return Err(crate::error::Error::Environment(
+            "Conda is required but not found".to_string(),
+        ));
     }
 
     // Setup R environment
@@ -67,7 +73,7 @@ pub fn create_r_project(project_dir: &Path) -> Result<()> {
         .file_name()
         .and_then(|n| n.to_str())
         .unwrap_or("myresearch");
-        
+
     let environment_yml = format!(
         r#"name: {}
 channels:
@@ -80,8 +86,7 @@ dependencies:
   - r-devtools
   - r-testthat
 "#,
-        project_name,
-        r_version
+        project_name, r_version
     );
     write_file(&project_dir.join("environment.yml"), &environment_yml)?;
 
@@ -233,10 +238,7 @@ Run tests with:
 testthat::test_package("{}")
 ```
 "#,
-        project_name,
-        project_name,
-        project_name,
-        project_name
+        project_name, project_name, project_name, project_name
     );
     write_file(&project_dir.join("README.md"), &readme)?;
 
@@ -301,18 +303,23 @@ test_check("myresearch")
             .args(&["env", "create", "-f", "environment.yml"])
             .current_dir(project_dir)
             .status();
-            
+
         match conda_cmd {
             Ok(status) if status.success() => {
-                cli_ui::display_success(&format!("Conda environment '{}' created successfully!", project_name));
+                cli_ui::display_success(&format!(
+                    "Conda environment '{}' created successfully!",
+                    project_name
+                ));
                 cli_ui::display_info(&format!("To activate: conda activate {}", project_name));
-                
+
                 // 验证R是否在conda环境中正确安装
                 verify_r_installation()?;
-            },
+            }
             _ => {
                 cli_ui::display_warning("Failed to create conda environment.");
-                cli_ui::display_info("You can create it manually later with: conda env create -f environment.yml");
+                cli_ui::display_info(
+                    "You can create it manually later with: conda env create -f environment.yml",
+                );
             }
         }
     }
@@ -496,7 +503,9 @@ fn setup_r_environment(system_r: Option<String>, r_info: Option<RInfo>) -> Resul
         // We'll inform the user that conda will manage the R installation.
         cli_ui::display_info("We'll use conda to manage the R environment, which provides better isolation and reproducibility.");
     } else {
-        cli_ui::display_info("No R installation detected. Conda will be used to install and manage R.");
+        cli_ui::display_info(
+            "No R installation detected. Conda will be used to install and manage R.",
+        );
     }
 
     // Present R version options
@@ -519,9 +528,14 @@ fn setup_r_environment(system_r: Option<String>, r_info: Option<RInfo>) -> Resul
         }
         _ => default_version,
     };
-    
-    cli_ui::display_success(&format!("Selected R version: {} (will be managed by conda)", selected_version));
-    cli_ui::display_info("A conda environment will be created with this R version when setting up the project.");
+
+    cli_ui::display_success(&format!(
+        "Selected R version: {} (will be managed by conda)",
+        selected_version
+    ));
+    cli_ui::display_info(
+        "A conda environment will be created with this R version when setting up the project.",
+    );
 
     Ok(selected_version)
 }
@@ -536,7 +550,10 @@ fn verify_r_installation() -> Result<()> {
     match output {
         Ok(output) => {
             let version_output = String::from_utf8_lossy(&output.stderr); // R prints version to stderr
-            cli_ui::display_success(&format!("R is successfully installed: {}", version_output.trim()));
+            cli_ui::display_success(&format!(
+                "R is successfully installed: {}",
+                version_output.trim()
+            ));
             Ok(())
         }
         _ => {
