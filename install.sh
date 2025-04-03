@@ -107,13 +107,36 @@ if [[ ":$PATH:" != *":${INSTALL_DIR}:"* ]]; then
     
     # Detect shell and update config file
     SHELL_CONFIG=""
+    
+    # First check if we're in bash or zsh
     if [ -n "$BASH_VERSION" ]; then
+        CURRENT_SHELL="bash"
+    elif [ -n "$ZSH_VERSION" ]; then
+        CURRENT_SHELL="zsh"
+    else
+        # If we can't detect from variables, try to detect from process
+        CURRENT_SHELL=$(basename "$SHELL" 2>/dev/null || echo "")
+    fi
+    
+    # If we're on macOS, check the default shell
+    if [ "$(uname)" = "Darwin" ]; then
+        # Get the default shell from the user database
+        DEFAULT_SHELL=$(dscl . -read /Users/$USER UserShell | sed 's/UserShell: //')
+        if [[ "$DEFAULT_SHELL" == *"zsh"* ]]; then
+            CURRENT_SHELL="zsh"
+        elif [[ "$DEFAULT_SHELL" == *"bash"* ]]; then
+            CURRENT_SHELL="bash"
+        fi
+    fi
+    
+    # Set the config file based on the detected shell
+    if [ "$CURRENT_SHELL" = "bash" ]; then
         if [ -f "$HOME/.bashrc" ]; then
             SHELL_CONFIG="$HOME/.bashrc"
         elif [ -f "$HOME/.bash_profile" ]; then
             SHELL_CONFIG="$HOME/.bash_profile"
         fi
-    elif [ -n "$ZSH_VERSION" ]; then
+    elif [ "$CURRENT_SHELL" = "zsh" ]; then
         SHELL_CONFIG="$HOME/.zshrc"
     fi
     
