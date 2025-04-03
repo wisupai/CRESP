@@ -37,6 +37,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Improved security handling for MATLAB installation credentials
 - Enhanced Python project README with direnv usage instructions
 - Improved mirror configuration for UV package manager
+- Removed automatic generation of .envrc files for simplicity and compatibility
 
 ### Fixed
 - Fixed auto-activation of UV in current terminal session after installation
@@ -49,6 +50,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Removed
 - None
-
-### Security
-- None 
+- Automatic .envrc file generation in Python projects for better compatibility 

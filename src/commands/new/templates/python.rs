@@ -183,7 +183,7 @@ pub fn create_python_project(project_dir: &PathBuf, config: &UserConfig) -> Resu
         ```\n\n\
         ## Important Notes\n\
         - If using Conda: Remember to activate the environment before running commands with `conda activate {}`\n\
-        - The environment name matches the project directory name by default\n{}\n\n\
+        - The environment name matches the project directory name by default\n\n\
         ## License\n\
         MIT\n",
         project_dir.display(),
@@ -203,12 +203,7 @@ pub fn create_python_project(project_dir: &PathBuf, config: &UserConfig) -> Resu
         get_install_command(config),
         get_dev_install_command(config),
         get_test_command(config),
-        project_name,
-        if config.use_conda {
-            "\n- If using direnv: Run `direnv allow` in the project directory to enable automatic environment activation when entering the directory"
-        } else {
-            ""
-        }
+        project_name
     );
     write_file(&Path::new("README.md"), &readme_content)?;
 
@@ -476,22 +471,10 @@ def test_main():\n\
                 );
                 write_file(&Path::new(pyproject_file), &pyproject_content)?;
 
-                // If using conda, create .envrc file for automatic environment switching
-                if has_conda {
-                    let envrc_content = format!(
-                        "# Automatically activate conda environment\n\
-                        if [ -e ${{HOME}}/.conda/etc/profile.d/conda.sh ]; then\n\
-                        \tsource ${{HOME}}/.conda/etc/profile.d/conda.sh\n\
-                        \tconda activate {}\n\
-                        fi\n",
-                        project_name
-                    );
-                    write_file(&Path::new(".envrc"), &envrc_content)?;
-
-                    // We don't need to create poetry config file here
-                    // Instead, we'll configure Poetry during installation via 'poetry config virtualenvs.create false'
-                    // in the install commands
-                } else {
+                // We don't need to create poetry config file here
+                // Instead, we'll configure Poetry during installation via 'poetry config virtualenvs.create false'
+                // in the install commands
+                if !has_conda {
                     // Only create Poetry config for non-Conda environments if needed
                     // For pure Poetry projects, we typically want Poetry to manage its own virtualenvs
                 }
@@ -527,19 +510,6 @@ def test_main():\n\
                     isort>=5.0.0\n\
                     flake8>=6.0.0\n";
                 write_file(&Path::new(dev_requirements_file), dev_req_content)?;
-
-                // If using conda and pip/uv, create .envrc file
-                if has_conda {
-                    let envrc_content = format!(
-                        "# Automatically activate conda environment\n\
-                        if [ -e ${{HOME}}/.conda/etc/profile.d/conda.sh ]; then\n\
-                        \tsource ${{HOME}}/.conda/etc/profile.d/conda.sh\n\
-                        \tconda activate {}\n\
-                        fi\n",
-                        project_name
-                    );
-                    write_file(&Path::new(".envrc"), &envrc_content)?;
-                }
             }
         }
     }
@@ -641,8 +611,6 @@ def test_main():\n\
                         if installation_success {
                             println!("✅ Installed Poetry in Conda environment: {}", project_name);
                             println!("📝 Poetry configured to use Conda environment (no separate virtualenv)");
-                            println!("\n⚠️ Important: You need to manually activate the new environment to use it:");
-                            println!("   conda activate {}", project_name);
                         } else {
                             println!("⚠️ Failed to install Poetry in Conda environment.");
                             println!("📝 You can install it manually later using the commands in README.md");
@@ -686,8 +654,6 @@ def test_main():\n\
                             cli_ui::display_info(
                                 "UV is now available within your Conda environment.",
                             );
-                            cli_ui::display_warning("Important: You need to manually activate the new environment to use UV:");
-                            cli_ui::display_info(&format!("   conda activate {}", project_name));
                         } else {
                             cli_ui::display_error("Failed to install UV in Conda environment.");
                             cli_ui::display_info("You can install it manually later with:");
@@ -704,7 +670,6 @@ def test_main():\n\
     }
 
     // Final check and message to user
-    // For Conda environments, show an activation message instead of checking for UV
     if config.use_conda {
         let project_name = project_dir
             .file_name()
@@ -723,9 +688,6 @@ def test_main():\n\
             cli_ui::display_info("After activating the Conda environment, Poetry will be available for managing packages.");
             cli_ui::display_info(&format!("  Example: conda activate {} && poetry add numpy pandas", project_name));
         }
-        
-        // 检查direnv并给出合适的提示
-        check_direnv_and_prompt(project_dir)?;
     } else if has_uv && config.uv_installed {
         // Only check global UV installation for non-Conda environments
         let uv_check = Command::new("sh").arg("-c").arg("command -v uv").output();
@@ -801,46 +763,6 @@ fn check_conda_version() -> Result<()> {
                         }
                     }
                 }
-            }
-        }
-    }
-    
-    Ok(())
-}
-
-/// 检查direnv并提示用户如何启用它
-fn check_direnv_and_prompt(project_dir: &Path) -> Result<()> {
-    if Path::new(".envrc").exists() {
-        // 检查direnv是否安装
-        let direnv_check = Command::new("sh").arg("-c").arg("command -v direnv").output();
-        
-        match direnv_check {
-            Ok(output) if output.status.success() => {
-                cli_ui::display_info("\nA .envrc file has been created for automatic environment activation.");
-                cli_ui::display_warning("Important: You need to run the following command to enable it:");
-                cli_ui::display_info(&format!("  cd {} && direnv allow", project_dir.display()));
-                cli_ui::display_info("This will allow automatic activation of the conda environment when you enter the project directory.");
-            },
-            _ => {
-                cli_ui::display_info("\nA .envrc file has been created, but direnv is not installed on your system.");
-                cli_ui::display_info("direnv allows automatic environment switching when entering project directories.");
-                cli_ui::display_info("To install direnv:");
-                
-                if cfg!(target_os = "macos") {
-                    cli_ui::display_info("  brew install direnv");
-                } else if cfg!(target_os = "linux") {
-                    cli_ui::display_info("  sudo apt-get install direnv  # For Debian/Ubuntu");
-                    cli_ui::display_info("  sudo yum install direnv      # For CentOS/RHEL");
-                } else {
-                    cli_ui::display_info("  Visit https://direnv.net/docs/installation.html");
-                }
-                
-                cli_ui::display_info("\nAfter installation, add to your shell profile (~/.bashrc, ~/.zshrc, etc.):");
-                cli_ui::display_info("  eval \"$(direnv hook bash)\"  # For bash");
-                cli_ui::display_info("  eval \"$(direnv hook zsh)\"   # For zsh");
-                
-                cli_ui::display_info("\nThen run:");
-                cli_ui::display_info(&format!("  cd {} && direnv allow", project_dir.display()));
             }
         }
     }
