@@ -41,6 +41,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Modified Python project creation to enforce Conda as the environment management tool with standardized package manager combinations
 - Simplified Python package management options by removing pip option, limiting choices to Conda only, Conda+Poetry, or Conda+UV
 - Standardized R project creation to exclusively use conda+renv for environment management, consistent with Python's approach
+- Refined Python project creation by removing system Python option and ensuring all projects use conda-managed environments
+- Removed "Conda only" package management option and made UV the recommended package manager to ensure compatibility with PyPI-only packages
 
 ### Fixed
 - Fixed auto-activation of UV in current terminal session after installation
@@ -55,4 +57,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - None
 - Automatic .envrc file generation in Python projects for better compatibility 
 - Support for pip as a standalone package manager, focusing on more performant alternatives
-- Multiple R installation methods (rig, system package managers, etc.) in favor of a standardized conda approach 
+- Multiple R installation methods (rig, system package managers, etc.) in favor of a standardized conda approach
+- System Python option from Python project creation, ensuring all environments use conda for better isolation and reproducibility 
