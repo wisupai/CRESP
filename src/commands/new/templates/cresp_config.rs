@@ -227,19 +227,19 @@ fn get_software_config(language: &str, system_info: &SystemInfo, user_config: &U
             
             match super::super::templates::conda_utils::get_conda_installed_packages(&conda_env_name) {
                 Ok(packages) if !packages.is_empty() => {
-                    // Convert packages to TOML format
-                    packages_str.push_str(", packages = {\n");
+                    // Convert packages to TOML format - 使用数组对象格式
+                    packages_str.push_str(", packages = [\n");
                     
                     // Add each package to the string
                     for (pkg_name, version) in packages {
                         // Skip conda internal packages and some common base packages
                         if !["python", "conda", "pip"].contains(&pkg_name.as_str()) {
-                            packages_str.push_str(&format!("        \"{}\" = \"{}\",\n", pkg_name, version));
+                            packages_str.push_str(&format!("        {{ name = \"{}\", version = \"{}\" }},\n", pkg_name, version));
                         }
                     }
                     
-                    // Close the packages table
-                    packages_str.push_str("    }");
+                    // Close the packages array
+                    packages_str.push_str("    ]");
                 },
                 _ => {
                     // If the environment doesn't exist yet or no packages are found
@@ -297,19 +297,19 @@ fn get_software_config(language: &str, system_info: &SystemInfo, user_config: &U
         
         match super::super::templates::conda_utils::get_conda_installed_packages(&conda_env_name) {
             Ok(packages) if !packages.is_empty() => {
-                // Convert packages to TOML format
-                packages_str.push_str(", packages = {\n    ");
+                // Convert packages to TOML format - 使用数组对象格式
+                packages_str.push_str(", packages = [\n    ");
                 
                 // Add each package to the string
                 for (pkg_name, version) in packages {
                     // Skip conda internal packages and R itself
                     if !["r-base", "conda", "r-essentials"].contains(&pkg_name.as_str()) {
-                        packages_str.push_str(&format!("\"{}\" = \"{}\", ", pkg_name, version));
+                        packages_str.push_str(&format!("{{ name = \"{}\", version = \"{}\" }}, ", pkg_name, version));
                     }
                 }
                 
-                // Close the packages table
-                packages_str.push_str("\n  }");
+                // Close the packages array
+                packages_str.push_str("\n  ]");
             },
             _ => {
                 // If the environment doesn't exist yet or no packages are found
