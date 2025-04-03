@@ -61,6 +61,21 @@ fn collect_r_project_config(project_dir: &Path) -> Result<RProjectConfig> {
         .unwrap_or("myresearch")
         .to_string();
 
+    // Sanitize project name for conda environment
+    let conda_env_name = conda_utils::sanitize_for_conda_env(&project_name);
+
+    // If the name was sanitized, show a warning
+    if conda_env_name != project_name {
+        cli_ui::display_warning(&format!(
+            "Project name '{}' contains characters not allowed in conda environment names.",
+            project_name
+        ));
+        cli_ui::display_info(&format!(
+            "Using '{}' as the conda environment name instead.",
+            conda_env_name
+        ));
+    }
+
     // Ask if conda environment should be created
     let create_conda_env = cli_ui::prompt_confirm("Create conda environment now?", true)?;
 
@@ -83,6 +98,9 @@ fn create_r_project_structure(project_dir: &Path, config: &RProjectConfig) -> Re
     }
 
     cli_ui::display_info("Generating R project files...");
+
+    // Sanitize project name for conda environment
+    let conda_env_name = conda_utils::sanitize_for_conda_env(&config.project_name);
 
     // Create renv.lock file
     let renv_lock = r#"{
@@ -127,7 +145,7 @@ fn create_r_project_structure(project_dir: &Path, config: &RProjectConfig) -> Re
     ];
 
     let environment_yml =
-        conda_utils::generate_base_environment_yml(&config.project_name, &channels, &dependencies);
+        conda_utils::generate_base_environment_yml(&conda_env_name, &channels, &dependencies);
 
     write_file(&project_dir.join("environment.yml"), &environment_yml)?;
 
@@ -177,28 +195,29 @@ if (interactive()) {
     write_file(&project_dir.join("R/main.R"), main_r)?;
 
     // Create renv setup script (updated for conda compatibility)
-    let renv_setup = r#"# renv setup script
+    let renv_setup = format!(
+        r#"# renv setup script
 # This script initializes renv for your project
 
 # Check if running in a conda environment 
 is_conda <- Sys.getenv("CONDA_PREFIX") != ""
-if (!is_conda) {
+if (!is_conda) {{
   message("Warning: It's recommended to run this in a conda environment.")
-  message("Please activate your conda environment with: conda activate project-name")
-}
+  message("Please activate your conda environment with: conda activate {}")
+}}
 
 # Install renv if it's not already installed
-if (!requireNamespace("renv", quietly = TRUE)) {
+if (!requireNamespace("renv", quietly = TRUE)) {{
   message("Installing renv package...")
-  if (is_conda) {
+  if (is_conda) {{
     # In conda environment, we can use install.packages() 
     # since r-renv should be part of the conda environment
     install.packages("renv", repos = "https://cloud.r-project.org")
-  } else {
+  }} else {{
     # Fallback to CRAN installation
     install.packages("renv")
-  }
-}
+  }}
+}}
 
 # Initialize renv for this project
 # Note: While conda manages the R version and core dependencies,
@@ -209,8 +228,10 @@ renv::init()
 renv::restore()
 
 message("R environment setup complete! R version is managed by conda, package dependencies by renv.")
-"#;
-    write_file(&project_dir.join("setup.R"), renv_setup)?;
+"#,
+        conda_env_name
+    );
+    write_file(&project_dir.join("setup.R"), &renv_setup)?;
 
     // Create README.md with conda + renv instructions
     let readme = format!(
@@ -305,7 +326,7 @@ Run tests with:
 testthat::test_package("{}")
 ```
 "#,
-        config.project_name, config.project_name, config.project_name, config.project_name
+        config.project_name, config.project_name, conda_env_name, config.project_name
     );
     write_file(&project_dir.join("README.md"), &readme)?;
 

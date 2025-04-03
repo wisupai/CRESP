@@ -60,16 +60,19 @@ pub fn create_conda_environment(project_dir: &Path, environment_file: &str) -> R
     match conda_cmd {
         Ok(status) if status.success() => {
             // Get project name for conda environment
-            let project_name = project_dir
+            let raw_project_name = project_dir
                 .file_name()
                 .and_then(|n| n.to_str())
                 .unwrap_or("my-project");
 
+            // Sanitize name for conda environment
+            let conda_env_name = sanitize_for_conda_env(raw_project_name);
+
             cli_ui::display_success(&format!(
                 "Conda environment '{}' created successfully!",
-                project_name
+                conda_env_name
             ));
-            cli_ui::display_info(&format!("To activate: conda activate {}", project_name));
+            cli_ui::display_info(&format!("To activate: conda activate {}", conda_env_name));
             Ok(true)
         }
         _ => {
@@ -89,7 +92,22 @@ pub fn generate_base_environment_yml(
     channels: &[&str],
     dependencies: &[&str],
 ) -> String {
-    let mut content = format!("name: {}\nchannels:\n", project_name);
+    // Sanitize project name for conda environment
+    let conda_env_name = sanitize_for_conda_env(project_name);
+
+    // If the name was sanitized, show a warning
+    if conda_env_name != project_name {
+        cli_ui::display_warning(&format!(
+            "Project name '{}' contains characters not allowed in conda environment names.",
+            project_name
+        ));
+        cli_ui::display_info(&format!(
+            "Using '{}' as the conda environment name instead.",
+            conda_env_name
+        ));
+    }
+
+    let mut content = format!("name: {}\nchannels:\n", conda_env_name);
 
     // Add channels
     for channel in channels {
@@ -103,4 +121,64 @@ pub fn generate_base_environment_yml(
     }
 
     content
+}
+
+/// Sanitize project name for use as conda environment name
+/// Conda environment names cannot contain spaces or certain special characters
+pub fn sanitize_for_conda_env(name: &str) -> String {
+    // Replace spaces and invalid characters with underscores
+    let sanitized = name
+        .chars()
+        .map(|c| {
+            if c.is_alphanumeric() || c == '_' || c == '-' {
+                c
+            } else {
+                '_'
+            }
+        })
+        .collect::<String>();
+
+    // If name begins with a non-alphanumeric character, prefix with 'env_'
+    if !sanitized.is_empty() && !sanitized.chars().next().unwrap().is_alphanumeric() {
+        format!("env_{}", sanitized)
+    } else {
+        sanitized
+    }
+}
+
+/// Validate if a project name is suitable for conda environment
+/// Returns true if valid, along with a message if invalid
+pub fn validate_conda_env_name(name: &str) -> (bool, String) {
+    // Check if name contains spaces
+    if name.contains(' ') {
+        return (
+            false,
+            "Project name cannot contain spaces when using Conda (spaces will be replaced with underscores)".to_string()
+        );
+    }
+
+    // Check for other invalid characters
+    let has_invalid_chars = name
+        .chars()
+        .any(|c| !c.is_alphanumeric() && c != '_' && c != '-');
+    if has_invalid_chars {
+        return (
+            false,
+            "Project name contains invalid characters for Conda environment (only alphanumeric, underscore, and hyphen are allowed)".to_string()
+        );
+    }
+
+    // Check if name starts with a valid character
+    if !name.is_empty() && !name.chars().next().unwrap().is_alphanumeric() {
+        return (
+            false,
+            "Project name must start with an alphanumeric character for Conda environment"
+                .to_string(),
+        );
+    }
+
+    (
+        true,
+        "Project name is valid for Conda environment".to_string(),
+    )
 }

@@ -97,6 +97,24 @@ pub fn create_python_project(project_dir: &PathBuf, config: &mut UserConfig) -> 
         .and_then(|name| name.to_str())
         .unwrap_or("my-project");
 
+    // If using conda, validate and sanitize project name
+    let conda_env_name = if config.use_conda {
+        let sanitized = conda_utils::sanitize_for_conda_env(project_name);
+        if sanitized != project_name {
+            cli_ui::display_warning(&format!(
+                "Project name '{}' contains characters not allowed in conda environment names.",
+                project_name
+            ));
+            cli_ui::display_info(&format!(
+                "Using '{}' as the conda environment name instead.",
+                sanitized
+            ));
+        }
+        sanitized
+    } else {
+        project_name.to_string()
+    };
+
     let readme_content = format!(
         "# {}\n\n\
         ## Project Overview\n\
@@ -143,7 +161,7 @@ pub fn create_python_project(project_dir: &PathBuf, config: &mut UserConfig) -> 
         get_install_command(config),
         get_dev_install_command(config),
         get_test_command(config),
-        project_name
+        conda_env_name
     );
     write_file(&Path::new("README.md"), &readme_content)?;
 
@@ -480,6 +498,9 @@ def test_main():\n\
                         .and_then(|name| name.to_str())
                         .unwrap_or("my-project");
 
+                    // Sanitize project name for conda environment
+                    let conda_env_name = conda_utils::sanitize_for_conda_env(project_name);
+
                     // Check if Poetry/UV is used alongside Conda
                     let has_poetry = config
                         .package_managers
@@ -495,7 +516,7 @@ def test_main():\n\
                     let install_pip_first = Command::new("conda")
                         .arg("install")
                         .arg("-n")
-                        .arg(&project_name)
+                        .arg(&conda_env_name)
                         .arg("pip")
                         .arg("-y")
                         .status()?;
@@ -506,11 +527,11 @@ def test_main():\n\
 
                     // Install and configure additional package managers in the conda environment
                     if has_poetry {
-                        install_poetry_in_conda_env(project_name)?;
+                        install_poetry_in_conda_env(&conda_env_name)?;
                     }
 
                     if has_uv {
-                        install_uv_in_conda_env(project_name)?;
+                        install_uv_in_conda_env(&conda_env_name)?;
                     }
                 }
             }
@@ -525,14 +546,17 @@ def test_main():\n\
             .and_then(|name| name.to_str())
             .unwrap_or("my-project");
 
+        // Sanitize project name for conda environment
+        let conda_env_name = conda_utils::sanitize_for_conda_env(project_name);
+
         cli_ui::display_info("\nTo use this project and its installed tools:");
-        cli_ui::display_info(&format!("  conda activate {}", project_name));
+        cli_ui::display_info(&format!("  conda activate {}", conda_env_name));
 
         if has_uv {
             cli_ui::display_info("After activating the Conda environment, UV will be available for managing packages.");
             cli_ui::display_info(&format!(
                 "  Example: conda activate {} && uv pip install numpy pandas",
-                project_name
+                conda_env_name
             ));
         }
 
@@ -540,7 +564,7 @@ def test_main():\n\
             cli_ui::display_info("After activating the Conda environment, Poetry will be available for managing packages.");
             cli_ui::display_info(&format!(
                 "  Example: conda activate {} && poetry add numpy pandas",
-                project_name
+                conda_env_name
             ));
         }
     } else if has_uv && config.uv_installed {
