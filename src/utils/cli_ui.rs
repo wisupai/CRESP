@@ -4,6 +4,8 @@ use dialoguer::{theme::ColorfulTheme, Confirm, Input, Password, Select};
 use std::fmt::{Debug, Display};
 use std::str::FromStr;
 
+use crate::utils::validation::Validator;
+
 /// Get a themed instance for dialoguer components
 pub fn theme() -> ColorfulTheme {
     ColorfulTheme::default()
@@ -58,6 +60,29 @@ where
     };
 
     Ok(input.interact()?)
+}
+
+/// Prompt for text input with custom validation
+pub fn prompt_input_with_validation<T, V>(
+    prompt: &str,
+    default: Option<T>,
+    validator: V,
+    error_msg: &str,
+) -> Result<T>
+where
+    T: Display + FromStr + Clone,
+    T::Err: Debug + Display,
+    V: Validator<T>,
+{
+    loop {
+        let value = prompt_input(prompt, default.clone())?;
+        let (is_valid, message) = validator.validate(&value);
+        if is_valid {
+            return Ok(value);
+        }
+        display_warning(&message);
+        display_info(error_msg);
+    }
 }
 
 /// Prompt for password input

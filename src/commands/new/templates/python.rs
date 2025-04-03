@@ -5,6 +5,7 @@ use super::super::templates::conda_utils;
 use super::super::utils::write_file;
 use crate::error::Result;
 use crate::utils::cli_ui;
+use crate::utils::validation::exports::sanitize_for_conda_env;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -99,7 +100,7 @@ pub fn create_python_project(project_dir: &PathBuf, config: &mut UserConfig) -> 
 
     // If using conda, validate and sanitize project name
     let conda_env_name = if config.use_conda {
-        let sanitized = conda_utils::sanitize_for_conda_env(project_name);
+        let sanitized = sanitize_for_conda_env(project_name);
         if sanitized != project_name {
             cli_ui::display_warning(&format!(
                 "Project name '{}' contains characters not allowed in conda environment names.",
@@ -499,7 +500,7 @@ def test_main():\n\
                         .unwrap_or("my-project");
 
                     // Sanitize project name for conda environment
-                    let conda_env_name = conda_utils::sanitize_for_conda_env(project_name);
+                    let conda_env_name = sanitize_for_conda_env(project_name);
 
                     // Check if Poetry/UV is used alongside Conda
                     let has_poetry = config
@@ -547,7 +548,7 @@ def test_main():\n\
             .unwrap_or("my-project");
 
         // Sanitize project name for conda environment
-        let conda_env_name = conda_utils::sanitize_for_conda_env(project_name);
+        let conda_env_name = sanitize_for_conda_env(project_name);
 
         cli_ui::display_info("\nTo use this project and its installed tools:");
         cli_ui::display_info(&format!("  conda activate {}", conda_env_name));

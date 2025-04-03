@@ -1,52 +1,93 @@
-use crate::error::Result;
-use crate::utils::cli_ui;
 use std::path::Path;
 use std::process::Command;
 
-/// Ensure conda is available and return conda version if available
+use crate::error::Result;
+use crate::utils::cli_ui;
+use crate::utils::validation::exports::sanitize_for_conda_env;
+
+/// Check if conda is available and get its version
 pub fn ensure_conda_available() -> Result<Option<String>> {
     let output = Command::new("conda").arg("--version").output();
 
     match output {
         Ok(output) if output.status.success() => {
-            let version_str = String::from_utf8_lossy(&output.stdout);
-            if let Some(version) = version_str.split_whitespace().nth(1) {
-                cli_ui::display_success(&format!("Found conda version: {}", version));
-                return Ok(Some(version.to_string()));
-            }
-            Ok(Some("unknown".to_string()))
+            let version_string = String::from_utf8_lossy(&output.stdout);
+            let version = version_string
+                .trim()
+                .split_whitespace()
+                .last()
+                .unwrap_or("")
+                .to_string();
+            cli_ui::display_success(&format!("Found conda: {}", version));
+            Ok(Some(version))
         }
         _ => {
-            cli_ui::display_error(
-                "Conda is required for CRESP projects but not found on your system.",
-            );
-            cli_ui::display_info("Please install Conda (Miniconda or Anaconda) first:");
-            cli_ui::display_info(
-                "https://docs.conda.io/projects/conda/en/latest/user-guide/install/index.html",
-            );
+            cli_ui::display_warning("Conda is not available on this system!");
             Ok(None)
         }
     }
 }
 
-/// Check conda version and display update recommendation if needed
+/// Check conda version and warn if outdated
 pub fn check_conda_version(version: &str) -> Result<()> {
-    // Simple version comparison, only compare major version
-    let parts: Vec<&str> = version.split('.').collect();
-    if parts.len() >= 2 {
-        if let Ok(major) = parts[0].parse::<u32>() {
-            if major < 23 {
-                cli_ui::display_warning(&format!(
-                    "You are using an older version of conda ({}). Consider updating it for better performance and compatibility.",
-                    version
-                ));
-                cli_ui::display_info(
-                    "To update conda, run: conda update -n base -c defaults conda",
-                );
-            }
+    // Parse semver from version string (format: "conda X.Y.Z")
+    let version_parts: Vec<&str> = version.split('.').collect();
+    if version_parts.len() >= 3 {
+        let major: u32 = match version_parts[0].parse() {
+            Ok(m) => m,
+            Err(_) => return Ok(()),
+        };
+        if major < 4 {
+            cli_ui::display_warning(
+                "Your conda version is outdated. Consider upgrading to conda 4.0+",
+            );
         }
     }
     Ok(())
+}
+
+/// Install poetry in conda environment
+pub fn install_poetry_in_conda_env(env_name: &str) -> Result<()> {
+    cli_ui::display_info("Installing Poetry in Conda environment...");
+    let conda_cmd = Command::new("conda")
+        .args(&["run", "-n", env_name, "pip", "install", "poetry"])
+        .status();
+
+    match conda_cmd {
+        Ok(status) if status.success() => {
+            cli_ui::display_success("Poetry installed successfully in conda environment");
+            Ok(())
+        }
+        _ => {
+            cli_ui::display_warning("Failed to install Poetry in conda environment.");
+            cli_ui::display_info(
+                "You can install it manually later with: conda run -n <env> pip install poetry",
+            );
+            Ok(())
+        }
+    }
+}
+
+/// Install uv in conda environment
+pub fn install_uv_in_conda_env(env_name: &str) -> Result<()> {
+    cli_ui::display_info("Installing UV in Conda environment...");
+    let conda_cmd = Command::new("conda")
+        .args(&["run", "-n", env_name, "pip", "install", "uv"])
+        .status();
+
+    match conda_cmd {
+        Ok(status) if status.success() => {
+            cli_ui::display_success("UV installed successfully in conda environment");
+            Ok(())
+        }
+        _ => {
+            cli_ui::display_warning("Failed to install UV in conda environment.");
+            cli_ui::display_info(
+                "You can install it manually later with: conda run -n <env> pip install uv",
+            );
+            Ok(())
+        }
+    }
 }
 
 /// Create conda environment from environment file
@@ -143,64 +184,4 @@ pub fn generate_base_environment_yml(
     }
 
     content
-}
-
-/// Sanitize project name for use as conda environment name
-/// Conda environment names cannot contain spaces or certain special characters
-pub fn sanitize_for_conda_env(name: &str) -> String {
-    // Replace spaces and invalid characters with underscores
-    let sanitized = name
-        .chars()
-        .map(|c| {
-            if c.is_alphanumeric() || c == '_' || c == '-' {
-                c
-            } else {
-                '_'
-            }
-        })
-        .collect::<String>();
-
-    // If name begins with a non-alphanumeric character, prefix with 'env_'
-    if !sanitized.is_empty() && !sanitized.chars().next().unwrap().is_alphanumeric() {
-        format!("env_{}", sanitized)
-    } else {
-        sanitized
-    }
-}
-
-/// Validate if a project name is suitable for conda environment
-/// Returns true if valid, along with a message if invalid
-pub fn validate_conda_env_name(name: &str) -> (bool, String) {
-    // Check if name contains spaces
-    if name.contains(' ') {
-        return (
-            false,
-            "Project name cannot contain spaces when using Conda (spaces will be replaced with underscores)".to_string()
-        );
-    }
-
-    // Check for other invalid characters
-    let has_invalid_chars = name
-        .chars()
-        .any(|c| !c.is_alphanumeric() && c != '_' && c != '-');
-    if has_invalid_chars {
-        return (
-            false,
-            "Project name contains invalid characters for Conda environment (only alphanumeric, underscore, and hyphen are allowed)".to_string()
-        );
-    }
-
-    // Check if name starts with a valid character
-    if !name.is_empty() && !name.chars().next().unwrap().is_alphanumeric() {
-        return (
-            false,
-            "Project name must start with an alphanumeric character for Conda environment"
-                .to_string(),
-        );
-    }
-
-    (
-        true,
-        "Project name is valid for Conda environment".to_string(),
-    )
 }

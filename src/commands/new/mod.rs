@@ -8,6 +8,7 @@ mod templates;
 mod utils;
 
 use crate::utils::cli_ui;
+use crate::utils::validation::{ProjectNameValidator, Validator};
 use config::{get_python_config, UserConfig};
 use system_info::collect_system_info;
 use templates::{create_project_structure, TemplateType};
@@ -44,7 +45,8 @@ impl NewCommand {
         let name = match &self.name {
             Some(name) => {
                 // Also validate project name provided via command line
-                let (is_valid, message) = validate_project_name(name);
+                let validator = ProjectNameValidator;
+                let (is_valid, message) = validator.validate(name);
                 if !is_valid {
                     cli_ui::display_error(&message);
                     cli_ui::display_error(
@@ -57,21 +59,13 @@ impl NewCommand {
                 name.clone()
             }
             None => {
-                // Ask for project name with validation
-                let mut project_name: String;
-                loop {
-                    project_name = cli_ui::prompt_input("Project name", None::<String>)?;
-
-                    // Validate project name (especially important for conda environments)
-                    let (is_valid, message) = validate_project_name(&project_name);
-                    if is_valid {
-                        break;
-                    } else {
-                        cli_ui::display_warning(&message);
-                        cli_ui::display_info("Please enter a valid project name without spaces or special characters.");
-                    }
-                }
-                project_name
+                // 使用带验证的输入函数
+                cli_ui::prompt_input_with_validation(
+                    "Project name",
+                    None::<String>,
+                    ProjectNameValidator,
+                    "Please enter a valid project name without spaces or special characters.",
+                )?
             }
         };
 
@@ -454,36 +448,4 @@ package_manager = {{ type = "{}", config_file = "{}", lock_file = "{}" }}
 
     utils::write_file(&project_dir.join("cresp.toml"), &cresp_toml)?;
     Ok(())
-}
-
-// Validate project name for conda compatibility
-fn validate_project_name(name: &str) -> (bool, String) {
-    // Check if name contains spaces
-    if name.contains(' ') {
-        return (
-            false,
-            "Project name cannot contain spaces when using Conda environments. Spaces will cause environment creation to fail.".to_string()
-        );
-    }
-
-    // Check for other invalid characters
-    let has_invalid_chars = name
-        .chars()
-        .any(|c| !c.is_alphanumeric() && c != '_' && c != '-');
-    if has_invalid_chars {
-        return (
-            false,
-            "Project name contains invalid characters. Only alphanumeric characters, underscore, and hyphen are allowed.".to_string()
-        );
-    }
-
-    // Check if name starts with a valid character
-    if !name.is_empty() && !name.chars().next().unwrap().is_alphanumeric() {
-        return (
-            false,
-            "Project name must start with an alphanumeric character.".to_string(),
-        );
-    }
-
-    (true, "Project name is valid.".to_string())
 }

@@ -2,6 +2,7 @@ use super::super::templates::conda_utils;
 use super::super::utils::write_file;
 use crate::error::Result;
 use crate::utils::cli_ui;
+use crate::utils::validation::exports::sanitize_for_conda_env;
 use std::path::Path;
 use std::process::Command;
 
@@ -62,7 +63,7 @@ fn collect_r_project_config(project_dir: &Path) -> Result<RProjectConfig> {
         .to_string();
 
     // Sanitize project name for conda environment
-    let conda_env_name = conda_utils::sanitize_for_conda_env(&project_name);
+    let conda_env_name = sanitize_for_conda_env(&project_name);
 
     // If the name was sanitized, show a warning
     if conda_env_name != project_name {
@@ -100,7 +101,7 @@ fn create_r_project_structure(project_dir: &Path, config: &RProjectConfig) -> Re
     cli_ui::display_info("Generating R project files...");
 
     // Sanitize project name for conda environment
-    let conda_env_name = conda_utils::sanitize_for_conda_env(&config.project_name);
+    let conda_env_name = sanitize_for_conda_env(&config.project_name);
 
     // Create renv.lock file
     let renv_lock = r#"{
