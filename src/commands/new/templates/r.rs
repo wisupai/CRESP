@@ -56,7 +56,7 @@ pub fn create_r_project(project_dir: &Path) -> Result<()> {
             "defaults".to_string()
         ];
         
-        let env_created = conda_utils::create_language_conda_env(
+        let (env_created, _actual_env_name) = conda_utils::create_language_conda_env(
             project_dir,
             &config.project_name,
             &Language::R,

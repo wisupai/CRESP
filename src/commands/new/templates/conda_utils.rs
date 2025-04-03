@@ -154,7 +154,7 @@ pub fn install_uv_in_conda_env(env_name: &str) -> Result<()> {
 }
 
 /// Create conda environment from environment file
-pub fn create_conda_environment(project_dir: &Path, environment_file: &str) -> Result<bool> {
+pub fn create_conda_environment(project_dir: &Path, environment_file: &str) -> Result<(bool, String)> {
     info!("Creating conda environment...");
 
     // Add delay after file write operations (reduced from 2s to 1s)
@@ -168,7 +168,7 @@ pub fn create_conda_environment(project_dir: &Path, environment_file: &str) -> R
             cli_ui::display_message(
                 "Please make sure conda is correctly installed and available in your PATH.",
             );
-            return Ok(false);
+            return Ok((false, String::new()));
         }
     };
 
@@ -204,7 +204,7 @@ pub fn create_conda_environment(project_dir: &Path, environment_file: &str) -> R
             }
         }
 
-        return Ok(false);
+        return Ok((false, String::new()));
     }
 
     // Log environment file contents for debugging - moved to trace level
@@ -318,25 +318,25 @@ pub fn create_conda_environment(project_dir: &Path, environment_file: &str) -> R
                     env_name
                 ));
                 cli_ui::display_message(&format!("To activate: conda activate {}", env_name));
-                return Ok(true);
+                return Ok((true, env_name));
             }
             Ok(status) => {
-                // check if the environment already exists
+                // 检查是否环境已存在错误
                 cli_ui::display_warning(&format!(
                     "Failed to create conda environment. Exit code: {:?}",
                     status.code()
                 ));
                 
-                // ask the user if they want to try a different name
+                // 询问用户是否要用新名称重试
                 if attempt_count < max_attempts {
                     let retry = cli_ui::prompt_confirm("Environment already exists. Would you like to try a different name?", true)?;
                     
                     if retry {
-                        // let the user input a new environment name
+                        // 让用户输入新的环境名称
                         let new_name: String = cli_ui::prompt_input(&format!("Enter new environment name (current: {}):", env_name), None)?;
                         
                         if !new_name.is_empty() {
-                            // update the name in the environment file
+                            // 更新环境文件中的名称
                             if let Ok(content) = std::fs::read_to_string(&abs_env_file_path) {
                                 let new_content = content.replacen(&format!("name: {}", env_name), &format!("name: {}", new_name), 1);
                                 std::fs::write(&abs_env_file_path, new_content)?;
@@ -348,10 +348,10 @@ pub fn create_conda_environment(project_dir: &Path, environment_file: &str) -> R
                     }
                 }
                 
-                // recover the original working directory
+                // 恢复原始工作目录
                 std::env::set_current_dir(original_dir)?;
                 
-                // provide the command to create the environment manually
+                // 提供手动创建的命令
                 cli_ui::display_message("You can create the environment manually with this command:");
                 if use_faster_solver {
                     cli_ui::display_message(&format!(
@@ -364,16 +364,16 @@ pub fn create_conda_environment(project_dir: &Path, environment_file: &str) -> R
                         abs_project_dir, conda_path, environment_file
                     ));
                 }
-                return Ok(false);
+                return Ok((false, env_name));
             }
             Err(e) => {
-                // recover the original working directory
+                // 恢复原始工作目录
                 std::env::set_current_dir(original_dir)?;
                 
                 cli_ui::display_warning(&format!("Failed to execute conda command: {}", e));
                 debug!("Error type: {:?}", e.kind());
                 
-                // provide the command to create the environment manually
+                // 提供手动创建的命令
                 cli_ui::display_message("You can create the environment manually with this command:");
                 if use_faster_solver {
                     cli_ui::display_message(&format!(
@@ -386,15 +386,15 @@ pub fn create_conda_environment(project_dir: &Path, environment_file: &str) -> R
                         abs_project_dir, conda_path, environment_file
                     ));
                 }
-                return Ok(false);
+                return Ok((false, env_name));
             }
         }
     }
     
-    // Exceeded max attempts
+    // 达到最大尝试次数仍然失败
     cli_ui::display_warning(&format!("Failed to create conda environment after {} attempts", max_attempts));
     std::env::set_current_dir(original_dir)?;
-    Ok(false)
+    Ok((false, env_name))
 }
 
 /// Find conda executable path
@@ -597,7 +597,7 @@ pub fn create_language_conda_env(
     r_version: Option<&str>,
     with_cuda: bool,
     channels: Option<&[String]>,
-) -> Result<bool> {
+) -> Result<(bool, String)> {
     // Generate environment file
     let env_file_content = generate_language_environment_yml(
         project_name, 
@@ -615,22 +615,20 @@ pub fn create_language_conda_env(
 
     // Create environment
     cli_ui::display_progress("Creating conda environment...", "This may take a while...");
-    let result = create_conda_environment(project_dir, "environment.yml")?;
+    let (result, actual_env_name) = create_conda_environment(project_dir, "environment.yml")?;
 
     // If creation successful, configure additional package managers
     if result {
-        let conda_env_name = sanitize_for_conda_env(project_name);
-        
         match language {
             Language::Python => {
                 // May need to install additional package managers for Python
                 cli_ui::display_info("Setting up Python package managers...");
-                setup_python_package_managers(&conda_env_name)?;
+                setup_python_package_managers(&actual_env_name)?;
             },
             Language::R => {
                 // Install renv for R
                 cli_ui::display_info("Setting up R environment...");
-                setup_r_environment(&conda_env_name)?;
+                setup_r_environment(&actual_env_name)?;
             },
             _ => {
                 // Specific settings for other languages
@@ -639,11 +637,11 @@ pub fn create_language_conda_env(
         }
         
         // Show environment activation prompt
-        cli_ui::display_success(&format!("Environment '{}' created successfully!", conda_env_name));
-        cli_ui::display_message(&format!("To activate: conda activate {}", conda_env_name));
+        cli_ui::display_success(&format!("Environment '{}' created successfully!", actual_env_name));
+        cli_ui::display_message(&format!("To activate: conda activate {}", actual_env_name));
     }
     
-    Ok(result)
+    Ok((result, actual_env_name))
 }
 
 /// Setup package managers for Python

@@ -85,7 +85,7 @@ pub fn create_python_project(project_dir: &PathBuf, config: &mut UserConfig) -> 
         .unwrap_or("my-project");
 
     // If using conda, validate and sanitize project name
-    let conda_env_name = if config.use_conda {
+    let mut conda_env_name = if config.use_conda {
         let sanitized = sanitize_for_conda_env(project_name);
         if sanitized != project_name {
             cli_ui::display_warning(&format!(
@@ -133,7 +133,7 @@ pub fn create_python_project(project_dir: &PathBuf, config: &mut UserConfig) -> 
             });
             
         // Use the generic conda environment setup function
-        let env_created = conda_utils::create_language_conda_env(
+        let (env_created, actual_env_name) = conda_utils::create_language_conda_env(
             project_dir,
             project_name,
             &Language::Python,
@@ -145,6 +145,9 @@ pub fn create_python_project(project_dir: &PathBuf, config: &mut UserConfig) -> 
         
         if !env_created {
             cli_ui::display_warning("Failed to create conda environment. You may need to create it manually.");
+        } else {
+            // 使用实际创建的环境名称，而非原始名称
+            conda_env_name = actual_env_name;
         }
     }
 
