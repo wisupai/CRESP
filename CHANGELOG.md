@@ -38,6 +38,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fixed UV installation sequence to provide clearer user instructions 
 - Fixed formatting error in command generation for UV installation
 - Fixed MATLAB installer download script to handle platform-specific installers
+- Fixed compiler warnings by removing unused code and marking unused variables
 
 ### Removed
 - None
