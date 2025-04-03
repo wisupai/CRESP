@@ -77,6 +77,7 @@ pub fn create_r_project(project_dir: &Path) -> Result<()> {
     let environment_yml = format!(
         r#"name: {}
 channels:
+  - r
   - conda-forge
   - defaults
 dependencies:
@@ -128,6 +129,7 @@ main <- function() {
     # Your analysis code goes here
 }
 
+# Execute main function if the script is run interactively
 if (interactive()) {
     main()
 }
@@ -159,12 +161,14 @@ if (!requireNamespace("renv", quietly = TRUE)) {
 }
 
 # Initialize renv for this project
+# Note: While conda manages the R version and core dependencies,
+# renv manages the specific R package versions for reproducibility
 renv::init()
 
 # Install dependencies from renv.lock
 renv::restore()
 
-print("R environment setup complete!")
+message("R environment setup complete! R version is managed by conda, package dependencies by renv.")
 "#;
     write_file(&project_dir.join("setup.R"), renv_setup)?;
 
@@ -173,6 +177,14 @@ print("R environment setup complete!")
         r#"# {}: R Research Project
 
 This is an R research project using CRESP protocol.
+
+## Environment Management Strategy
+
+This project uses a dual management approach:
+- **Conda**: Manages the R language version and system-level dependencies
+- **renv**: Manages R package dependencies within the R environment
+
+This separation allows for both system-level reproducibility (hardware and core language) and package-level reproducibility (R packages and their versions).
 
 ## Project Structure
 
@@ -217,19 +229,34 @@ Rscript -e "source('R/main.R')"
 
 ## Development
 
-To install additional R packages, use either:
+There are two ways to manage packages in this project:
 
-1. R's built-in package management within your conda environment:
+1. **For regular R packages (preferred for most cases)**: Use R's built-in package management with renv:
 ```r
+# Install a package
 install.packages("package_name")
+
+# After installing packages, always snapshot the environment
+renv::snapshot()
 ```
 
-2. Or conda (preferred for packages with system dependencies):
+2. **For packages with system dependencies**: Use conda (this installs both the R package and required system libraries):
 ```bash
+# Prefer r channel for R packages
+conda install -c r r-package_name
+
+# Or from conda-forge
 conda install -c conda-forge r-package_name
+
+# Or specify multiple channels (recommended)
+conda install -c r -c conda-forge r-package_name
 ```
 
-Always run `renv::snapshot()` after installing new packages to update your renv.lock file.
+After installing packages with conda, also update renv:
+```r
+# Make renv aware of packages installed via conda
+renv::snapshot()
+```
 
 ## Testing
 
@@ -312,7 +339,7 @@ test_check("myresearch")
                 ));
                 cli_ui::display_info(&format!("To activate: conda activate {}", project_name));
 
-                // 验证R是否在conda环境中正确安装
+                // Verify if R is correctly installed in the conda environment
                 verify_r_installation()?;
             }
             _ => {
