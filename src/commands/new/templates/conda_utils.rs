@@ -5,6 +5,7 @@ use crate::error::Result;
 use crate::utils::cli_ui;
 use crate::utils::validation::exports::sanitize_for_conda_env;
 use log::{debug, info, trace};
+use serde_json;
 
 /// Check if conda is available and get its version
 pub fn ensure_conda_available() -> Result<Option<String>> {
@@ -850,4 +851,81 @@ pub fn verify_language_installation(language: &Language) -> Result<bool> {
     }
     
     Ok(false)
+}
+
+/// Get list of packages installed in a conda environment
+/// 
+/// Args:
+///     env_name: Environment name
+/// 
+/// Returns:
+///     Result<Vec<(String, String)>>: Vector of (package_name, version) tuples
+pub fn get_conda_installed_packages(env_name: &str) -> Result<Vec<(String, String)>> {
+    debug!("Getting installed packages for conda environment: {}", env_name);
+    
+    // Find conda executable
+    let conda_path = match find_conda_executable() {
+        Ok(path) => path,
+        Err(e) => {
+            cli_ui::display_warning(&format!("Failed to find conda executable: {}", e));
+            return Ok(Vec::new());
+        }
+    };
+
+    // Run conda list command to get installed packages
+    let output = std::process::Command::new(&conda_path)
+        .args(&["list", "--name", env_name, "--json"])
+        .output();
+
+    match output {
+        Ok(output) if output.status.success() => {
+            // Parse JSON output
+            let json_str = String::from_utf8_lossy(&output.stdout);
+            
+            // Parse the JSON output to extract package information
+            match serde_json::from_str::<Vec<serde_json::Value>>(&json_str) {
+                Ok(packages) => {
+                    let mut result = Vec::new();
+                    
+                    for package in packages {
+                        if let (Some(name), Some(version)) = (
+                            package.get("name").and_then(|v| v.as_str()),
+                            package.get("version").and_then(|v| v.as_str()),
+                        ) {
+                            result.push((name.to_string(), version.to_string()));
+                        }
+                    }
+                    
+                    debug!("Found {} packages in conda environment '{}'", result.len(), env_name);
+                    Ok(result)
+                },
+                Err(e) => {
+                    debug!("Failed to parse conda list JSON output: {}", e);
+                    
+                    // Fallback to parsing the raw output if JSON parsing fails
+                    let raw_output = String::from_utf8_lossy(&output.stdout);
+                    let mut result = Vec::new();
+                    
+                    // Try a basic parsing of the standard output format
+                    for line in raw_output.lines().skip(3) { // Skip header lines
+                        let parts: Vec<&str> = line.split_whitespace().collect();
+                        if parts.len() >= 2 {
+                            result.push((parts[0].to_string(), parts[1].to_string()));
+                        }
+                    }
+                    
+                    debug!("Fallback parsing found {} packages", result.len());
+                    Ok(result)
+                }
+            }
+        },
+        Ok(_) => {
+            debug!("conda list command failed");
+            Ok(Vec::new())
+        },
+        Err(e) => {
+            debug!("Failed to execute conda list command: {}", e);
+            Ok(Vec::new())
+        }
+    }
 }

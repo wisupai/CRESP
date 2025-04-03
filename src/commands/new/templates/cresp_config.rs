@@ -219,9 +219,37 @@ fn get_software_config(language: &str, system_info: &SystemInfo, user_config: &U
                 .collect::<Vec<_>>()
                 .join(", ");
 
+            // Get conda environment name
+            let conda_env_name = sanitize_for_conda_env(name);
+            
+            // Try to get the installed packages in this conda environment
+            let mut packages_str = String::new();
+            
+            match super::super::templates::conda_utils::get_conda_installed_packages(&conda_env_name) {
+                Ok(packages) if !packages.is_empty() => {
+                    // Convert packages to TOML format
+                    packages_str.push_str(", packages = {\n");
+                    
+                    // Add each package to the string
+                    for (pkg_name, version) in packages {
+                        // Skip conda internal packages and some common base packages
+                        if !["python", "conda", "pip"].contains(&pkg_name.as_str()) {
+                            packages_str.push_str(&format!("        \"{}\" = \"{}\",\n", pkg_name, version));
+                        }
+                    }
+                    
+                    // Close the packages table
+                    packages_str.push_str("    }");
+                },
+                _ => {
+                    // If the environment doesn't exist yet or no packages are found
+                    cli_ui::display_info("No packages found in conda environment. The environment may not exist yet.");
+                }
+            };
+
             software_config.push_str(&format!(
-                "conda = {{ version = \"{}\", channels = [{}] }}\n",
-                conda_version, channels_str
+                "conda = {{ version = \"{}\", channels = [{}]{} }}\n",
+                conda_version, channels_str, packages_str
             ));
         }
 
@@ -263,6 +291,32 @@ fn get_software_config(language: &str, system_info: &SystemInfo, user_config: &U
         };
         
         let conda_env_name = sanitize_for_conda_env(name);
+        
+        // 尝试获取R环境中已安装的包
+        let mut packages_str = String::new();
+        
+        match super::super::templates::conda_utils::get_conda_installed_packages(&conda_env_name) {
+            Ok(packages) if !packages.is_empty() => {
+                // Convert packages to TOML format
+                packages_str.push_str(", packages = {\n    ");
+                
+                // Add each package to the string
+                for (pkg_name, version) in packages {
+                    // Skip conda internal packages and R itself
+                    if !["r-base", "conda", "r-essentials"].contains(&pkg_name.as_str()) {
+                        packages_str.push_str(&format!("\"{}\" = \"{}\", ", pkg_name, version));
+                    }
+                }
+                
+                // Close the packages table
+                packages_str.push_str("\n  }");
+            },
+            _ => {
+                // If the environment doesn't exist yet or no packages are found
+                // Don't show any message as this is expected during initial creation
+            }
+        };
+        
         format!(
             r#"r = {{ 
     version = "{}", 
@@ -273,7 +327,7 @@ fn get_software_config(language: &str, system_info: &SystemInfo, user_config: &U
         activation_command = "conda activate {}"
     }}
 }}
-conda = {{ version = "{}", channels = ["r", "conda-forge", "defaults"] }}"#,
+conda = {{ version = "{}"{}}},"#,
             r_version,
             conda_env_name,
             conda_env_name,
@@ -281,7 +335,8 @@ conda = {{ version = "{}", channels = ["r", "conda-forge", "defaults"] }}"#,
             match system_info.software.get("conda") {
                 Some(version) => version,
                 None => "4.10.3"
-            }
+            },
+            packages_str
         )
     } else if language == "matlab" {
         // Add the same fix for matlab version
