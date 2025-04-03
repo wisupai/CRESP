@@ -1,18 +1,18 @@
-/// 验证器特征，定义任何验证器必须实现的方法
+/// Validator trait that defines methods any validator must implement
 pub trait Validator<T> {
-    /// 验证值是否合法
+    /// Validate if a value is valid
     ///
-    /// 返回一个元组 (bool, String)，第一个元素表示是否有效，第二个元素为消息
+    /// Returns a tuple (bool, String), where the first element indicates validity and the second is a message
     fn validate(&self, value: &T) -> (bool, String);
 }
 
-/// 项目名称验证器，用于验证项目名称是否符合要求
+/// Project name validator, used to validate if a project name meets requirements
 #[derive(Default)]
 pub struct ProjectNameValidator;
 
 impl Validator<String> for ProjectNameValidator {
     fn validate(&self, name: &String) -> (bool, String) {
-        // 检查名称中是否包含空格
+        // Check if name contains spaces
         if name.contains(' ') {
             return (
                 false,
@@ -20,7 +20,7 @@ impl Validator<String> for ProjectNameValidator {
             );
         }
 
-        // 检查其他非法字符
+        // Check for other invalid characters
         let has_invalid_chars = name
             .chars()
             .any(|c| !c.is_alphanumeric() && c != '_' && c != '-');
@@ -31,7 +31,7 @@ impl Validator<String> for ProjectNameValidator {
             );
         }
 
-        // 检查名称是否以字母或数字开头
+        // Check if name starts with alphanumeric character
         if !name.is_empty() && !name.chars().next().unwrap().is_alphanumeric() {
             return (
                 false,
@@ -39,7 +39,7 @@ impl Validator<String> for ProjectNameValidator {
             );
         }
 
-        // 检查名称长度
+        // Check name length
         if name.len() < 2 {
             return (
                 false,
@@ -51,21 +51,21 @@ impl Validator<String> for ProjectNameValidator {
     }
 }
 
-/// Conda环境名称验证器，扩展了普通项目名称验证，添加了Conda环境特定的规则
+/// Conda environment name validator, extends basic project name validation with Conda-specific rules
 #[derive(Default)]
 pub struct CondaEnvNameValidator;
 
 impl Validator<String> for CondaEnvNameValidator {
     fn validate(&self, name: &String) -> (bool, String) {
-        // 首先运行基本的项目名称验证
+        // First run the basic project name validation
         let project_validator = ProjectNameValidator;
         let (is_valid, message) = project_validator.validate(name);
         if !is_valid {
             return (false, message);
         }
 
-        // 检查是否符合Conda环境名称的特定规则
-        // (在当前实现中，基本规则已经足够严格，可以不添加额外规则)
+        // Check if it meets Conda environment name specific rules
+        // (In the current implementation, the basic rules are already strict enough)
 
         (
             true,
@@ -74,10 +74,10 @@ impl Validator<String> for CondaEnvNameValidator {
     }
 }
 
-/// 帮助函数：将字符串转换为有效的conda环境名称
+/// Helper function: Convert a string to a valid conda environment name
 #[allow(dead_code)]
 pub fn sanitize_for_conda_env(name: &str) -> String {
-    // 替换空格和无效字符为下划线
+    // Replace spaces and invalid characters with underscores
     let sanitized = name
         .chars()
         .map(|c| {
@@ -89,7 +89,7 @@ pub fn sanitize_for_conda_env(name: &str) -> String {
         })
         .collect::<String>();
 
-    // 如果名称以非字母数字字符开头，添加前缀"env_"
+    // If name begins with a non-alphanumeric character, prefix with "env_"
     if !sanitized.is_empty() && !sanitized.chars().next().unwrap().is_alphanumeric() {
         format!("env_{}", sanitized)
     } else {
@@ -97,7 +97,7 @@ pub fn sanitize_for_conda_env(name: &str) -> String {
     }
 }
 
-// 单元测试
+// Unit tests
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -106,27 +106,27 @@ mod tests {
     fn test_project_name_validator() {
         let validator = ProjectNameValidator;
 
-        // 有效的名称
+        // Valid names
         assert!(validator.validate(&"valid-name".to_string()).0);
         assert!(validator.validate(&"valid_name123".to_string()).0);
 
-        // 无效的名称
-        assert!(!validator.validate(&"invalid name".to_string()).0); // 含空格
-        assert!(!validator.validate(&"invalid@name".to_string()).0); // 含特殊字符
-        assert!(!validator.validate(&"_invalidname".to_string()).0); // 非字母数字开头
-        assert!(!validator.validate(&"a".to_string()).0); // 太短
+        // Invalid names
+        assert!(!validator.validate(&"invalid name".to_string()).0); // Contains spaces
+        assert!(!validator.validate(&"invalid@name".to_string()).0); // Contains special chars
+        assert!(!validator.validate(&"_invalidname".to_string()).0); // Non-alphanumeric start
+        assert!(!validator.validate(&"a".to_string()).0); // Too short
     }
 
     #[test]
     fn test_conda_env_name_validator() {
         let validator = CondaEnvNameValidator;
 
-        // 有效的名称
+        // Valid names
         assert!(validator.validate(&"valid-name".to_string()).0);
         assert!(validator.validate(&"valid_name123".to_string()).0);
 
-        // 无效的名称
-        assert!(!validator.validate(&"invalid name".to_string()).0); // 含空格
+        // Invalid names
+        assert!(!validator.validate(&"invalid name".to_string()).0); // Contains spaces
     }
 
     #[test]
@@ -137,7 +137,7 @@ mod tests {
     }
 }
 
-// 创建一个公共导出模块
+// Create a public exports module
 pub mod exports {
     pub use super::sanitize_for_conda_env;
 }
