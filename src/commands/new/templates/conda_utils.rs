@@ -446,22 +446,30 @@ pub fn find_conda_executable() -> Result<String> {
             "/opt/anaconda3/bin/conda",
             "/opt/miniconda3/bin/conda",
             "/opt/miniforge3/bin/conda",
+            "/opt/mambaforge3/bin/conda",
             "/usr/local/anaconda3/bin/conda",
             "/usr/local/miniconda3/bin/conda",
             "/usr/local/miniforge3/bin/conda",
+            "/usr/local/mambaforge/bin/conda",
             "/usr/local/opt/conda/bin/conda",
             "/usr/local/Caskroom/miniconda/base/bin/conda",
             "/usr/local/Caskroom/miniforge/base/bin/conda",
+            "/usr/local/Caskroom/mambaforge/base/bin/conda",
             "/Applications/anaconda3/bin/conda",
+            "/Applications/miniconda3/bin/conda",
+            "/Applications/miniforge3/bin/conda",
+            "/Applications/mambaforge/bin/conda",
         ]
     } else {
         vec![
             "/opt/anaconda3/bin/conda",
             "/opt/miniconda3/bin/conda",
             "/opt/miniforge3/bin/conda",
+            "/opt/mambaforge/bin/conda",
             "/usr/local/anaconda3/bin/conda",
             "/usr/local/miniconda3/bin/conda",
             "/usr/local/miniforge3/bin/conda",
+            "/usr/local/mambaforge/bin/conda",
             "/usr/bin/conda",
             "/usr/local/bin/conda",
         ]
@@ -489,10 +497,13 @@ pub fn find_conda_executable() -> Result<String> {
             home_paths.push(format!("{}\\Miniconda3\\Scripts\\conda.exe", home));
             home_paths.push(format!("{}\\miniforge3\\Scripts\\conda.exe", home));
             home_paths.push(format!("{}\\Miniforge3\\Scripts\\conda.exe", home));
+            home_paths.push(format!("{}\\mambaforge\\Scripts\\conda.exe", home));
+            home_paths.push(format!("{}\\Mambaforge\\Scripts\\conda.exe", home));
         } else {
             home_paths.push(format!("{}/anaconda3/bin/conda", home));
             home_paths.push(format!("{}/miniconda3/bin/conda", home));
             home_paths.push(format!("{}/miniforge3/bin/conda", home));
+            home_paths.push(format!("{}/mambaforge/bin/conda", home));
             home_paths.push(format!("{}/.conda/bin/conda", home));
         }
     }
@@ -511,12 +522,35 @@ pub fn find_conda_executable() -> Result<String> {
         }
     }
 
-    // If still not found, throw an error with helpful message
+    // If still not found, display comprehensive installation options
     cli_ui::display_warning("Could not find conda executable in common locations.");
-    cli_ui::display_info("Please make sure conda is installed and in your PATH.");
-    cli_ui::display_info(
-        "You can install conda from: https://docs.conda.io/en/latest/miniconda.html",
-    );
+    cli_ui::display_info("Please install one of the following conda distributions:");
+    
+    cli_ui::display_info("\n1. Miniconda (RECOMMENDED):");
+    cli_ui::display_info("   • Lightweight installation with conda and Python only");
+    cli_ui::display_info("   • Minimal size (~60-100MB) and fast to install");
+    cli_ui::display_info("   • Perfect for most scientific computing needs");
+    cli_ui::display_info("   • Install from: https://docs.conda.io/en/latest/miniconda.html");
+    
+    cli_ui::display_info("\n2. Anaconda:");
+    cli_ui::display_info("   • Full installation with 250+ packages pre-installed");
+    cli_ui::display_info("   • Large size (~3GB) and slower to install");
+    cli_ui::display_info("   • Includes Spyder IDE, Jupyter Notebook, and many scientific packages");
+    cli_ui::display_info("   • Install from: https://www.anaconda.com/download");
+    
+    cli_ui::display_info("\n3. Miniforge:");
+    cli_ui::display_info("   • Like Miniconda but uses conda-forge as default channel");
+    cli_ui::display_info("   • More up-to-date packages than default channels");
+    cli_ui::display_info("   • Lightweight and community-maintained");
+    cli_ui::display_info("   • Install from: https://github.com/conda-forge/miniforge");
+    
+    cli_ui::display_info("\n4. Mambaforge:");
+    cli_ui::display_info("   • Like Miniforge but includes mamba for faster environment solving");
+    cli_ui::display_info("   • Best option for fast dependency resolution");
+    cli_ui::display_info("   • Significantly speeds up conda operations");
+    cli_ui::display_info("   • Install from: https://github.com/conda-forge/miniforge#mambaforge");
+    
+    cli_ui::display_info("\nAfter installation, ensure conda is in your PATH and restart your terminal.");
 
     // Return error with informative message
     Err(crate::error::Error::Command(
