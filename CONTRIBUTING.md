@@ -43,10 +43,10 @@ We follow a branch-based development workflow:
 1. Sync your fork with the upstream repository:
    ```
    git fetch upstream
-   git checkout main
-   git merge upstream/main
+   git checkout develop
+   git merge upstream/develop
    ```
-2. Create a new branch for your feature or fix (see [Branch Naming Conventions](#branch-naming-conventions))
+2. Create a new branch for your feature or fix from the `develop` branch (see [Branch Naming Conventions](#branch-naming-conventions))
 3. Make your changes
 4. Run tests and ensure your code builds without warnings:
    ```
@@ -56,14 +56,16 @@ We follow a branch-based development workflow:
    ```
 5. Commit your changes following the [Commit Guidelines](#commit-guidelines)
 6. Push your branch to your fork
-7. Create a Pull Request
+7. Create a Pull Request to the `develop` branch
+
+Note: The `main` branch is protected and can only be modified through approved pull requests from the `develop` branch. Direct commits to `main` are not allowed.
 
 ## Branch Naming Conventions
 
 To maintain a clean and organized codebase, we follow these branch naming conventions:
 
-- `main` - Main branch containing production-ready code
-- `develop` - Development branch containing the latest development code
+- `main` - Main branch containing production-ready code. This branch is protected and can only be updated through pull requests.
+- `develop` - Development branch containing the latest development code. All development work should start from this branch.
 - `feature/[feature-name]` - New feature branches
 - `bugfix/[issue-number]-[brief-description]` - Bug fix branches
 - `hotfix/[issue-number]-[brief-description]` - Urgent fix branches
