@@ -634,12 +634,21 @@ fn setup_conda_environment(config: &mut UserConfig, conda_available: bool) -> Re
         println!("Enter more channel numbers or type 'done' to finish selection");
     }
 
-    // 获取已添加的Conda包管理器并设置channels
+    // Get existing Conda package manager and set channels
     for pm in &mut config.package_managers {
         if let PackageManager::Conda { channels, .. } = pm {
-            *channels = selected_channels;
+            *channels = selected_channels.clone();
             break;
         }
+    }
+
+    // Add new Conda package manager if not found
+    if !config.package_managers.iter().any(|pm| matches!(pm, PackageManager::Conda { .. })) {
+        config.package_managers.push(PackageManager::Conda {
+            channels: selected_channels,
+            environment_file: "environment.yml".to_string(),
+            dev_environment_file: "environment-dev.yml".to_string(),
+        });
     }
 
     Ok(())

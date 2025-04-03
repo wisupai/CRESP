@@ -4,6 +4,7 @@ use crate::utils::cli_ui;
 use std::path::Path;
 
 pub mod conda_utils;
+pub mod cresp_config;
 pub mod matlab;
 pub mod python;
 pub mod r;
@@ -11,6 +12,7 @@ pub mod r;
 pub use matlab::create_matlab_project;
 pub use python::create_python_project;
 pub use r::create_r_project;
+pub use cresp_config::create_cresp_toml;
 
 /// Template type for project structure
 #[derive(Debug, Clone, Copy)]

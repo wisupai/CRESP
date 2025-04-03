@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added shell installation script (install.sh) for Linux and macOS platforms
 - Added PowerShell installation script (install.ps1) for Windows platform
 - Enhanced README.md with comprehensive project description and installation instructions
+- Added CRESP configuration template for better project standardization
 
 ### Changed
 - Simplified README.md by removing Quick Start section

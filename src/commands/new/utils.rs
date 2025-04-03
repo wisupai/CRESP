@@ -2,7 +2,7 @@ use crate::error::Result;
 use crate::utils::cli_ui;
 use std::path::Path;
 
-/// 创建目录及其父目录
+/// Create directories and their parent directories
 pub fn create_directories(dirs: &[&str], base_dir: &Path) -> Result<()> {
     for dir in dirs {
         std::fs::create_dir_all(base_dir.join(dir))?;
@@ -10,7 +10,7 @@ pub fn create_directories(dirs: &[&str], base_dir: &Path) -> Result<()> {
     Ok(())
 }
 
-/// 确保目录存在，如果已存在则提示覆盖
+/// Ensure directory exists, prompt to overwrite if it already exists
 pub fn ensure_directory(dir_path: &Path) -> Result<bool> {
     if dir_path.exists() {
         cli_ui::display_warning(&format!("Directory already exists: {}", dir_path.display()));
@@ -28,7 +28,7 @@ pub fn ensure_directory(dir_path: &Path) -> Result<bool> {
     }
 }
 
-/// 写入文件，如有必要创建父目录
+/// Write file, create parent directory if necessary
 pub fn write_file(path: &Path, content: &str) -> Result<()> {
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)?;

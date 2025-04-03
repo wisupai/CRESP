@@ -1,11 +1,11 @@
 use super::super::templates::conda_utils;
+use super::super::templates::conda_utils::Language;
 use super::super::utils::write_file;
 use crate::error::Result;
 use crate::utils::cli_ui;
 use crate::utils::validation::exports::sanitize_for_conda_env;
 use std::io::Write;
 use std::path::Path;
-use std::process::Command;
 use std::thread;
 use std::time::Duration;
 
@@ -46,29 +46,31 @@ pub fn create_r_project(project_dir: &Path) -> Result<()> {
         std::io::stdout().flush().ok();
         std::io::stderr().flush().ok();
 
-        // Force filesystem sync on Unix systems
-        #[cfg(unix)]
-        {
-            use std::process::Command;
-            let _ = Command::new("sync").status();
-        }
-
         // Brief pause to ensure file write operations are complete
         thread::sleep(Duration::from_millis(100));
+        // Use generic conda environment setup function to create R environment
+        cli_ui::display_info("Creating R conda environment...");
+        let channels = vec![
+            "r".to_string(), 
+            "conda-forge".to_string(), 
+            "defaults".to_string()
+        ];
+        
+        let env_created = conda_utils::create_language_conda_env(
+            project_dir,
+            &config.project_name,
+            &Language::R,
+            None,
+            Some(&config.r_version),
+            false,
+            Some(&channels),
+        )?;
 
-        // Check if environment file exists
-        let env_file_path = project_dir.join("environment.yml");
-        if !env_file_path.exists() {
-            cli_ui::display_warning(&format!(
-                "Environment file not found: {:?}. Cannot create conda environment.",
-                env_file_path
-            ));
-            return Ok(());
-        }
-
-        if conda_utils::create_conda_environment(project_dir, "environment.yml")? {
-            // Verify if R is correctly installed in the conda environment
-            verify_r_installation()?;
+        if env_created {
+            // Verify R installation
+            conda_utils::verify_language_installation(&Language::R)?;
+        } else {
+            cli_ui::display_warning("Failed to create conda environment for R. You may need to create it manually.");
         }
     }
 
@@ -109,7 +111,7 @@ fn collect_r_project_config(project_dir: &Path) -> Result<RProjectConfig> {
 
     Ok(RProjectConfig {
         r_version,
-        project_name,
+        project_name: conda_env_name,
         create_conda_env,
     })
 }
@@ -127,10 +129,45 @@ fn create_r_project_structure(project_dir: &Path, config: &RProjectConfig) -> Re
 
     cli_ui::display_info("Generating R project files...");
 
-    // Sanitize project name for conda environment
-    let conda_env_name = sanitize_for_conda_env(&config.project_name);
-
     // Create renv.lock file
+    create_renv_lock(project_dir, &config.r_version)?;
+
+    // Create environment.yml file for conda
+    // 使用通用函数生成环境文件内容，但并不立即创建环境
+    let channels = vec!["r".to_string(), "conda-forge".to_string(), "defaults".to_string()];
+    let env_content = conda_utils::generate_language_environment_yml(
+        &config.project_name,
+        &Language::R,
+        None,
+        Some(&config.r_version),
+        false,
+        Some(&channels),
+    );
+    write_file(&project_dir.join("environment.yml"), &env_content)?;
+
+    // Create DESCRIPTION file
+    create_description_file(project_dir)?;
+
+    // Create main.R file
+    create_main_r_file(project_dir)?;
+
+    // Create renv setup script
+    create_renv_setup(project_dir, &config.project_name)?;
+
+    // Create README.md
+    create_readme(project_dir, &config.project_name, &config.r_version)?;
+
+    // Create .gitignore
+    create_gitignore(project_dir)?;
+
+    // Create test files
+    create_test_files(project_dir)?;
+
+    Ok(())
+}
+
+/// Create renv.lock file
+fn create_renv_lock(project_dir: &Path, r_version: &str) -> Result<()> {
     let renv_lock = r#"{
   "R": {
     "Version": "__R_VERSION__",
@@ -158,26 +195,14 @@ fn create_r_project_structure(project_dir: &Path, config: &RProjectConfig) -> Re
 }"#;
 
     // Replace R version in renv.lock
-    let renv_lock = renv_lock.replace("__R_VERSION__", &config.r_version);
+    let renv_lock = renv_lock.replace("__R_VERSION__", r_version);
     write_file(&project_dir.join("renv.lock"), &renv_lock)?;
+    
+    Ok(())
+}
 
-    // Create conda environment.yml file
-    // Using the new function to generate environment.yml content
-    let channels = ["r", "conda-forge", "defaults"];
-    let dependencies = [
-        &format!("r-base={}", config.r_version),
-        "r-renv",
-        "r-essentials",
-        "r-devtools",
-        "r-testthat",
-    ];
-
-    let environment_yml =
-        conda_utils::generate_base_environment_yml(&conda_env_name, &channels, &dependencies);
-
-    write_file(&project_dir.join("environment.yml"), &environment_yml)?;
-
-    // Create DESCRIPTION file
+/// Create DESCRIPTION file
+fn create_description_file(project_dir: &Path) -> Result<()> {
     let description = r#"Package: myresearch
 Title: My Research Project
 Version: 0.1.0
@@ -198,8 +223,12 @@ RdMacros: lifecycle
 Config/testthat/edition: 3
 "#;
     write_file(&project_dir.join("DESCRIPTION"), description)?;
+    
+    Ok(())
+}
 
-    // Create main.R file
+/// Create main.R file
+fn create_main_r_file(project_dir: &Path) -> Result<()> {
     let main_r = r#"#' Main function
 #' 
 #' This is the main entry point for the research project.
@@ -221,8 +250,12 @@ if (interactive()) {
 }
 "#;
     write_file(&project_dir.join("R/main.R"), main_r)?;
+    
+    Ok(())
+}
 
-    // Create renv setup script (updated for conda compatibility)
+/// Create renv setup script
+fn create_renv_setup(project_dir: &Path, conda_env_name: &str) -> Result<()> {
     let renv_setup = format!(
         r#"# renv setup script
 # This script initializes renv for your project
@@ -260,8 +293,17 @@ message("R environment setup complete! R version is managed by conda, package de
         conda_env_name
     );
     write_file(&project_dir.join("setup.R"), &renv_setup)?;
+    
+    Ok(())
+}
 
-    // Create README.md with conda + renv instructions
+/// Create README.md file
+fn create_readme(project_dir: &Path, conda_env_name: &str, r_version: &str) -> Result<()> {
+    let project_name = project_dir
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("myresearch");
+        
     let readme = format!(
         r#"# {}: R Research Project
 
@@ -353,12 +395,20 @@ Run tests with:
 ```r
 testthat::test_package("{}")
 ```
+
+## R Version
+
+This project uses R version {} managed through conda.
 "#,
-        config.project_name, config.project_name, conda_env_name, config.project_name
+        project_name, project_name, conda_env_name, project_name, r_version
     );
     write_file(&project_dir.join("README.md"), &readme)?;
+    
+    Ok(())
+}
 
-    // Create .gitignore
+/// Create .gitignore file
+fn create_gitignore(project_dir: &Path) -> Result<()> {
     let gitignore = r#"# R specific
 .Rproj.user
 .Rhistory
@@ -389,7 +439,12 @@ data/**/*.xlsx
 data/**/*.rds
 "#;
     write_file(&project_dir.join(".gitignore"), gitignore)?;
+    
+    Ok(())
+}
 
+/// Create test files
+fn create_test_files(project_dir: &Path) -> Result<()> {
     // Create basic test file
     let test_file = r#"test_that("main function works", {
   # Setup test environment
@@ -410,7 +465,7 @@ library(myresearch)
 test_check("myresearch")
 "#;
     write_file(&project_dir.join("tests/testthat.R"), test_runner)?;
-
+    
     Ok(())
 }
 
@@ -453,27 +508,4 @@ fn setup_r_environment() -> Result<String> {
     );
 
     Ok(selected_version)
-}
-
-/// Verify that R is installed in the conda environment
-fn verify_r_installation() -> Result<()> {
-    cli_ui::display_info("Verifying R installation in conda environment...");
-
-    // Try to get R version from conda environment
-    let output = Command::new("Rscript").arg("--version").output();
-
-    match output {
-        Ok(output) => {
-            let version_output = String::from_utf8_lossy(&output.stderr); // R prints version to stderr
-            cli_ui::display_success(&format!(
-                "R is successfully installed: {}",
-                version_output.trim()
-            ));
-            Ok(())
-        }
-        _ => {
-            cli_ui::display_warning("Could not verify R installation. Make sure R is properly installed in your conda environment.");
-            Ok(())
-        }
-    }
 }
