@@ -1,6 +1,6 @@
 use anyhow::Result;
 use console::{style, Term};
-use dialoguer::{theme::ColorfulTheme, Confirm, FuzzySelect, Input, MultiSelect, Password, Select};
+use dialoguer::{theme::ColorfulTheme, Confirm, Input, Password, Select};
 use std::fmt::{Debug, Display};
 use std::str::FromStr;
 
@@ -90,30 +90,6 @@ where
 {
     let theme = theme();
     Ok(Select::with_theme(&theme)
-        .with_prompt(prompt)
-        .items(items)
-        .interact()?)
-}
-
-/// Prompt for fuzzy selection from a list
-pub fn prompt_fuzzy_select<T>(prompt: &str, items: &[T]) -> Result<usize>
-where
-    T: AsRef<str> + Display,
-{
-    let theme = theme();
-    Ok(FuzzySelect::with_theme(&theme)
-        .with_prompt(prompt)
-        .items(items)
-        .interact()?)
-}
-
-/// Prompt for multiple selections from a list
-pub fn prompt_multiselect<T>(prompt: &str, items: &[T]) -> Result<Vec<usize>>
-where
-    T: AsRef<str> + Display,
-{
-    let theme = theme();
-    Ok(MultiSelect::with_theme(&theme)
         .with_prompt(prompt)
         .items(items)
         .interact()?)

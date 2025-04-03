@@ -260,7 +260,7 @@ fn get_r_info() -> Result<(Option<String>, Option<RInfo>)> {
     Ok((
         system_r,
         Some(RInfo {
-            version,
+            _version: version,
             path: r_path,
             install_method,
             arch: r_arch,
@@ -271,7 +271,7 @@ fn get_r_info() -> Result<(Option<String>, Option<RInfo>)> {
 /// Struct to hold detailed R information
 #[derive(Debug, Clone)]
 struct RInfo {
-    version: String,
+    _version: String,
     path: Option<String>,
     install_method: String,
     arch: String,
@@ -857,10 +857,7 @@ fn setup_r_environment(system_r: Option<String>, r_info: Option<RInfo>, _: bool)
                                     // Verify and get installation info
                                     verify_r_installation()?;
                                 } else {
-                                    cli_ui::display_error(&format!(
-                                        "Failed to install R {}",
-                                        selected_version
-                                    ));
+                                    cli_ui::display_error("Failed to run rig command. Make sure it's properly installed and in your PATH.");
                                 }
                             } else {
                                 cli_ui::display_error("Failed to run rig command. Make sure it's properly installed and in your PATH.");

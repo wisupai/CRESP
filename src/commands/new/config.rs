@@ -956,8 +956,3 @@ pub fn check_matlab_available() -> Result<Option<String>> {
         }
     }
 }
-
-/// Get MATLAB version details
-pub fn get_matlab_version() -> Result<Option<String>> {
-    check_matlab_available()
-}
