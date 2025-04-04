@@ -25,7 +25,7 @@ pub fn create_python_project(project_dir: &PathBuf, config: &mut UserConfig) -> 
         }
     }
 
-    // Check if required package managers are intended to be used
+    // Check if user selected these package managers in configuration
     let has_uv = config
         .package_managers
         .iter()
@@ -551,13 +551,13 @@ fn get_install_command(config: &UserConfig) -> String {
                 commands.push(format!("conda env create -f {}", environment_file));
                 commands.push("conda activate $(basename $PWD)".to_string());
 
-                // 在conda环境激活后安装包管理器
+                // install package managers after conda environment is activated
                 if has_poetry {
                     commands.push("\n# Install Poetry in Conda environment".to_string());
                     commands.push("pip install poetry".to_string());
                     commands.push("poetry config virtualenvs.create false".to_string());
                     
-                    // 添加Poetry安装依赖的命令
+                    // add Poetry installation command
                     commands.push("\n# Install project dependencies using Poetry".to_string());
                     commands.push("poetry install --no-interaction".to_string());
                 }
@@ -566,13 +566,13 @@ fn get_install_command(config: &UserConfig) -> String {
                     commands.push("\n# Install UV in Conda environment".to_string());
                     commands.push("pip install uv".to_string());
                     
-                    // 如果有设置pip镜像，则添加镜像配置
+                    // if there is a pip mirror, add the mirror configuration
                     if let Some(index_url) = &config.pip_index_url {
                         commands.push(format!("\n# Configure UV to use specified mirror: {}", index_url));
                         commands.push(format!("uv pip config set global.index-url {}", index_url));
                     }
                     
-                    // 添加UV安装依赖的命令
+                    // add UV installation command
                     for package_manager in &config.package_managers {
                         if let PackageManager::Uv { requirements_file, .. } = package_manager {
                             commands.push("\n# Install dependencies using UV".to_string());
@@ -585,15 +585,15 @@ fn get_install_command(config: &UserConfig) -> String {
                     }
                 }
                 
-                // 已经处理了所有conda+其他包管理器的情况，跳出循环
+                // already processed all conda+other package managers cases, break the loop
                 break;
             }
         }
         
-        // 已经在conda环境内安装了包管理器，不需要再单独处理
+        // already installed package managers in conda environment, no need to handle it separately
         return commands.join("\n");
     } else {
-        // 非 conda 环境情况下，我们不提供任何命令，因为我们只支持 conda 环境
+        // we don't provide any commands if not using conda, because we only support conda environment
         commands.push("# This project requires Conda".to_string());
         commands.push("# Please install Conda first: https://docs.conda.io/en/latest/miniconda.html".to_string());
         return commands.join("\n");
@@ -633,13 +633,13 @@ fn get_dev_install_command(config: &UserConfig) -> String {
                 commands.push(format!("conda env create -f {}", dev_environment_file));
                 commands.push("conda activate $(basename $PWD)-dev".to_string());
 
-                // 在conda环境激活后安装包管理器
+                // install package managers after conda environment is activated
                 if has_poetry {
                     commands.push("\n# Install Poetry in Conda environment".to_string());
                     commands.push("pip install poetry".to_string());
                     commands.push("poetry config virtualenvs.create false".to_string());
                     
-                    // 添加诗歌安装的命令
+                    // add Poetry installation command
                     commands.push("\n# Install project development dependencies using Poetry".to_string());
                     commands.push("poetry install --no-interaction --with dev".to_string());
                 }
@@ -648,13 +648,13 @@ fn get_dev_install_command(config: &UserConfig) -> String {
                     commands.push("\n# Install UV in Conda environment".to_string());
                     commands.push("pip install uv".to_string());
                     
-                    // 如果有设置pip镜像，则添加镜像配置
+                    // if there is a pip mirror, add the mirror configuration
                     if let Some(index_url) = &config.pip_index_url {
                         commands.push(format!("\n# Configure UV to use specified mirror: {}", index_url));
                         commands.push(format!("uv pip config set global.index-url {}", index_url));
                     }
                     
-                    // 添加UV安装开发依赖的命令
+                    // add UV installation command
                     for package_manager in &config.package_managers {
                         if let PackageManager::Uv { dev_requirements_file, .. } = package_manager {
                             commands.push("\n# Install development dependencies using UV".to_string());
@@ -667,15 +667,15 @@ fn get_dev_install_command(config: &UserConfig) -> String {
                     }
                 }
                 
-                // 已经处理了所有conda+其他包管理器的情况，跳出循环
+                // already processed all conda+other package managers cases, break the loop
                 break;
             }
         }
         
-        // 已经在conda环境内安装了包管理器，不需要再单独处理
+        // already installed package managers in conda environment, no need to handle it separately
         return commands.join("\n");
     } else {
-        // 非 conda 环境情况下，我们不提供任何命令，因为我们只支持 conda 环境
+        // we don't provide any commands if not using conda, because we only support conda environment
         commands.push("# This project requires Conda".to_string());
         commands.push("# Please install Conda first: https://docs.conda.io/en/latest/miniconda.html".to_string());
         return commands.join("\n");
