@@ -24,3 +24,61 @@ pip install cresp
 ```bash
 cresp --help
 ```
+
+## Development Roadmap
+
+### Phase 1: Core Modules
+
+- Configuration Management (core/config.py)
+  - YAML-based configuration schema
+  - Environment validation
+  - Path management
+
+- Hash Calculation (core/hashing.py)
+  - File hash computation
+  - Directory hash computation
+  - Hash comparison utilities
+
+- Random Seed Management (core/seed.py)
+  - Global seed control
+  - Per-stage seed management
+  - Framework-specific seed handling
+
+### Phase 2: Functional Modules
+
+- Stage Management (core/stage.py)
+  - Stage definition and validation
+  - Stage dependency resolution
+  - Stage execution tracking
+
+- Validation Logic (core/validation.py)
+  - Multi-level validation strategies
+  - Output comparison
+  - Tolerance handling
+
+### Phase 3: Public API
+
+- Package Initialization (__init__.py)
+- Public Function Exposure
+- API Documentation
+
+### Phase 4: CLI Interface
+
+- Basic Command Structure
+- Subcommand Implementation
+  - init
+  - validate
+  - run
+  - report
+
+### Phase 5: Extended Features
+
+- Report Generation
+  - HTML reports
+  - Markdown reports
+  - Validation summaries
+
+- Tool Integration
+  - Pixi integration
+  - Git integration
+  - CI/CD support

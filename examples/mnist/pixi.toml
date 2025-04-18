@@ -1,0 +1,24 @@
+[workspace]
+name = "cresp-mnist-demo"
+version = "0.1.0"
+authors = ["CRESP Tester <tester@example.com>"]
+description = "A demo project using CRESP to manage an MNIST classification workflow."
+channels = ["conda-forge"]
+platforms = ["linux-64", "osx-64", "win-64", "osx-arm64"]
+
+[tasks]
+main = "python main.py"
+
+# In a real scenario, you would add dependencies here
+[dependencies]
+python = "3.12.*"
+numpy = ">=2.2.4,<3"
+matplotlib = ">=3.10.1,<4"
+pytorch = ">=2.6.0,<3"
+torchvision = ">=0.21.0,<0.22"
+seaborn = ">=0.13.2,<0.14"
+pandas = ">=2.2.3,<3"
+scikit-learn = ">=1.6.1,<2"
+pyyaml = ">=6.0.2,<7"
+pydantic = ">=2.11.3,<3"
+rich = ">=14.0.0,<15"
