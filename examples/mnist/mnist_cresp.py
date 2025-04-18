@@ -25,7 +25,6 @@ CRESP_ROOT = Path(__file__).parent.parent.parent
 sys.path.append(str(CRESP_ROOT))
 
 from cresp.core.config import Workflow, ReproductionError
-from cresp.core.seed import fix_random_seeds, fix_dataloader_seeds, seed_worker
 
 # Create output directory
 OUTPUT_DIR = Path("outputs")
@@ -79,7 +78,8 @@ def create_experiment_workflow():
         config_path="cresp.yaml",
         seed=42,
         mode="experiment",
-        skip_unchanged=True
+        skip_unchanged=True,
+        verbose_seed_setting=True  # 只在创建时显示一次种子信息
     )
 
 def create_reproduction_workflow():
@@ -96,7 +96,8 @@ def create_reproduction_workflow():
         skip_unchanged=True,
         reproduction_failure_mode="continue",  # Default: "stop" or "continue"
         save_reproduction_report=True,     # Default: True
-        reproduction_report_path="reproduction_report.md" # Default path
+        reproduction_report_path="reproduction_report.md", # Default path
+        verbose_seed_setting=True  # 只在创建时显示一次种子信息
     )
 
 # Create the workflow based on mode
@@ -114,9 +115,6 @@ else:
 )
 def download_mnist_data():
     """Download MNIST dataset using torchvision"""
-    # Fix all random seeds
-    fix_random_seeds(42)
-    
     # Define transformations
     transform = transforms.Compose([
         transforms.ToTensor(),
@@ -151,9 +149,6 @@ def download_mnist_data():
 )
 def prepare_data_loaders():
     """Create data loaders for training and testing"""
-    # Fix all random seeds
-    fix_random_seeds(42)
-    
     # Check if we already have results cached
     if "prepare_data" in _stage_results_cache:
         return _stage_results_cache["prepare_data"]
@@ -180,24 +175,23 @@ def prepare_data_loaders():
         transform=transform
     )
     
-    # Create data loaders using the seed utility
-    train_loader_kwargs = {
-        'batch_size': 64,
-        'shuffle': True
-    }
+    # Get reproducible dataloader settings from workflow
+    dataloader_kwargs = workflow.get_dataloader_kwargs()
     
-    test_loader_kwargs = {
-        'batch_size': 1000,
-        'shuffle': False
-    }
+    # Create data loaders with reproducibility settings
+    train_loader = DataLoader(
+        train_dataset, 
+        batch_size=64, 
+        shuffle=True,
+        **dataloader_kwargs
+    )
     
-    # Fix the seeds for data loaders
-    train_loader_kwargs = fix_dataloader_seeds(train_loader_kwargs, seed=42)
-    test_loader_kwargs = fix_dataloader_seeds(test_loader_kwargs, seed=42)
-    
-    # Create data loaders
-    train_loader = DataLoader(train_dataset, **train_loader_kwargs)
-    test_loader = DataLoader(test_dataset, **test_loader_kwargs)
+    test_loader = DataLoader(
+        test_dataset, 
+        batch_size=1000, 
+        shuffle=False,
+        **dataloader_kwargs
+    )
     
     print(f"Prepared data loaders with batch sizes: train={64}, test={1000}")
     
@@ -220,9 +214,8 @@ def train_model():
     # Check if we already have results cached
     if "train_model" in _stage_results_cache:
         return _stage_results_cache["train_model"]
-        
-    # Fix all random seeds
-    fix_random_seeds(42)
+    
+    # No need to set seeds manually, the workflow will do it before stage execution
     
     # Get device
     device = get_device()
@@ -264,14 +257,14 @@ def train_model():
         train_losses.append(avg_loss)
         print(f"Epoch {epoch} average loss: {avg_loss:.6f}")
     
-    # Save the model with detailed information
+    # Save the model
     model_path = OUTPUT_DIR / "mnist_model.pt"
     torch.save({
         'model_state_dict': model.state_dict(),
         'optimizer_state_dict': optimizer.state_dict(),
         'epoch': epochs,
         'train_losses': train_losses,
-        'random_seed': 42
+        'random_seed': workflow.seed
     }, model_path)
     print(f"Model saved to {model_path}")
     
@@ -295,8 +288,7 @@ def train_model():
 )
 def evaluate_model():
     """Evaluate the trained model on test data"""
-    # Fix all random seeds
-    fix_random_seeds(42)
+    # No need to set seeds manually, the workflow will do it before stage execution
     
     # Check if we already have results cached
     if "evaluate_model" in _stage_results_cache:
@@ -337,13 +329,10 @@ def evaluate_model():
     with open(accuracy_path, 'w') as f:
         f.write(f"Test accuracy: {accuracy:.2f}%\n")
         f.write(f"Test loss: {test_loss:.4f}\n")
+        f.write(f"Random seed: {workflow.seed}\n")
     
     # Plot and save learning curve
     plt.figure(figsize=(10, 6))
-    
-    # Fix matplotlib randomness
-    fix_random_seeds(42)
-    
     plt.plot(range(1, len(train_losses) + 1), train_losses, marker='o')
     plt.xlabel('Epochs')
     plt.ylabel('Training Loss')
@@ -372,9 +361,6 @@ def evaluate_model():
 )
 def generate_report():
     """Generate a simple markdown report of the experiment"""
-    # Fix all random seeds
-    fix_random_seeds(42)
-    
     # Get results from previous stages
     eval_results = evaluate_model()
     
@@ -405,8 +391,7 @@ def generate_report():
         "",
         "## Reproducibility",
         "",
-        "This experiment was conducted using CRESP for reproducibility. Random seed was set to 42.",
-        "All libraries were configured for deterministic behavior using the CRESP seed module."
+        "This experiment was conducted using CRESP for reproducibility. Random seed was set to 42."
     ]
     
     # Save report
@@ -424,9 +409,6 @@ def main():
     print(f"Mode: {workflow.mode}")
 
     try:
-        # Fix random seeds before anything else
-        fix_random_seeds(42)
-        
         # Run all workflow stages
         results = workflow.run()
 

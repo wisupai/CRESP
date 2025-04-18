@@ -36,6 +36,9 @@ if RICH_AVAILABLE:
 
 # Import hashing module from the same package or adjacent file
 from .hashing import calculate_artifact_hash, validate_artifact
+# Import seed management module
+from .seed import set_seed, get_reproducible_dataloader_kwargs
+
 class Author(BaseModel):
     """Author information model"""
     name: str
@@ -515,7 +518,9 @@ class Workflow:
                  skip_unchanged: bool = False,
                  reproduction_failure_mode: str = "stop", # New parameter: stop | continue
                  save_reproduction_report: bool = True,   # New parameter
-                 reproduction_report_path: str = "reproduction_report.md" # New parameter
+                 reproduction_report_path: str = "reproduction_report.md", # New parameter
+                 set_seed_at_init: bool = True, # New parameter to control when to set seeds
+                 verbose_seed_setting: bool = True # New parameter to control seed setting output
                  ):
         """Initialize a new workflow
         
@@ -531,6 +536,8 @@ class Workflow:
             reproduction_failure_mode: Behavior on reproduction failure ("stop" or "continue")
             save_reproduction_report: Whether to save a report in reproduction mode
             reproduction_report_path: Path for the reproduction report
+            set_seed_at_init: Whether to set random seeds at initialization
+            verbose_seed_setting: Whether to print seed setting information
         """
         # --- Assign basic attributes first --- 
         self.title = title
@@ -544,6 +551,9 @@ class Workflow:
         self.reproduction_failure_mode = reproduction_failure_mode
         self.save_reproduction_report = save_reproduction_report
         self.reproduction_report_path = reproduction_report_path
+        self._seed = seed  # Store the seed value
+        self._verbose_seed_setting = verbose_seed_setting
+        self._seed_initialized = False  # Track if we've already initialized seeds
         # --- End basic attributes assignment --- 
 
         # Ensure config is loaded *before* accessing its path or data
@@ -562,24 +572,61 @@ class Workflow:
         except Exception as e:
              raise ValueError(f"Error loading or creating configuration '{config_file_path}': {e}")
         
-        # Update metadata from arguments if creating new or mode is experiment?
-        # This seems complex as authors need conversion. Let's keep it simple for now.
-        # self.config.data["metadata"]["title"] = title 
-        # self.config.data["metadata"]["authors"] = [Author(**a).dict() for a in authors] # Needs Author model
-        # self.config.data["metadata"]["description"] = description
-        
         # Set random seed if provided OR load from config
         current_config_seed = self.config.data.get("reproduction", {}).get("random_seed")
         if seed is not None:
              if current_config_seed is not None and seed != current_config_seed and self.use_rich:
                  console.print(f"[yellow]Warning: Overriding random seed from config ({current_config_seed}) with provided seed ({seed})[/yellow]")
              self.config.set_seed(seed)
-             if self.use_rich:
+             if self.use_rich and self._verbose_seed_setting:
                   console.print(f"[dim]Using random seed: {seed}[/dim]")
+             self._seed = seed
         elif current_config_seed is not None:
-             if self.use_rich:
+             if self.use_rich and self._verbose_seed_setting:
                   console.print(f"[dim]Using random seed from config: {current_config_seed}[/dim]")
+             self._seed = current_config_seed
         # If neither provided nor in config, no seed is set
+        
+        # Set random seeds at initialization if requested
+        if set_seed_at_init and self._seed is not None:
+            self.set_random_seeds(verbose=self._verbose_seed_setting)
+            self._seed_initialized = True
+
+    def set_random_seeds(self, verbose: bool = False) -> None:
+        """Set random seeds for all detected libraries.
+        
+        This uses the seed.py module to automatically detect and set seeds
+        for all available libraries that use random number generation.
+        
+        Args:
+            verbose: Whether to print seed setting information
+        """
+        if self._seed is None:
+            if self.use_rich and verbose:
+                console.print("[yellow]Warning: No random seed set. Skipping seed initialization.[/yellow]")
+            return
+            
+        # Use the seed module to set all seeds
+        libraries = set_seed(self._seed, verbose=verbose)
+        
+        if self.use_rich and verbose:
+            console.print(f"[dim]Random seeds set to {self._seed} for: {', '.join(libraries)}[/dim]")
+
+    @property
+    def seed(self) -> Optional[int]:
+        """Get the current random seed."""
+        return self._seed
+        
+    def get_dataloader_kwargs(self) -> Dict:
+        """Get kwargs for PyTorch DataLoader to ensure reproducibility.
+        
+        Returns:
+            Dict: Keyword arguments for DataLoader
+        """
+        if self._seed is None:
+            return {}
+            
+        return get_reproducible_dataloader_kwargs(self._seed)
 
     def stage(self, id: Optional[str] = None, 
               description: Optional[str] = None,
@@ -794,6 +841,14 @@ class Workflow:
         stage_func = self._stages.get(stage_id)
         if not stage_func:
             raise ValueError(f"Stage function for ID '{stage_id}' not found in memory.")
+
+        # --- Set random seeds before stage execution ---
+        if self._seed is not None:
+            # Only show verbose output if this is the first time we're setting seeds
+            verbose = not self._seed_initialized
+            self.set_random_seeds(verbose=verbose)
+            self._seed_initialized = True
+        # ---
 
         # --- Skip Check --- 
         if stage_func.skip_if_unchanged:

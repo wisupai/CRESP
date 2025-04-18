@@ -2,208 +2,212 @@
 # cresp/core/seed.py
 
 """
-CRESP Random Seed Management Module
+CRESP seed management module
 
-This module provides utilities for setting random seeds across various
-libraries to ensure reproducibility in scientific computing workflows.
+This module provides utilities for setting random seeds consistently
+across different libraries to ensure reproducibility.
 """
 
 import os
 import random
 import importlib
-from typing import Dict, List, Optional, Set, Callable, Any, Union, Tuple
+import logging
+from typing import Dict, List, Optional, Set, Union
 
+# Create logger
+logger = logging.getLogger("cresp.seed")
 
-def _is_package_available(package_name: str) -> bool:
-    """Check if a package is available without importing it."""
+# Dictionary of known libraries that need seed setting and their setup functions
+KNOWN_LIBRARIES = {
+    "numpy": "set_numpy_seed",
+    "torch": "set_torch_seed",
+    "tensorflow": "set_tensorflow_seed",
+    "jax": "set_jax_seed",
+    "random": "set_python_random_seed",
+    "python": "set_python_env_seed",
+}
+
+def is_library_available(library_name: str) -> bool:
+    """Check if a library is available in the current environment.
+    
+    Args:
+        library_name: Name of the library to check
+        
+    Returns:
+        bool: True if the library is available, False otherwise
+    """
     try:
-        importlib.util.find_spec(package_name)
+        importlib.import_module(library_name)
         return True
-    except (ImportError, AttributeError, ModuleNotFoundError):
+    except ImportError:
         return False
 
-
-def fix_random_seeds(seed: int = 42, verbose: bool = True) -> Dict[str, bool]:
-    """Fix random seeds for all detected libraries to ensure reproducibility.
-    
-    This function attempts to fix seeds for:
-    - Python's built-in random module
-    - NumPy
-    - PyTorch (both CPU and CUDA)
-    - TensorFlow
-    - JAX
-    - Matplotlib
-    - scikit-learn
-    - And others as detected
+def set_python_random_seed(seed: int) -> None:
+    """Set Python's random module seed.
     
     Args:
-        seed (int): The random seed to use for all libraries
-        verbose (bool): Whether to print information about fixed seeds
-        
-    Returns:
-        Dict[str, bool]: Dictionary indicating which libraries had their seeds fixed
+        seed: The random seed to set
     """
-    results = {}
-    
-    # Basic Python random seed
     random.seed(seed)
-    os.environ['PYTHONHASHSEED'] = str(seed)
-    results['python'] = True
-    
-    # NumPy
-    if _is_package_available('numpy'):
-        try:
-            import numpy as np
-            np.random.seed(seed)
-            results['numpy'] = True
-        except Exception:
-            results['numpy'] = False
-    
-    # PyTorch
-    if _is_package_available('torch'):
-        try:
-            import torch
-            torch.manual_seed(seed)
-            if torch.cuda.is_available():
-                torch.cuda.manual_seed(seed)
-                torch.cuda.manual_seed_all(seed)
-                # Make CUDA operations deterministic
-                torch.backends.cudnn.deterministic = True
-                torch.backends.cudnn.benchmark = False
-            results['torch'] = True
-        except Exception:
-            results['torch'] = False
-    
-    # TensorFlow
-    if _is_package_available('tensorflow'):
-        try:
-            import tensorflow as tf
-            tf.random.set_seed(seed)
-            # Set TensorFlow to deterministic operations where possible
-            try:
-                tf.config.experimental.enable_op_determinism()
-            except:
-                pass  # Older versions may not have this
-            results['tensorflow'] = True
-        except Exception:
-            results['tensorflow'] = False
-            
-    # JAX
-    if _is_package_available('jax'):
-        try:
-            import jax
-            import jax.numpy as jnp
-            jax.config.update('jax_enable_x64', True)
-            jax.random.PRNGKey(seed)
-            results['jax'] = True
-        except Exception:
-            results['jax'] = False
-    
-    # scikit-learn
-    if _is_package_available('sklearn'):
-        try:
-            import sklearn
-            sklearn.utils.check_random_state(seed)
-            results['sklearn'] = True
-        except Exception:
-            results['sklearn'] = False
-    
-    # Matplotlib
-    if _is_package_available('matplotlib'):
-        try:
-            import matplotlib
-            matplotlib.use('Agg')  # Non-interactive backend (helps reproducibility)
-            import matplotlib.pyplot as plt
-            plt.seed = seed  # Not a standard matplotlib function, but affects some random choices
-            results['matplotlib'] = True
-        except Exception:
-            results['matplotlib'] = False
-    
-    # Scipy
-    if _is_package_available('scipy'):
-        try:
-            import scipy
-            import scipy.stats
-            try:
-                scipy.random.seed(seed)
-            except:
-                # Older versions of scipy
-                scipy.stats.seed = seed
-            results['scipy'] = True
-        except Exception:
-            results['scipy'] = False
-    
-    # Pandas
-    if _is_package_available('pandas'):
-        try:
-            import pandas as pd
-            pd.np.random.seed(seed)
-            results['pandas'] = True
-        except Exception:
-            results['pandas'] = False
-            
-    # Additional packages can be added here as needed
-    
-    if verbose:
-        success_count = sum(1 for success in results.values() if success)
-        
-        print(f"🔒 Fixed random seeds ({success_count}/{len(results)} libraries)")
-        print(f"   Seed value: {seed}")
-        
-        for lib, success in results.items():
-            status = "✅" if success else "❌"
-            print(f"   {status} {lib}")
-            
-    return results
+    logger.debug(f"Set Python random seed to {seed}")
 
-
-def fix_dataloader_seeds(dataloader_kwargs: Dict[str, Any], seed: int = 42) -> Dict[str, Any]:
-    """Create PyTorch DataLoader arguments with fixed randomness.
+def set_python_env_seed(seed: int) -> None:
+    """Set Python environment hash seed.
     
     Args:
-        dataloader_kwargs: Existing kwargs for DataLoader
-        seed: Random seed to use
-        
-    Returns:
-        Updated kwargs dict for deterministic data loading
+        seed: The random seed to set
     """
-    if not _is_package_available('torch'):
-        return dataloader_kwargs
+    os.environ['PYTHONHASHSEED'] = str(seed)
+    logger.debug(f"Set PYTHONHASHSEED to {seed}")
+
+def set_numpy_seed(seed: int) -> None:
+    """Set NumPy random seed.
     
+    Args:
+        seed: The random seed to set
+    """
+    try:
+        import numpy as np
+        np.random.seed(seed)
+        logger.debug(f"Set NumPy seed to {seed}")
+    except ImportError:
+        logger.debug("NumPy not available, skipping seed setting")
+
+def set_torch_seed(seed: int) -> None:
+    """Set PyTorch random seeds.
+    
+    Args:
+        seed: The random seed to set
+    """
     try:
         import torch
+        torch.manual_seed(seed)
         
-        # Create a copy to avoid modifying the original
-        kwargs = dataloader_kwargs.copy()
-        
-        # Add deterministic generator for shuffling
-        if kwargs.get('shuffle', False):
-            generator = torch.Generator()
-            generator.manual_seed(seed)
-            kwargs['generator'] = generator
-        
-        # Set worker settings for determinism
-        kwargs.setdefault('num_workers', 0)  # Single process is most deterministic
-        kwargs.setdefault('drop_last', False)  # Don't drop the last batch
-        kwargs.setdefault('worker_init_fn', lambda worker_id: random.seed(seed + worker_id))
-        
-        return kwargs
-    except Exception:
-        return dataloader_kwargs
+        # Set CUDA seeds if available
+        if torch.cuda.is_available():
+            torch.cuda.manual_seed(seed)
+            torch.cuda.manual_seed_all(seed)  # For multi-GPU
+            
+            # Make CUDA deterministic
+            torch.backends.cudnn.deterministic = True
+            torch.backends.cudnn.benchmark = False
+            logger.debug(f"Set PyTorch CUDA seeds to {seed}")
+        logger.debug(f"Set PyTorch seed to {seed}")
+    except ImportError:
+        logger.debug("PyTorch not available, skipping seed setting")
 
-
-def seed_worker(worker_id: int) -> None:
-    """Worker initialization function to ensure DataLoader workers use different random seeds.
-    
-    This should be passed to the worker_init_fn argument of DataLoader.
+def set_tensorflow_seed(seed: int) -> None:
+    """Set TensorFlow random seeds.
     
     Args:
-        worker_id: The ID of the worker
+        seed: The random seed to set
     """
-    # Each worker should have a different but deterministic seed
-    worker_seed = torch.initial_seed() % 2**32
-    random.seed(worker_seed)
+    try:
+        import tensorflow as tf
+        tf.random.set_seed(seed)
+        logger.debug(f"Set TensorFlow seed to {seed}")
+    except ImportError:
+        logger.debug("TensorFlow not available, skipping seed setting")
+
+def set_jax_seed(seed: int) -> None:
+    """Set JAX random seeds.
     
-    if _is_package_available('numpy'):
-        import numpy as np
-        np.random.seed(worker_seed)
+    Args:
+        seed: The random seed to set
+    """
+    try:
+        import jax
+        import jax.numpy as jnp
+        jax.random.PRNGKey(seed)
+        logger.debug(f"Set JAX seed to {seed}")
+    except ImportError:
+        logger.debug("JAX not available, skipping seed setting")
+
+def detect_libraries() -> List[str]:
+    """Detect which random number libraries are available in the environment.
+    
+    Returns:
+        List[str]: List of available library names
+    """
+    available_libs = []
+    
+    # Check standard libraries
+    for lib_name in KNOWN_LIBRARIES.keys():
+        if lib_name in ("random", "python"):
+            available_libs.append(lib_name)
+            continue
+            
+        if is_library_available(lib_name):
+            available_libs.append(lib_name)
+    
+    return available_libs
+
+def set_seed(seed: int, libraries: Optional[Union[List[str], str]] = None, verbose: bool = False) -> None:
+    """Set random seed for all detected libraries or specified libraries.
+    
+    This function automatically detects available libraries and sets
+    their random seeds. It can also be limited to specific libraries.
+    
+    Args:
+        seed: The random seed to set
+        libraries: Optional list of library names or single library name
+                  If None, automatically detect and set all available libraries
+        verbose: Whether to print information about seed setting
+    """
+    if libraries is None:
+        # Automatically detect libraries
+        libs_to_set = detect_libraries()
+    elif isinstance(libraries, str):
+        libs_to_set = [libraries]
+    else:
+        libs_to_set = libraries
+    
+    # Always set Python's random and environment
+    if "random" not in libs_to_set:
+        libs_to_set.append("random")
+    if "python" not in libs_to_set:
+        libs_to_set.append("python")
+    
+    # Set seeds for all detected/specified libraries
+    for lib_name in libs_to_set:
+        if lib_name in KNOWN_LIBRARIES:
+            # Get the function name for this library
+            func_name = KNOWN_LIBRARIES[lib_name]
+            
+            # Get the function object
+            func = globals().get(func_name)
+            
+            if func:
+                try:
+                    func(seed)
+                except Exception as e:
+                    logger.warning(f"Failed to set seed for {lib_name}: {e}")
+        else:
+            logger.warning(f"Unknown library: {lib_name}")
+    
+    if verbose:
+        logger.info(f"🎲 Random seeds set to {seed} for: {', '.join(libs_to_set)}")
+    return libs_to_set
+
+def get_reproducible_dataloader_kwargs(seed: int) -> Dict:
+    """Get kwargs for PyTorch DataLoader to ensure reproducibility.
+    
+    Args:
+        seed: The random seed to set
+        
+    Returns:
+        Dict: Keyword arguments for DataLoader
+    """
+    try:
+        import torch
+        generator = torch.Generator()
+        generator.manual_seed(seed)
+        
+        return {
+            "generator": generator,
+            "num_workers": 0,  # Use single process for determinism
+            "drop_last": False,  # Don't drop last batch for reproducibility
+            "worker_init_fn": lambda worker_id: set_seed(seed + worker_id)
+        }
+    except ImportError:
+        return {}
