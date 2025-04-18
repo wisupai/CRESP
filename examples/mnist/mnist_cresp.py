@@ -19,16 +19,23 @@ from torchvision import datasets, transforms
 import numpy as np
 import matplotlib.pyplot as plt
 from pathlib import Path
+import time
 
 CRESP_ROOT = Path(__file__).parent.parent.parent
 sys.path.append(str(CRESP_ROOT))
 
-# Import CRESP Workflow
-from cresp.core.config import Workflow
+from cresp.core.config import Workflow, ReproductionError
 
 # Create output directory
 OUTPUT_DIR = Path("outputs")
 OUTPUT_DIR.mkdir(exist_ok=True)
+
+# Create data directory
+DATA_DIR = Path("data")
+DATA_DIR.mkdir(exist_ok=True)
+
+# Global cache for stage results to avoid recomputation
+_stage_results_cache = {}
 
 # Define a simple CNN model for MNIST
 class SimpleCNN(nn.Module):
@@ -47,22 +54,49 @@ class SimpleCNN(nn.Module):
         x = self.fc2(x)
         return F.log_softmax(x, dim=1)
 
-# Create a CRESP workflow
-workflow = Workflow(
-    title="MNIST Classification with PyTorch",
-    authors=[
-        {"name": "John Doe", "affiliation": "Example University", "email": "john.doe@example.edu"}
-    ],
-    description="A simple example of reproducible MNIST classification using CRESP",
-    config_path="mnist_cresp.yaml",
-    seed=42
-)
+def create_experiment_workflow():
+    """Create a workflow in experiment mode to record outputs"""
+    return Workflow(
+        title="MNIST Classification with PyTorch",
+        authors=[
+            {"name": "John Doe", "affiliation": "Example University", "email": "john.doe@example.edu"}
+        ],
+        description="A simple example of reproducible MNIST classification using CRESP",
+        config_path="cresp.yaml",
+        seed=42,
+        mode="experiment",
+        skip_unchanged=True
+    )
 
-# Define workflow stages using decorators
+def create_reproduction_workflow():
+    """Create a workflow in reproduction mode to validate outputs"""
+    return Workflow(
+        title="MNIST Classification with PyTorch",
+        authors=[
+            {"name": "John Doe", "affiliation": "Example University", "email": "john.doe@example.edu"}
+        ],
+        description="A simple example of reproducible MNIST classification using CRESP",
+        config_path="cresp.yaml",
+        seed=42,
+        mode="reproduction",
+        skip_unchanged=True,
+        reproduction_failure_mode="continue",  # Default: "stop" or "continue"
+        save_reproduction_report=True,     # Default: True
+        reproduction_report_path="reproduction_report.md" # Default path
+    )
+
+# Create the workflow based on mode
+if len(sys.argv) > 1 and sys.argv[1] == "reproduction":
+    workflow = create_reproduction_workflow()
+else:
+    workflow = create_experiment_workflow()
+
 @workflow.stage(
     id="download_data",
     description="Download MNIST dataset",
-    outputs=["data/MNIST"]
+    outputs=["data"], 
+    reproduction_mode="strict"
+    # skip_if_unchanged uses workflow default (True)
 )
 def download_mnist_data():
     """Download MNIST dataset using torchvision"""
@@ -94,10 +128,16 @@ def download_mnist_data():
 @workflow.stage(
     id="prepare_data",
     description="Prepare data loaders",
-    dependencies=["download_data"]
+    dependencies=["download_data"],
+    reproduction_mode="strict"
+    # skip_if_unchanged uses workflow default (True)
 )
 def prepare_data_loaders():
     """Create data loaders for training and testing"""
+    # Check if we already have results cached
+    if "prepare_data" in _stage_results_cache:
+        return _stage_results_cache["prepare_data"]
+        
     # Define transformations
     transform = transforms.Compose([
         transforms.ToTensor(),
@@ -125,16 +165,27 @@ def prepare_data_loaders():
     test_loader = DataLoader(test_dataset, batch_size=1000, shuffle=False)
     
     print(f"Prepared data loaders with batch sizes: train={64}, test={1000}")
-    return {"train_loader": train_loader, "test_loader": test_loader}
+    
+    # Cache and return results
+    result = {"train_loader": train_loader, "test_loader": test_loader}
+    _stage_results_cache["prepare_data"] = result
+    return result
 
 @workflow.stage(
     id="train_model",
     description="Train MNIST model",
     dependencies=["prepare_data"],
-    outputs=["outputs/mnist_model.pt"]
+    outputs=["outputs/mnist_model.pt"],
+    reproduction_mode="standard",
+    tolerance_relative=1e-5,
+    skip_if_unchanged=False # Override: Always rerun training
 )
 def train_model():
     """Train a simple CNN model on MNIST"""
+    # Check if we already have results cached
+    if "train_model" in _stage_results_cache:
+        return _stage_results_cache["train_model"]
+        
     # Set random seeds for reproducibility
     torch.manual_seed(42)
     np.random.seed(42)
@@ -149,7 +200,7 @@ def train_model():
     optimizer = optim.Adam(model.parameters(), lr=0.001)
     
     # Training loop
-    epochs = 5
+    epochs = 1
     train_losses = []
     
     for epoch in range(1, epochs + 1):
@@ -178,20 +229,33 @@ def train_model():
     torch.save(model.state_dict(), model_path)
     print(f"Model saved to {model_path}")
     
-    # Return the trained model and losses
-    return {"model": model, "train_losses": train_losses}
+    # Cache and return results
+    result = {"model": model, "train_losses": train_losses}
+    _stage_results_cache["train_model"] = result
+    return result
 
 @workflow.stage(
     id="evaluate_model",
     description="Evaluate trained model",
     dependencies=["train_model"],
-    outputs=["outputs/accuracy.txt", "outputs/loss_curve.png"]
+    outputs=[
+        {
+            "path": "outputs/accuracy.txt",
+            "reproduction": { "mode": "standard", "tolerance_absolute": 0.5 }
+        },
+        "outputs/loss_curve.png"
+    ]
+    # skip_if_unchanged uses workflow default (True)
 )
 def evaluate_model():
     """Evaluate the trained model on test data"""
+    # Check if we already have results cached
+    if "evaluate_model" in _stage_results_cache:
+        return _stage_results_cache["evaluate_model"]
+        
     # Get data and model from previous stages
     data = prepare_data_loaders()
-    train_result = train_model()
+    train_result = _stage_results_cache.get("train_model") or train_model()
     
     test_loader = data["test_loader"]
     model = train_result["model"]
@@ -235,13 +299,19 @@ def evaluate_model():
     
     print(f"Evaluation results saved to {accuracy_path} and {loss_curve_path}")
     
-    return {"accuracy": accuracy, "test_loss": test_loss}
+    # Cache and return results
+    result = {"accuracy": accuracy, "test_loss": test_loss}
+    _stage_results_cache["evaluate_model"] = result
+    return result
 
 @workflow.stage(
     id="generate_report",
     description="Generate experiment report",
     dependencies=["evaluate_model"],
-    outputs=["outputs/report.md"]
+    outputs=["outputs/report.md"],
+    reproduction_mode="tolerant",
+    similarity_threshold=0.9
+    # skip_if_unchanged uses workflow default (True)
 )
 def generate_report():
     """Generate a simple markdown report of the experiment"""
@@ -290,16 +360,45 @@ def generate_report():
 def main():
     """Run the MNIST workflow"""
     print("Starting MNIST workflow with CRESP...")
-    
-    # Run all workflow stages
-    results = workflow.run()
-    
-    # Save workflow configuration
-    workflow.save_config()
-    
-    print("\nWorkflow completed successfully!")
-    print(f"Final accuracy: {results['evaluate_model']['accuracy']:.2f}%")
-    print(f"Report generated at: {results['generate_report']['report_path']}")
+    print(f"Mode: {workflow.mode}")
+
+    try:
+        # Run all workflow stages
+        results = workflow.run()
+
+        # Save workflow configuration (only strictly necessary in experiment mode, but safe to do always)
+        workflow.save_config()
+
+        # Success messages depend on the mode and if failures occurred (if mode=continue)
+        print("\nWorkflow run finished.")
+        if workflow.mode == "experiment":
+            print("Experiment results and hashes have been recorded.")
+        elif results: # Check if results is not None (it might be if error occurred early)
+            print("Reproduction validation completed.")
+            # Check if results exist for key stages before trying to print them
+            if 'evaluate_model' in results and results['evaluate_model']:
+                # Ensure accuracy is treated as float before formatting
+                accuracy = results['evaluate_model'].get('accuracy')
+                if accuracy is not None:
+                    print(f"Final accuracy (from run): {float(accuracy):.2f}%")
+                else:
+                     print("Final accuracy (from run): N/A")
+            if 'generate_report' in results and results['generate_report']:
+                print(f"Report generated at (from run): {results['generate_report'].get('report_path', 'N/A')}")
+        # If failure mode was 'continue', a warning is printed inside workflow.run()
+
+    except ReproductionError as e:
+        print(f"\n[bold red]Workflow halted due to reproduction failure:[/bold red]")
+        print(f"[red]{e}[/red]")
+        # Optionally save config even on failure? Maybe not.
+        sys.exit(1) # Exit with error code
+
+    except Exception as e:
+        print(f"\n[bold red]An unexpected error occurred during workflow execution:[/bold red]")
+        print(f"[red]{e}[/red]")
+        import traceback
+        traceback.print_exc()
+        sys.exit(1) # Exit with error code
 
 if __name__ == "__main__":
     main()

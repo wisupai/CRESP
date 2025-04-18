@@ -34,6 +34,8 @@ except ImportError:
 if RICH_AVAILABLE:
     console = Console()
 
+# Import hashing module from the same package or adjacent file
+from .hashing import calculate_artifact_hash, validate_artifact
 class Author(BaseModel):
     """Author information model"""
     name: str
@@ -419,7 +421,12 @@ class StageFunction:
     def __init__(self, func: Callable, stage_id: str, description: Optional[str] = None, 
                  outputs: Optional[List[Union[str, Dict[str, Any]]]] = None,
                  dependencies: Optional[List[str]] = None,
-                 parameters: Optional[Dict[str, Any]] = None):
+                 parameters: Optional[Dict[str, Any]] = None,
+                 reproduction_mode: str = "strict",
+                 tolerance_absolute: Optional[float] = None,
+                 tolerance_relative: Optional[float] = None,
+                 similarity_threshold: Optional[float] = None,
+                 skip_if_unchanged: bool = False):
         """Initialize a stage function
         
         Args:
@@ -429,6 +436,11 @@ class StageFunction:
             outputs: List of output artifacts or paths
             dependencies: List of stage IDs that this stage depends on
             parameters: Additional parameters for stage execution
+            reproduction_mode: Reproduction mode (strict, standard, tolerant)
+            tolerance_absolute: Absolute tolerance for numeric comparisons
+            tolerance_relative: Relative tolerance for numeric comparisons
+            similarity_threshold: Similarity threshold for content comparison
+            skip_if_unchanged: Whether to skip this stage if outputs are unchanged
         """
         self.func = func
         self.stage_id = stage_id
@@ -437,6 +449,11 @@ class StageFunction:
         self.dependencies = dependencies or []
         self.parameters = parameters or {}
         self.code_handler = f"{func.__module__}.{func.__qualname__}"
+        self.reproduction_mode = reproduction_mode
+        self.tolerance_absolute = tolerance_absolute
+        self.tolerance_relative = tolerance_relative
+        self.similarity_threshold = similarity_threshold
+        self.skip_if_unchanged = skip_if_unchanged
         
         # Preserve function metadata
         functools.update_wrapper(self, func)
@@ -451,10 +468,27 @@ class StageFunction:
         artifacts = []
         for output in self.outputs:
             if isinstance(output, str):
-                artifacts.append({"path": output})
+                artifacts.append({
+                    "path": output,
+                    "reproduction": {
+                        "mode": self.reproduction_mode,
+                        "tolerance_absolute": self.tolerance_absolute,
+                        "tolerance_relative": self.tolerance_relative,
+                        "similarity_threshold": self.similarity_threshold
+                    }
+                })
             else:
-                artifacts.append(output)
-                
+                # If output is already a dict, ensure it has reproduction config
+                output_copy = output.copy()
+                if "reproduction" not in output_copy:
+                    output_copy["reproduction"] = {
+                        "mode": self.reproduction_mode,
+                        "tolerance_absolute": self.tolerance_absolute,
+                        "tolerance_relative": self.tolerance_relative,
+                        "similarity_threshold": self.similarity_threshold
+                    }
+                artifacts.append(output_copy)
+        
         return {
             "id": self.stage_id,
             "description": self.description,
@@ -465,6 +499,10 @@ class StageFunction:
         }
 
 
+# Define custom exception for reproduction failures
+class ReproductionError(Exception):
+    pass
+
 class Workflow:
     """Workflow class for managing experiment stages and execution"""
     
@@ -472,7 +510,13 @@ class Workflow:
                  description: Optional[str] = None, 
                  config_path: str = "cresp.yaml",
                  seed: Optional[int] = None,
-                 use_rich: bool = True):
+                 use_rich: bool = True,
+                 mode: str = "experiment",
+                 skip_unchanged: bool = False,
+                 reproduction_failure_mode: str = "stop", # New parameter: stop | continue
+                 save_reproduction_report: bool = True,   # New parameter
+                 reproduction_report_path: str = "reproduction_report.md" # New parameter
+                 ):
         """Initialize a new workflow
         
         Args:
@@ -482,22 +526,71 @@ class Workflow:
             config_path: Path to save the configuration
             seed: Optional random seed for reproducibility
             use_rich: Enable rich visualizations (if available)
+            mode: Workflow mode ("experiment" or "reproduction")
+            skip_unchanged: If True, skip stage execution if outputs match stored hashes
+            reproduction_failure_mode: Behavior on reproduction failure ("stop" or "continue")
+            save_reproduction_report: Whether to save a report in reproduction mode
+            reproduction_report_path: Path for the reproduction report
         """
-        self.config = create_workflow_config(title, authors, description, config_path)
-        self._stages: Dict[str, StageFunction] = {}
-        self._executed_stages: Set[str] = set()
+        # --- Assign basic attributes first --- 
         self.title = title
         self.use_rich = use_rich and RICH_AVAILABLE
+        self.mode = mode
+        self.skip_unchanged = skip_unchanged
+        self._stages: Dict[str, StageFunction] = {}
+        self._executed_stages: Set[str] = set()
+        self._validation_results: List[Dict[str, Any]] = [] # Initialize validation results store
+        config_file_path = Path(config_path)
+        self.reproduction_failure_mode = reproduction_failure_mode
+        self.save_reproduction_report = save_reproduction_report
+        self.reproduction_report_path = reproduction_report_path
+        # --- End basic attributes assignment --- 
+
+        # Ensure config is loaded *before* accessing its path or data
+        try:
+            self.config = CrespConfig.load(config_file_path)
+            if self.use_rich:
+                console.print(f"[dim]Loaded existing configuration from [bold]{self.config.path}[/bold][/dim]")
+            # TODO: Maybe update metadata from config if needed?
+        except FileNotFoundError:
+            if mode == "reproduction":
+                 raise FileNotFoundError(f"Configuration file '{config_file_path}' not found, required for reproduction mode.")
+            # Create new config only if not found and in experiment mode
+            self.config = create_workflow_config(title, authors, description, config_file_path)
+            if self.use_rich:
+                 console.print(f"[dim]Creating new configuration at [bold]{self.config.path}[/bold][/dim]")
+        except Exception as e:
+             raise ValueError(f"Error loading or creating configuration '{config_file_path}': {e}")
         
-        # Set random seed if provided
+        # Update metadata from arguments if creating new or mode is experiment?
+        # This seems complex as authors need conversion. Let's keep it simple for now.
+        # self.config.data["metadata"]["title"] = title 
+        # self.config.data["metadata"]["authors"] = [Author(**a).dict() for a in authors] # Needs Author model
+        # self.config.data["metadata"]["description"] = description
+        
+        # Set random seed if provided OR load from config
+        current_config_seed = self.config.data.get("reproduction", {}).get("random_seed")
         if seed is not None:
-            self.config.set_seed(seed)
-    
+             if current_config_seed is not None and seed != current_config_seed and self.use_rich:
+                 console.print(f"[yellow]Warning: Overriding random seed from config ({current_config_seed}) with provided seed ({seed})[/yellow]")
+             self.config.set_seed(seed)
+             if self.use_rich:
+                  console.print(f"[dim]Using random seed: {seed}[/dim]")
+        elif current_config_seed is not None:
+             if self.use_rich:
+                  console.print(f"[dim]Using random seed from config: {current_config_seed}[/dim]")
+        # If neither provided nor in config, no seed is set
+
     def stage(self, id: Optional[str] = None, 
               description: Optional[str] = None,
               outputs: Optional[List[Union[str, Dict[str, Any]]]] = None,
               dependencies: Optional[List[str]] = None,
-              parameters: Optional[Dict[str, Any]] = None) -> Callable[[Callable[..., R]], StageFunction]:
+              parameters: Optional[Dict[str, Any]] = None,
+              reproduction_mode: str = "strict",
+              tolerance_absolute: Optional[float] = None,
+              tolerance_relative: Optional[float] = None,
+              similarity_threshold: Optional[float] = None,
+              skip_if_unchanged: Optional[bool] = None) -> Callable[[Callable[..., R]], StageFunction]:
         """Decorator for registering a stage function
         
         Args:
@@ -506,6 +599,12 @@ class Workflow:
             outputs: List of output artifacts
             dependencies: List of stage dependencies
             parameters: Additional stage parameters
+            reproduction_mode: Reproduction mode (strict, standard, tolerant)
+            tolerance_absolute: Absolute tolerance for numeric comparisons
+            tolerance_relative: Relative tolerance for numeric comparisons
+            similarity_threshold: Similarity threshold for content comparison
+            skip_if_unchanged: Override workflow default for skipping unchanged stages.
+                               If None, uses the workflow's default skip_unchanged setting.
             
         Returns:
             Decorated function
@@ -514,6 +613,10 @@ class Workflow:
             # Use function name as ID if not provided
             stage_id = id or func.__name__
             
+            # Determine the skip setting for this stage
+            # Use stage-specific value if provided, otherwise use workflow default
+            final_skip_setting = self.skip_unchanged if skip_if_unchanged is None else skip_if_unchanged
+            
             # Create stage function
             stage_func = StageFunction(
                 func=func,
@@ -521,7 +624,12 @@ class Workflow:
                 description=description,
                 outputs=outputs,
                 dependencies=dependencies,
-                parameters=parameters
+                parameters=parameters,
+                reproduction_mode=reproduction_mode,
+                tolerance_absolute=tolerance_absolute,
+                tolerance_relative=tolerance_relative,
+                similarity_threshold=similarity_threshold,
+                skip_if_unchanged=final_skip_setting
             )
             
             # Register stage
@@ -538,33 +646,388 @@ class Workflow:
             stage_func: Stage function to register
             
         Raises:
-            ValueError: If stage ID already exists
+            ValueError: If stage ID already registered *in memory* for this workflow instance
         """
         if stage_func.stage_id in self._stages:
-            raise ValueError(f"Stage ID already registered: {stage_func.stage_id}")
+            # This check prevents defining the same stage function twice in the Python script
+            raise ValueError(f"Stage ID '{stage_func.stage_id}' already registered for this workflow instance.")
         
         self._stages[stage_func.stage_id] = stage_func
         
-        # Add to configuration
-        stage_config = stage_func.to_stage_config()
-        self.config.add_stage(stage_config, defer_save=True)
+        # Check if stage already exists in the loaded config
+        if self.config.get_stage(stage_func.stage_id) is None:
+            # Only add to config object if it's not already there
+            stage_config = stage_func.to_stage_config()
+            try:
+                self.config.add_stage(stage_config, defer_save=True)
+                if self.use_rich:
+                     # Optional: Log when a new stage is added to config
+                     # console.print(f"[dim]Added new stage '{stage_func.stage_id}' to configuration.[/dim]")
+                     pass
+            except ValueError as e:
+                 # This might happen if add_stage has internal checks beyond get_stage 
+                 # (though currently it doesn't seem to). Log warning if it occurs.
+                 if self.use_rich:
+                      console.print(f"[yellow]Warning: Could not add stage '{stage_func.stage_id}' to config object: {e}[/yellow]")
+        # else:
+             # Stage already exists in config, no need to add again.
+             # if self.use_rich:
+                  # Optional: Log that we are using the existing config for this stage
+                  # console.print(f"[dim]Stage '{stage_func.stage_id}' already exists in configuration.[/dim]")
+             # pass
     
-    def run(self, stage_id: Optional[str] = None) -> Dict[str, Any]:
-        """Run workflow stages
+    def _check_outputs_unchanged(self, stage_id: str) -> bool:
+        """Check if stage outputs exist and match stored hashes.
         
         Args:
-            stage_id: Specific stage to run, or all stages if None
+            stage_id: The ID of the stage to check.
             
         Returns:
-            Results from executing stages
-            
-        Raises:
-            ValueError: If specified stage does not exist or if dependencies are not satisfied
+            True if all outputs exist and match hashes, False otherwise.
         """
-        results = {}
+        stage_config = self.config.get_stage(stage_id)
+        registered_stage = self._stages.get(stage_id)
+
+        if not registered_stage or not stage_config or "outputs" not in stage_config:
+            return False 
+
+        declared_outputs = registered_stage.outputs
+        if not declared_outputs:
+             return True 
+
+        expected_files_config = {}
+        for cfg_out in stage_config.get("outputs", []):
+            if "path" in cfg_out and "hash" in cfg_out:
+                expected_files_config[cfg_out["path"]] = cfg_out
+            
+        if not expected_files_config:
+             return False
+
+        all_match = True
+        files_checked_count = 0
+
+        for output_decl in declared_outputs:
+            # --- Get default reproduction settings for this stage --- 
+            default_repro_mode = registered_stage.reproduction_mode
+            default_tol_abs = registered_stage.tolerance_absolute
+            default_tol_rel = registered_stage.tolerance_relative
+            default_sim_thresh = registered_stage.similarity_threshold
+            # --- 
+            
+            output_specific_repro_config = {}
+            if isinstance(output_decl, str):
+                path_str = output_decl
+            else:
+                path_str = output_decl["path"]
+                # Get output-specific overrides if they exist
+                output_specific_repro_config = output_decl.get("reproduction", {})
+            
+            # Determine the reproduction settings to use for files matching this declaration
+            current_repro_mode = output_specific_repro_config.get("mode", default_repro_mode)
+            current_tol_abs = output_specific_repro_config.get("tolerance_absolute", default_tol_abs)
+            current_tol_rel = output_specific_repro_config.get("tolerance_relative", default_tol_rel)
+            current_sim_thresh = output_specific_repro_config.get("similarity_threshold", default_sim_thresh)
+            
+            path = Path(path_str)
+            
+            files_to_validate = {}
+            if path_str in expected_files_config: 
+                 files_to_validate[path_str] = expected_files_config[path_str]
+                 if not Path(path_str).exists():
+                     return False
+            else: 
+                 found_prefix_match = False
+                 if not path.exists() or not path.is_dir(): 
+                      return False
+                 for expected_path, expected_cfg in expected_files_config.items():
+                      norm_expected = os.path.normpath(expected_path)
+                      norm_declared = os.path.normpath(path_str)
+                      if norm_expected.startswith(norm_declared + os.sep):
+                           files_to_validate[expected_path] = expected_cfg
+                           found_prefix_match = True
+                           if not Path(expected_path).exists():
+                                return False
+                 if not found_prefix_match:
+                      return False
+            
+            if not files_to_validate:
+                 return False
+
+            for file_path_str, file_cfg in files_to_validate.items():
+                files_checked_count += 1
+                # Use file-specific config > output-specific config > stage default
+                file_specific_repro_config = file_cfg.get("reproduction", {})
+                final_repro_mode = file_specific_repro_config.get("mode", current_repro_mode)
+                final_tol_abs = file_specific_repro_config.get("tolerance_absolute", current_tol_abs)
+                final_tol_rel = file_specific_repro_config.get("tolerance_relative", current_tol_rel)
+                final_sim_thresh = file_specific_repro_config.get("similarity_threshold", current_sim_thresh)
+                
+                success, _ = validate_artifact(
+                    file_path_str, 
+                    file_cfg["hash"],
+                    validation_type=final_repro_mode,
+                    tolerance_absolute=final_tol_abs,
+                    tolerance_relative=final_tol_rel,
+                    similarity_threshold=final_sim_thresh
+                )
+                
+                if not success:
+                    all_match = False
+                    break 
+            
+            if not all_match:
+                 break 
+
+        return all_match and files_checked_count > 0
+
+    def _run_stage(self, stage_id: str) -> Tuple[Any, List[Tuple[str, str]], Optional[bool]]:
+        """Run a specific stage and return its result, calculated hashes, and validation status.
+        Skips execution if the stage's skip_if_unchanged is True and outputs match stored hashes.
         
+        Returns:
+            Tuple containing:
+                - stage execution result (or None if skipped)
+                - list of (path, hash) tuples (empty if skipped or not experiment mode)
+                - validation status (bool or None if skipped or not reproduction mode)
+        """
+        stage_validation_passed: Optional[bool] = None # Default to None
+        stage_func = self._stages.get(stage_id)
+        if not stage_func:
+            raise ValueError(f"Stage function for ID '{stage_id}' not found in memory.")
+
+        # --- Skip Check --- 
+        if stage_func.skip_if_unchanged:
+             if self._check_outputs_unchanged(stage_id):
+                  if self.use_rich:
+                       console.print(f"[green]✓ Skipping stage [bold]{stage_id}[/bold] (outputs unchanged)[/green]")
+                  self._executed_stages.add(stage_id) 
+                  return None, [], None # Return None result, empty hashes, None validation status
+        # --- End Skip Check --- 
+
+        if stage_id in self._executed_stages:
+            return None, [], None
+        
+        calculated_hashes = []
+        result = None
+        
+        # Check and run dependencies
+        for dep_id in stage_func.dependencies:
+            if dep_id not in self._executed_stages:
+                 # We might need to handle failure propagation from dependencies later
+                _, _, dep_validation_status = self._run_stage(dep_id)
+                # If a dependency failed reproduction and mode is 'stop', execution would have already halted.
+        
+        # Execute stage function
         if self.use_rich:
-            # Print workflow header
+            # Temporarily disable the progress display to allow normal print statements to show
+            global progress
+            progress_active = 'progress' in globals() and progress is not None
+            if progress_active:
+                try:
+                    progress.stop()
+                except Exception:
+                     progress_active = False # Handle case where progress might be finished
+            
+            console.print(f"[bold blue]Executing {stage_id}...[/bold blue]")
+            start_time = time.time()
+            result = stage_func()
+            end_time = time.time()
+            execution_time = end_time - start_time
+            
+            # Resume progress display if it was active
+            if progress_active:
+                try:
+                    progress.start()
+                except Exception:
+                    pass # Ignore errors if progress already finished
+                
+            console.print(f"[dim]Stage completed in {execution_time:.2f}s[/dim]")
+        else:
+            result = stage_func()
+        
+        self._executed_stages.add(stage_id)
+        
+        # Handle outputs based on mode
+        if stage_func.outputs:
+            if self.mode == "experiment":
+                calculated_hashes = self._update_output_hashes(stage_id, stage_func.outputs)
+            elif self.mode == "reproduction":
+                # Validate outputs and get stage status
+                stage_validation_passed = self._validate_outputs(stage_id)
+        
+        return result, calculated_hashes, stage_validation_passed
+
+    def _update_output_hashes(self, stage_id: str, outputs: List[Union[str, Dict[str, Any]]]) -> List[Tuple[str, str]]:
+        """Calculate and store hashes for stage outputs.
+        If an output path is a directory, hashes for all files within it are calculated.
+        
+        Args:
+            stage_id: Stage identifier
+            outputs: List of output artifacts declared for the stage
+        
+        Returns:
+            List of (path, hash) tuples for all files hashed.
+        """
+        hashes_calculated = []
+        for output_decl in outputs:
+            if isinstance(output_decl, str):
+                path_str = output_decl
+                hash_method = "sha256"
+            else:
+                path_str = output_decl["path"]
+                hash_method = output_decl.get("hash_method", "sha256")
+            
+            path = Path(path_str)
+            
+            try:
+                if not path.exists():
+                     if self.use_rich:
+                        console.print(f"[yellow]Warning: Output path does not exist: {path_str}[/yellow]")
+                     continue
+
+                if path.is_file():
+                    # Handle single file
+                    hash_value = calculate_artifact_hash(path, method=hash_method)
+                    self.config.update_hash(stage_id, path_str, hash_value, hash_method)
+                    hashes_calculated.append((path_str, hash_value))
+                    if self.use_rich:
+                        # This message is now redundant as we print summary later
+                        # console.print(f"[dim]Hashed file [bold]{path_str}[/bold]: {hash_value[:8]}...[/dim]")
+                        pass 
+                elif path.is_dir():
+                    # Handle directory - hash all files within
+                    if self.use_rich:
+                         console.print(f"[dim]Hashing contents of directory [bold]{path_str}[/bold]...[/dim]")
+                    files_hashed_count = 0
+                    for file_path in path.rglob('*'):
+                        if file_path.is_file():
+                            try:
+                                file_hash_value = calculate_artifact_hash(file_path, method=hash_method)
+                                # Store path relative to workspace root
+                                relative_file_path_str = str(file_path.resolve().relative_to(Path.cwd().resolve()))
+                                self.config.update_hash(stage_id, relative_file_path_str, file_hash_value, hash_method)
+                                hashes_calculated.append((relative_file_path_str, file_hash_value))
+                                files_hashed_count += 1
+                            except Exception as file_e:
+                                if self.use_rich:
+                                    console.print(f"[yellow]  Warning: Failed to hash file {file_path}: {str(file_e)}[/yellow]")
+                    if self.use_rich:
+                         console.print(f"[dim]Hashed {files_hashed_count} files in [bold]{path_str}[/bold].[/dim]")
+                 
+            except Exception as e:
+                if self.use_rich:
+                    console.print(f"[yellow]Warning: Failed to process output {path_str}: {str(e)}[/yellow]")
+        return hashes_calculated
+
+    def _validate_outputs(self, stage_id: str) -> bool:
+        """Validate stage outputs against stored hashes and record results.
+        Returns True if all validated artifacts passed, False otherwise.
+        """
+        stage_config = self.config.get_stage(stage_id)
+        registered_stage = self._stages[stage_id]
+        declared_outputs = registered_stage.outputs
+
+        if not stage_config or "outputs" not in stage_config:
+            if self.use_rich:
+                console.print(f"[yellow]Warning: No reference outputs/hashes found in config for stage {stage_id}[/yellow]")
+            return True # No config to validate against, consider it passed?
+        if not declared_outputs:
+             return True # Nothing declared, passed
+
+        expected_files_config = {}
+        for cfg_out in stage_config.get("outputs", []):
+            if "path" in cfg_out and "hash" in cfg_out:
+                 expected_files_config[cfg_out["path"]] = cfg_out
+
+        stage_validation_passed = True # Track overall stage status
+
+        for output_decl in declared_outputs:
+            # --- Get default reproduction settings for this stage --- 
+            default_repro_mode = registered_stage.reproduction_mode
+            default_tol_abs = registered_stage.tolerance_absolute
+            default_tol_rel = registered_stage.tolerance_relative
+            default_sim_thresh = registered_stage.similarity_threshold
+            # ---
+            
+            output_specific_repro_config = {}
+            if isinstance(output_decl, str):
+                path_str = output_decl
+            else:
+                path_str = output_decl["path"]
+                output_specific_repro_config = output_decl.get("reproduction", {})
+            
+            current_repro_mode = output_specific_repro_config.get("mode", default_repro_mode)
+            current_tol_abs = output_specific_repro_config.get("tolerance_absolute", default_tol_abs)
+            current_tol_rel = output_specific_repro_config.get("tolerance_relative", default_tol_rel)
+            current_sim_thresh = output_specific_repro_config.get("similarity_threshold", default_sim_thresh)
+
+            path = Path(path_str)
+            
+            files_to_validate = {}
+            if path_str in expected_files_config: 
+                 files_to_validate[path_str] = expected_files_config[path_str]
+            else: 
+                 for expected_path, expected_cfg in expected_files_config.items():
+                      norm_expected = os.path.normpath(expected_path)
+                      norm_declared = os.path.normpath(path_str)
+                      if norm_expected.startswith(norm_declared + os.sep):
+                           files_to_validate[expected_path] = expected_cfg
+            
+            if not files_to_validate:
+                 if self.use_rich:
+                      console.print(f"[yellow]Warning: No reference hashes found in config matching output declaration '{path_str}' for stage {stage_id}[/yellow]")
+                 continue
+
+            if self.use_rich:
+                console.print(f"[dim]Validating output declaration [bold]{path_str}[/bold] ({len(files_to_validate)} files)...[/dim]")
+
+            for file_path_str, file_cfg in files_to_validate.items():
+                if "hash" not in file_cfg:
+                    if self.use_rich:
+                        console.print(f"[yellow]  Warning: No reference hash found for {file_path_str}[/yellow]")
+                    continue
+                
+                file_specific_repro_config = file_cfg.get("reproduction", {})
+                final_repro_mode = file_specific_repro_config.get("mode", current_repro_mode)
+                final_tol_abs = file_specific_repro_config.get("tolerance_absolute", current_tol_abs)
+                final_tol_rel = file_specific_repro_config.get("tolerance_relative", current_tol_rel)
+                final_sim_thresh = file_specific_repro_config.get("similarity_threshold", current_sim_thresh)
+
+                success, message = validate_artifact(
+                    file_path_str, 
+                    file_cfg["hash"],
+                    validation_type=final_repro_mode,
+                    tolerance_absolute=final_tol_abs,
+                    tolerance_relative=final_tol_rel,
+                    similarity_threshold=final_sim_thresh
+                )
+                
+                # --- Record result --- 
+                self._validation_results.append({
+                    "stage": stage_id,
+                    "file": file_path_str,
+                    "status": "Passed" if success else "Failed",
+                    "mode": final_repro_mode,
+                    "message": message
+                })
+                # --- 
+                
+                if self.use_rich:
+                    if success:
+                        console.print(f"[green]  ✓ {file_path_str}: {message}[/green]")
+                    else:
+                        console.print(f"[red]  ✗ {file_path_str}: {message}[/red]")
+                        stage_validation_passed = False # Mark stage as failed
+        
+        return stage_validation_passed # Return overall status for the stage
+
+    def run(self, stage_id: Optional[str] = None) -> Dict[str, Any]:
+        """Run workflow stages"""
+        results = {}
+        self._validation_results = [] # Clear previous results at the start of a run
+        workflow_failed = False # Track overall workflow failure
+
+        if self.use_rich:
             console.print(Panel(f"[bold blue]{self.title}[/bold blue]", 
                                title="CRESP Workflow", 
                                subtitle="Computational Research Environment Standardization Protocol"))
@@ -600,26 +1063,46 @@ class Workflow:
                 overall_task = progress.add_task(f"[green]Running workflow ({len(execution_plan)} stages)", total=len(execution_plan))
                 
                 for idx, curr_stage_id in enumerate(execution_plan):
-                    stage_desc = self._stages[curr_stage_id].description
                     stage_task = progress.add_task(f"[cyan]Stage {idx+1}/{len(execution_plan)}: {curr_stage_id}", total=1)
                     
-                    # Run the stage and store result
+                    calculated_hashes_for_stage = []
+                    stage_validation_passed = None
                     try:
-                        start_time = time.time()
-                        results[curr_stage_id] = self._run_stage(curr_stage_id)
-                        end_time = time.time()
+                        stage_result, calculated_hashes_for_stage, stage_validation_passed = self._run_stage(curr_stage_id)
+                        results[curr_stage_id] = stage_result
                         
-                        # Update progress
-                        progress.update(stage_task, completed=1, description=f"[green]✓ {curr_stage_id} completed")
+                        # Update progress based on whether it was skipped or ran
+                        stage_skipped = stage_result is None and not calculated_hashes_for_stage and stage_validation_passed is None
+                        if stage_skipped:
+                            progress.update(stage_task, completed=1, description=f"[yellow]✓ {curr_stage_id} skipped (unchanged)")
+                        elif stage_validation_passed is False:
+                            progress.update(stage_task, completed=1, description=f"[red]✗ {curr_stage_id} failed reproduction")
+                            workflow_failed = True # Mark workflow as failed
+                        else:
+                            progress.update(stage_task, completed=1, description=f"[green]✓ {curr_stage_id} completed")
+                        
                         progress.update(overall_task, advance=1)
+
+                        # Print hashes only if it ran (not skipped) and in experiment mode
+                        if not stage_skipped and self.mode == "experiment" and calculated_hashes_for_stage:
+                             console.print(f"  [dim]Recorded Hashes for {curr_stage_id}:[/dim]")
+                             for path_hash, hash_val in calculated_hashes_for_stage:
+                                  console.print(f"    [cyan]{path_hash}[/cyan]: {hash_val[:8]}...")
                         
-                        # Print stage success
-                        stage_time = end_time - start_time
-                        console.print(f"  [green]✓ Stage [bold]{curr_stage_id}[/bold] completed in {stage_time:.2f}s[/green]")
+                        # --- Check for reproduction failure --- 
+                        if stage_validation_passed is False and self.reproduction_failure_mode == "stop":
+                             console.print(f"[bold red]✗ Reproduction failed for stage [bold]{curr_stage_id}[/bold]. Stopping workflow as per configuration.[/bold red]")
+                             raise ReproductionError(f"Reproduction failed for stage: {curr_stage_id}")
+                             
+                    except ReproductionError: # Propagate stop signal
+                        raise 
                     except Exception as e:
-                        progress.update(stage_task, completed=1, description=f"[red]✗ {curr_stage_id} failed")
-                        console.print(f"  [red]✗ Stage [bold]{curr_stage_id}[/bold] failed: {str(e)}[/red]")
-                        raise
+                        progress.update(stage_task, completed=1, description=f"[red]✗ {curr_stage_id} failed execution")
+                        console.print(f"  [red]✗ Stage [bold]{curr_stage_id}[/bold] execution failed: {str(e)}[/red]")
+                        workflow_failed = True # Mark workflow as failed
+                        if self.reproduction_failure_mode == "stop": # Also stop on execution errors if mode is stop? Assume yes for now.
+                            raise # Re-raise the original error
+                        # If mode is continue, we just log and proceed
             
             # Clean up global progress variable
             if 'progress' in globals():
@@ -639,7 +1122,11 @@ class Workflow:
                 table.add_row(stage_id, status, outputs)
             
             console.print(table)
-        
+            
+            # --- Save Reproduction Report --- 
+            if self.mode == "reproduction" and self.save_reproduction_report and self._validation_results:
+                 self._save_reproduction_report()
+
         else:
             # Non-rich execution path
             if stage_id:
@@ -660,71 +1147,12 @@ class Workflow:
                     results[stage_id] = self._run_stage(stage_id)
                     print(f"Stage {stage_id} completed")
         
-        # Save configuration with hashes
         self.config.save()
         
+        if workflow_failed and self.reproduction_failure_mode == "continue":
+             console.print("[bold yellow]Workflow completed with reproduction failures.[/bold yellow]")
+
         return results
-    
-    def _run_stage(self, stage_id: str) -> Any:
-        """Run a specific stage
-        
-        Args:
-            stage_id: Stage identifier
-            
-        Returns:
-            Stage execution result
-            
-        Raises:
-            ValueError: If dependencies are not satisfied
-        """
-        # Check if already executed
-        if stage_id in self._executed_stages:
-            return None
-        
-        stage_func = self._stages[stage_id]
-        
-        # Check and run dependencies
-        for dep_id in stage_func.dependencies:
-            if dep_id not in self._executed_stages:
-                self._run_stage(dep_id)
-        
-        # Execute stage function with rich visual feedback if enabled
-        if self.use_rich:
-            # We can't use console.status() here as it would create nested live displays
-            # which is not supported by Rich. Instead, we'll just print status messages.
-            console.print(f"[bold blue]Executing {stage_id}...[/bold blue]")
-            
-            # Temporarily disable the progress display to allow normal print statements to show
-            if 'progress' in globals():
-                # If we're inside a Progress context, need to pause it
-                try:
-                    progress.stop()
-                except:
-                    pass
-            
-            # Execute the function and allow it to print normally
-            start_time = time.time()
-            result = stage_func()
-            end_time = time.time()
-            execution_time = end_time - start_time
-            
-            # Resume progress display if it was active
-            if 'progress' in globals():
-                try:
-                    progress.start()
-                except:
-                    pass
-                
-            console.print(f"[dim]Stage completed in {execution_time:.2f}s[/dim]")
-        else:
-            result = stage_func()
-        
-        # Mark as executed
-        self._executed_stages.add(stage_id)
-        
-        # TODO: Calculate and update hash values for outputs
-        
-        return result
     
     def _resolve_execution_order(self) -> List[str]:
         """Resolve execution order based on dependencies
@@ -810,6 +1238,61 @@ class Workflow:
             
         except Exception as e:
             console.print(f"[red]Error visualizing workflow: {str(e)}[/red]")
+
+    def _save_reproduction_report(self):
+        """Generate and save the reproduction report."""
+        if not self._validation_results:
+            if self.use_rich:
+                console.print("[dim]No validation results to report.[/dim]")
+            return
+
+        report_path = Path(self.reproduction_report_path)
+        if self.use_rich:
+            console.print(f"[dim]Generating reproduction report at [bold]{report_path}[/bold]...[/dim]")
+
+        # Group results by stage
+        results_by_stage = {}
+        for result in self._validation_results:
+            stage = result["stage"]
+            if stage not in results_by_stage:
+                results_by_stage[stage] = []
+            results_by_stage[stage].append(result)
+
+        # Build Markdown report
+        report_lines = [
+            f"# CRESP Reproduction Report",
+            f"Workflow: {self.title}",
+            f"Config: {self.config.path}",
+            f"Timestamp: {time.strftime('%Y-%m-%d %H:%M:%S')}",
+            ""
+        ]
+
+        overall_passed = True
+        for stage_id, results in results_by_stage.items():
+            stage_passed = all(r["status"] == "Passed" for r in results)
+            status_icon = "✅" if stage_passed else "❌"
+            report_lines.append(f"## {status_icon} Stage: {stage_id}")
+            report_lines.append("| File | Status | Mode | Details |")
+            report_lines.append("|------|--------|------|---------|")
+            for r in results:
+                status_color = "green" if r["status"] == "Passed" else "red"
+                report_lines.append(f"| `{r['file']}` | **{r['status']}** | `{r['mode']}` | {r['message']} |")
+            report_lines.append("")
+            if not stage_passed:
+                overall_passed = False
+
+        report_lines.insert(4, f"**Overall Status:** {'✅ Passed' if overall_passed else '❌ Failed'}")
+        report_lines.insert(5, "")
+
+        try:
+            report_path.parent.mkdir(parents=True, exist_ok=True)
+            with open(report_path, 'w', encoding='utf-8') as f:
+                f.write("\n".join(report_lines))
+            if self.use_rich:
+                console.print(f"[green]✓ Reproduction report saved successfully.[/green]")
+        except Exception as e:
+            if self.use_rich:
+                console.print(f"[red]✗ Failed to save reproduction report: {e}[/red]")
 
 
 # Helper functions
