@@ -215,6 +215,11 @@ def validate_artifact(
                         current_arr, reference_arr, tolerance_absolute, tolerance_relative
                     ):
                         return True, "Standard validation passed: array match within tolerances"
+                else:
+                    # For other file types (e.g., .pt, .bin), use direct hash comparison
+                    current_hash = calculate_artifact_hash(artifact_path)
+                    if current_hash == reference_hash:
+                        return True, "Standard validation passed: exact hash match"
 
             return False, "Standard validation failed: content mismatch"
 

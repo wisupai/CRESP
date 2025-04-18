@@ -7,9 +7,9 @@ channels = ["conda-forge"]
 platforms = ["linux-64", "osx-64", "win-64", "osx-arm64"]
 
 [tasks]
-experiment = "python mnist_cresp.py"
+experiment = "python mnist_cresp.py experiment"
 reproduction = "python mnist_cresp.py reproduction"
-clean = "rm -rf data && rm -rf outputs && rm cresp.yaml && rm cresp.yaml.bak"
+clean = "rm -rf experiment reproduction shared data outputs && rm -f cresp.yaml cresp.yaml.bak reproduction_report.md"
 
 # In a real scenario, you would add dependencies here
 [dependencies]
