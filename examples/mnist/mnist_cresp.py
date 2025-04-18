@@ -26,13 +26,13 @@ sys.path.append(str(CRESP_ROOT))
 
 from cresp.core import Workflow, ReproductionError
 
-# Create output directory
-OUTPUT_DIR = Path("outputs")
-OUTPUT_DIR.mkdir(exist_ok=True)
+# Create output directory - No longer needed for stage outputs handled by workflow
+# OUTPUT_DIR = Path("outputs")
+# OUTPUT_DIR.mkdir(exist_ok=True)
 
-# Create data directory
-DATA_DIR = Path("data")
-DATA_DIR.mkdir(exist_ok=True)
+# Create data directory - No longer needed, handled by workflow
+# DATA_DIR = Path("data")
+# DATA_DIR.mkdir(exist_ok=True)
 
 # Global cache for stage results to avoid recomputation
 _stage_results_cache = {}
@@ -57,15 +57,28 @@ class SimpleCNN(nn.Module):
     def __init__(self):
         super(SimpleCNN, self).__init__()
         self.conv1 = nn.Conv2d(1, 32, kernel_size=3, stride=1, padding=1)
+        self.bn1 = nn.BatchNorm2d(32)  # Add BatchNorm after conv1
         self.conv2 = nn.Conv2d(32, 64, kernel_size=3, stride=1, padding=1)
+        self.bn2 = nn.BatchNorm2d(64)  # Add BatchNorm after conv2
         self.fc1 = nn.Linear(7 * 7 * 64, 128)
+        self.bn3 = nn.BatchNorm1d(128) # Add BatchNorm after fc1
+        self.dropout = nn.Dropout(0.5) # Add Dropout
         self.fc2 = nn.Linear(128, 10)
 
     def forward(self, x):
-        x = F.relu(F.max_pool2d(self.conv1(x), 2))
-        x = F.relu(F.max_pool2d(self.conv2(x), 2))
+        x = self.conv1(x)
+        x = self.bn1(x)
+        x = F.relu(F.max_pool2d(x, 2))
+
+        x = self.conv2(x)
+        x = self.bn2(x)
+        x = F.relu(F.max_pool2d(x, 2))
+
         x = x.view(-1, 7 * 7 * 64)
-        x = F.relu(self.fc1(x))
+        x = self.fc1(x)
+        x = self.bn3(x)
+        x = F.relu(x)
+        x = self.dropout(x) # Apply dropout before the final layer
         x = self.fc2(x)
         return F.log_softmax(x, dim=1)
 
@@ -134,11 +147,14 @@ def download_mnist_data():
         [transforms.ToTensor(), transforms.Normalize((0.1307,), (0.3081,))]
     )
 
+    # Use workflow.get_shared_data_path to determine the root directory
+    data_root = workflow.get_shared_data_path("data")
+
     # Download training data
-    train_dataset = datasets.MNIST(root="data", train=True, download=True, transform=transform)
+    train_dataset = datasets.MNIST(root=data_root, train=True, download=True, transform=transform)
 
     # Download test data
-    test_dataset = datasets.MNIST(root="data", train=False, download=True, transform=transform)
+    test_dataset = datasets.MNIST(root=data_root, train=False, download=True, transform=transform)
 
     print(
         f"Downloaded MNIST dataset: {len(train_dataset)} training samples, {len(test_dataset)} test samples"
@@ -164,11 +180,14 @@ def prepare_data_loaders():
         [transforms.ToTensor(), transforms.Normalize((0.1307,), (0.3081,))]
     )
 
+    # Use workflow.get_shared_data_path to determine the root directory
+    data_root = workflow.get_shared_data_path("data")
+
     # Load training data
-    train_dataset = datasets.MNIST(root="data", train=True, download=False, transform=transform)
+    train_dataset = datasets.MNIST(root=data_root, train=True, download=False, transform=transform)
 
     # Load test data
-    test_dataset = datasets.MNIST(root="data", train=False, download=False, transform=transform)
+    test_dataset = datasets.MNIST(root=data_root, train=False, download=False, transform=transform)
 
     # Get reproducible dataloader settings from workflow
     dataloader_kwargs = workflow.get_dataloader_kwargs()
@@ -191,7 +210,7 @@ def prepare_data_loaders():
     description="Train MNIST model",
     dependencies=["prepare_data"],
     outputs=["outputs/mnist_model.pt"],
-    reproduction_mode="standard",
+    reproduction_mode="strict",
     tolerance_relative=1e-5,
     skip_if_unchanged=False,  # Override: Always rerun training
 )
@@ -249,7 +268,9 @@ def train_model():
         print(f"Epoch {epoch} average loss: {avg_loss:.6f}")
 
     # Save the model
-    model_path = OUTPUT_DIR / "mnist_model.pt"
+    # Use workflow.get_output_path to determine the correct location
+    model_relative_path = "outputs/mnist_model.pt"
+    model_path = workflow.get_output_path(model_relative_path)
     torch.save(
         {
             "model_state_dict": model.state_dict(),
@@ -318,13 +339,15 @@ def evaluate_model():
 
     print(
         f"\nTest set: Average loss: {test_loss:.4f}, "
-        f"Accuracy: {correct}/{len(test_loader.dataset)} ({accuracy:.2f}%)"
+        f"Accuracy: {correct}/{len(test_loader.dataset)} ({accuracy:.5f}%)"
     )
 
     # Save accuracy to file
-    accuracy_path = OUTPUT_DIR / "accuracy.txt"
+    # Use workflow.get_output_path
+    accuracy_relative_path = "outputs/accuracy.txt"
+    accuracy_path = workflow.get_output_path(accuracy_relative_path)
     with open(accuracy_path, "w") as f:
-        f.write(f"Test accuracy: {accuracy:.2f}%\n")
+        f.write(f"Test accuracy: {accuracy:.5f}%\n")  # Changed format to .5f
         f.write(f"Test loss: {test_loss:.4f}\n")
         f.write(f"Random seed: {workflow.seed}\n")
 
@@ -336,7 +359,9 @@ def evaluate_model():
     plt.title("MNIST Training Loss Curve")
     plt.grid(True)
 
-    loss_curve_path = OUTPUT_DIR / "loss_curve.png"
+    # Use workflow.get_output_path
+    loss_curve_relative_path = "outputs/loss_curve.png"
+    loss_curve_path = workflow.get_output_path(loss_curve_relative_path)
     plt.savefig(loss_curve_path)
     plt.close()
 
@@ -346,60 +371,6 @@ def evaluate_model():
     result = {"accuracy": accuracy, "test_loss": test_loss}
     _stage_results_cache["evaluate_model"] = result
     return result
-
-
-@workflow.stage(
-    id="generate_report",
-    description="Generate experiment report",
-    dependencies=["evaluate_model"],
-    outputs=["outputs/report.md"],
-    reproduction_mode="tolerant",
-    similarity_threshold=0.9,
-    # skip_if_unchanged uses workflow default (True)
-)
-def generate_report():
-    """Generate a simple markdown report of the experiment"""
-    # Get results from previous stages
-    eval_results = evaluate_model()
-
-    # Create report
-    report = [
-        "# MNIST Classification Experiment Report",
-        "",
-        "## Experiment Summary",
-        "",
-        f"- Accuracy: {eval_results['accuracy']:.2f}%",
-        f"- Test Loss: {eval_results['test_loss']:.4f}",
-        "",
-        "## Model Architecture",
-        "",
-        "```python",
-        "class SimpleCNN(nn.Module):",
-        "    def __init__(self):",
-        "        super(SimpleCNN, self).__init__()",
-        "        self.conv1 = nn.Conv2d(1, 32, kernel_size=3, stride=1, padding=1)",
-        "        self.conv2 = nn.Conv2d(32, 64, kernel_size=3, stride=1, padding=1)",
-        "        self.fc1 = nn.Linear(7 * 7 * 64, 128)",
-        "        self.fc2 = nn.Linear(128, 10)",
-        "```",
-        "",
-        "## Results",
-        "",
-        "![Training Loss Curve](loss_curve.png)",
-        "",
-        "## Reproducibility",
-        "",
-        "This experiment was conducted using CRESP for reproducibility. Random seed was set to 42.",
-    ]
-
-    # Save report
-    report_path = OUTPUT_DIR / "report.md"
-    with open(report_path, "w") as f:
-        f.write("\n".join(report))
-
-    print(f"Report generated and saved to {report_path}")
-
-    return {"report_path": str(report_path)}
 
 
 def main():
@@ -425,7 +396,7 @@ def main():
                 # Ensure accuracy is treated as float before formatting
                 accuracy = results["evaluate_model"].get("accuracy")
                 if accuracy is not None:
-                    print(f"Final accuracy (from run): {float(accuracy):.2f}%")
+                    print(f"Final accuracy (from run): {float(accuracy):.5f}%")
                 else:
                     print("Final accuracy (from run): N/A")
             if "generate_report" in results and results["generate_report"]:

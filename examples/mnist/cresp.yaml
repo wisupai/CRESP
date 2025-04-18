@@ -17,28 +17,28 @@ stages:
   - path: data
     reproduction:
       mode: strict
-  - path: data/MNIST/raw/t10k-images-idx3-ubyte
+  - path: shared/data/MNIST/raw/t10k-images-idx3-ubyte
     hash: 0fa7898d509279e482958e8ce81c8e77db3f2f8254e26661ceb7762c4d494ce7
     hash_method: sha256
-  - path: data/MNIST/raw/t10k-labels-idx1-ubyte
+  - path: shared/data/MNIST/raw/t10k-labels-idx1-ubyte
     hash: ff7bcfd416de33731a308c3f266cc351222c34898ecbeaf847f06e48f7ec33f2
     hash_method: sha256
-  - path: data/MNIST/raw/train-images-idx3-ubyte
+  - path: shared/data/MNIST/raw/train-images-idx3-ubyte
     hash: ba891046e6505d7aadcbbe25680a0738ad16aec93bde7f9b65e87a2fc25776db
     hash_method: sha256
-  - path: data/MNIST/raw/t10k-images-idx3-ubyte.gz
+  - path: shared/data/MNIST/raw/t10k-images-idx3-ubyte.gz
     hash: 8d422c7b0a1c1c79245a5bcf07fe86e33eeafee792b84584aec276f5a2dbc4e6
     hash_method: sha256
-  - path: data/MNIST/raw/train-images-idx3-ubyte.gz
+  - path: shared/data/MNIST/raw/train-images-idx3-ubyte.gz
     hash: 440fcabf73cc546fa21475e81ea370265605f56be210a4024d2ca8f203523609
     hash_method: sha256
-  - path: data/MNIST/raw/train-labels-idx1-ubyte.gz
+  - path: shared/data/MNIST/raw/train-labels-idx1-ubyte.gz
     hash: 3552534a0a558bbed6aed32b30c495cca23d567ec52cac8be1a0730e8010255c
     hash_method: sha256
-  - path: data/MNIST/raw/train-labels-idx1-ubyte
+  - path: shared/data/MNIST/raw/train-labels-idx1-ubyte
     hash: 65a50cbbf4e906d70832878ad85ccda5333a97f0f4c3dd2ef09a8a9eef7101c5
     hash_method: sha256
-  - path: data/MNIST/raw/t10k-labels-idx1-ubyte.gz
+  - path: shared/data/MNIST/raw/t10k-labels-idx1-ubyte.gz
     hash: f7ae60f92e00ec6debd23a6088c31dbd2371eca3ffa0defaefb259924204aec6
     hash_method: sha256
   code_handler: __main__.download_mnist_data
@@ -59,7 +59,7 @@ stages:
     reproduction:
       mode: standard
       tolerance_relative: 1.0e-05
-    hash: c1dab9381f7a65e4941462d70e42dd18853de75a07c965d0c8ac0485ff0d766d
+    hash: 2fdc73104d44b8782c270fac12faa64483b9d39c29d9464b2d9f47e55cea6183
     hash_method: sha256
   code_handler: __main__.train_model
   parameters: {}
@@ -72,27 +72,14 @@ stages:
     reproduction:
       mode: standard
       tolerance_absolute: 0.5
-    hash: 46df33f15db241ca09fac8ffc5c0af3fa2d54dcbdf6d0e539378d99f60c06fb4
+    hash: 490d1b53d323e119fb7af5e3dead24b1263b5c1e070201427ed460e018a94cc6
     hash_method: sha256
   - path: outputs/loss_curve.png
     reproduction:
       mode: strict
-    hash: 09450cf977cfa05614e815f68151655ff6aed876f8e396829ec4b5256b7db504
+    hash: 6f280e585a2609a5af74fc32b09e42c14574658c9c03c2b4bc8da125eb3bcd8d
     hash_method: sha256
   code_handler: __main__.evaluate_model
-  parameters: {}
-- id: generate_report
-  description: Generate experiment report
-  dependencies:
-  - evaluate_model
-  outputs:
-  - path: outputs/report.md
-    reproduction:
-      mode: tolerant
-      similarity_threshold: 0.9
-    hash: 3e5e05dee612727b08fa25f10c17d34b63bc9181bf17acc442f5dd0f96521bf2
-    hash_method: sha256
-  code_handler: __main__.generate_report
   parameters: {}
 reproduction:
   random_seed: 42

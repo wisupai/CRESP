@@ -16,6 +16,7 @@ try:
     from rich.table import Table
     from rich.style import Style
     from rich import print as rich_print
+    import rich.box
 
     RICH_AVAILABLE = True
 except ImportError:
@@ -170,6 +171,9 @@ class Workflow:
         reproduction_report_path: str = "reproduction_report.md",
         set_seed_at_init: bool = True,
         verbose_seed_setting: bool = True,
+        experiment_output_dir: str = "experiment",
+        reproduction_output_dir: str = "reproduction",
+        shared_data_dir: str = "shared",
     ):
         """Initialize a new workflow.
 
@@ -187,6 +191,9 @@ class Workflow:
             reproduction_report_path: Path for the reproduction report.
             set_seed_at_init: Whether to set random seeds at initialization.
             verbose_seed_setting: Whether to print seed setting information.
+            experiment_output_dir: Directory for outputs in experiment mode.
+            reproduction_output_dir: Directory for outputs in reproduction mode.
+            shared_data_dir: Directory for shared data accessible in all modes.
         """
         self.title = title
         self.use_rich = use_rich and RICH_AVAILABLE
@@ -207,6 +214,19 @@ class Workflow:
         self._run_cache: Dict[
             str, Tuple[Any, List[Tuple[str, str]], Optional[Union[bool, object]]]
         ] = {}
+
+        # --- Determine active output directory based on mode ---
+        self.experiment_output_dir = Path(experiment_output_dir)
+        self.reproduction_output_dir = Path(reproduction_output_dir)
+        if self.mode == "experiment":
+            self.active_output_dir = self.experiment_output_dir
+        elif self.mode == "reproduction":
+            self.active_output_dir = self.reproduction_output_dir
+        else:
+            # Default or fallback if mode is somehow different
+            self.active_output_dir = Path(".") # Or raise an error?
+
+        self.shared_data_dir = Path(shared_data_dir)
 
         try:
             self.config = CrespConfig.load(config_file_path)
@@ -267,6 +287,34 @@ class Workflow:
     def seed(self) -> Optional[int]:
         """Get the current random seed."""
         return self._seed
+
+    def get_output_path(self, relative_path: Union[str, Path]) -> Path:
+        """Construct the full output path based on the current mode.
+
+        Args:
+            relative_path: The relative path declared in the stage outputs.
+
+        Returns:
+            The full path including the mode-specific output directory.
+        """
+        full_path = self.active_output_dir / Path(relative_path)
+        # Ensure the parent directory exists
+        full_path.parent.mkdir(parents=True, exist_ok=True)
+        return full_path
+
+    def get_shared_data_path(self, relative_path: Union[str, Path]) -> Path:
+        """Construct the full path for shared data.
+
+        Args:
+            relative_path: The relative path within the shared data directory.
+
+        Returns:
+            The full path including the shared data directory.
+        """
+        full_path = self.shared_data_dir / Path(relative_path)
+        # Ensure the parent directory exists
+        full_path.parent.mkdir(parents=True, exist_ok=True)
+        return full_path
 
     def get_dataloader_kwargs(self) -> Dict[str, Any]:
         """Get kwargs for PyTorch DataLoader to ensure reproducibility."""
@@ -679,13 +727,25 @@ class Workflow:
                 # --- Determine path and hash method from declaration ---
                 path_str: Optional[str] = None
                 hash_method = "sha256"  # Default hash method
+                is_shared = False # Heuristic flag
 
                 if isinstance(output_decl, str):
                     path_str = output_decl
+                    # Apply heuristic: path without separator is likely shared
+                    if '/' not in path_str and '\\\\' not in path_str:
+                       is_shared = True
                 elif isinstance(output_decl, dict):
                     path_str = output_decl.get("path")
                     # Allow overriding hash method per output declaration
                     hash_method = output_decl.get("hash_method", hash_method)
+                    # Check for explicit scope or apply heuristic
+                    if output_decl.get("scope") == "shared":
+                        is_shared = True
+                    elif output_decl.get("scope") == "output":
+                        is_shared = False
+                    elif path_str and '/' not in path_str and '\\\\' not in path_str:
+                        is_shared = True
+
 
                 if not path_str:
                     console.print(
@@ -693,54 +753,73 @@ class Workflow:
                     )
                     continue
 
-                path = Path(path_str)
-
+                # --- Resolve path based on heuristic/scope ---
                 try:
-                    if not path.exists():
+                    if is_shared:
+                        resolved_path = self.get_shared_data_path(path_str)
+                    else:
+                        resolved_path = self.get_output_path(path_str)
+                except Exception as path_resolve_e:
+                    console.print(
+                        f"[yellow]Warning: Could not resolve path '{path_str}' for stage '{stage_id}': {path_resolve_e}[/yellow]"
+                    )
+                    continue
+
+                # --- Check existence using the RESOLVED path ---
+                try:
+                    if not resolved_path.exists():
                         if self.use_rich:
                             console.print(
-                                f"[yellow]Warning: Output path does not exist after running stage '{stage_id}': {path_str}[/yellow]"
+                                f"[yellow]Warning: Output path does not exist after running stage '{stage_id}': {resolved_path} (declared as '{path_str}')[/yellow]"
                             )
                         continue
 
-                    # --- Hash File or Directory Contents ---
-                    if path.is_file():
-                        hash_value = calculate_artifact_hash(path, method=hash_method)
-                        # Update config (defer save via batch_update)
+                    # --- Hash File or Directory Contents using RESOLVED path ---
+                    if resolved_path.is_file():
+                        hash_value = calculate_artifact_hash(resolved_path, method=hash_method)
+                        # Update config using the ORIGINAL declared path_str as the key
                         self.config.update_hash(stage_id, path_str, hash_value, hash_method)
                         hashes_calculated.append((path_str, hash_value))
                         # Minimal logging here, summary printed later
-                    elif path.is_dir():
+                    elif resolved_path.is_dir():
                         if self.use_rich:
                             console.print(
-                                f"[dim]Hashing contents of directory [bold]{path_str}[/bold]...[/dim]"
+                                f"[dim]Hashing contents of directory [bold]{resolved_path}[/bold] (declared as '{path_str}')...[/dim]"
                             )
                         files_hashed_count = 0
-                        for file_path in path.rglob("*"):
+                        for file_path in resolved_path.rglob("*"):
                             if file_path.is_file():
                                 try:
                                     # Use the hash_method determined for the directory declaration
                                     file_hash_value = calculate_artifact_hash(
                                         file_path, method=hash_method
                                     )
-                                    # Store path relative to workspace root for consistency
+                                    # Store path relative to workspace root for consistency?
+                                    # OR store path relative to the *resolved_path* base?
+                                    # Let's stick to storing the config key based on the original declaration structure.
+                                    # If path_str was "data", the key in config for file "data/a.txt" should be "data/a.txt".
+                                    # If path_str was "outputs", key for "outputs/b.txt" should be "outputs/b.txt".
+                                    # calculate relative path from CWD for the config key
                                     try:
-                                        relative_file_path_str = str(
+                                        relative_key_path_str = str(
                                             file_path.resolve().relative_to(Path.cwd().resolve())
                                         )
+                                        # Ensure the key path uses the same structure as declaration
+                                        # This part is tricky. Let's assume the user wants the key to be the full relative path from CWD for now.
                                     except ValueError:
-                                        # Handle cases where file might be outside cwd (e.g., symlink target)
-                                        relative_file_path_str = str(file_path.resolve())
+                                        relative_key_path_str = str(file_path.resolve())
 
-                                    # Update config (defer save via batch_update)
+
+                                    # Update config using the calculated relative path as key
                                     self.config.update_hash(
                                         stage_id,
-                                        relative_file_path_str,
+                                        relative_key_path_str,
                                         file_hash_value,
                                         hash_method,
                                     )
+                                    # Record the originally declared path string and hash for the summary log? No, record the actual path hashed.
                                     hashes_calculated.append(
-                                        (relative_file_path_str, file_hash_value)
+                                        (relative_key_path_str, file_hash_value)
                                     )
                                     files_hashed_count += 1
                                 except Exception as file_e:
@@ -749,20 +828,20 @@ class Workflow:
                                             f"[yellow]  Warning: Failed to hash file {file_path}: {str(file_e)}[/yellow]"
                                         )
                         if self.use_rich and files_hashed_count > 0:
-                            console.print(
-                                f"[dim]Hashed {files_hashed_count} files in [bold]{path_str}[/bold].[/dim]"
+                             console.print(
+                                f"[dim]Hashed {files_hashed_count} files in [bold]{resolved_path}[/bold].[/dim]"
                             )
                     else:
                         # Handle other path types? Symlinks?
                         if self.use_rich:
                             console.print(
-                                f"[yellow]Warning: Output path is not a file or directory: {path_str}[/yellow]"
+                                f"[yellow]Warning: Resolved output path is not a file or directory: {resolved_path}[/yellow]"
                             )
 
                 except Exception as e:
                     if self.use_rich:
                         console.print(
-                            f"[yellow]Warning: Failed to process output {path_str} for stage '{stage_id}': {str(e)}[/yellow]"
+                            f"[yellow]Warning: Failed to process output {resolved_path} (declared as '{path_str}') for stage '{stage_id}': {str(e)}[/yellow]"
                         )
 
         return hashes_calculated
@@ -817,17 +896,36 @@ class Workflow:
 
             output_specific_repro_config = {}
             path_str: Optional[str] = None
+            is_shared = False # Heuristic
 
             if isinstance(output_decl, str):
                 path_str = output_decl
+                if '/' not in path_str and '\\\\' not in path_str:
+                    is_shared = True
             elif isinstance(output_decl, dict) and "path" in output_decl:
                 path_str = output_decl["path"]
                 output_specific_repro_config = output_decl.get("reproduction", {})
+                if output_decl.get("scope") == "shared": is_shared = True
+                elif output_decl.get("scope") == "output": is_shared = False
+                elif path_str and '/' not in path_str and '\\\\' not in path_str: is_shared = True
             else:
                 continue  # Skip invalid declaration
 
-            # --- Find corresponding files in config ---
-            path = Path(path_str)
+            # --- Resolve path for validation ---
+            try:
+                if is_shared:
+                    resolved_path = self.get_shared_data_path(path_str)
+                else:
+                    resolved_path = self.get_output_path(path_str)
+            except Exception as path_resolve_e:
+                console.print(
+                    f"[yellow]Warning: Could not resolve path '{path_str}' for validation in stage '{stage_id}': {path_resolve_e}[/yellow]"
+                )
+                continue
+
+
+            # --- Find corresponding files in config based on ORIGINAL path_str ---
+            # We still use path_str to lookup in expected_files_config which uses declared paths as keys
             files_to_validate_for_this_decl: Dict[str, Dict[str, Any]] = {}
             found_config_match = False
 
@@ -837,11 +935,12 @@ class Workflow:
                 found_config_match = True
             # Case 2: Directory path - find config entries within
             else:
-                # No need to check path.is_dir() here, just check prefixes in config
+                # Check config paths starting with the declared path_str
                 for expected_path, expected_cfg in expected_files_config.items():
                     norm_expected = os.path.normpath(expected_path)
                     norm_declared = os.path.normpath(path_str)
                     if norm_expected.startswith(norm_declared + os.sep):
+                        # The key remains the declared path from config
                         files_to_validate_for_this_decl[expected_path] = expected_cfg
                         found_config_match = True
 
@@ -851,73 +950,97 @@ class Workflow:
                     console.print(
                         f"[yellow]Warning: No reference hash found in config matching output declaration '{path_str}' for stage '{stage_id}'. Cannot validate.[/yellow]"
                     )
-                # Should this be a failure? Depends on strictness. Let's skip validation for this one.
                 continue
 
             # --- Validate the collected files for this declaration ---
             if self.use_rich and files_to_validate_for_this_decl:
+                # Log validation attempt using the originally declared path
                 console.print(
-                    f"[dim]Validating output declaration [bold]{path_str}[/bold] ({len(files_to_validate_for_this_decl)} file(s))...[/dim]"
+                    f"[dim]Validating output declaration [bold]{path_str}[/bold] ({len(files_to_validate_for_this_decl)} file(s) in config)...[/dim]"
                 )
 
-            for file_path_str, file_cfg in files_to_validate_for_this_decl.items():
+            # Note: The loop below iterates through paths found in the config (expected_path)
+            # We need to map these back to resolved paths on the filesystem for validation.
+            for expected_path_key, file_cfg in files_to_validate_for_this_decl.items():
                 # Double check hash exists (should from earlier filter)
                 if "hash" not in file_cfg:
                     continue
 
-                # Check if file exists on disk before attempting validation
-                if not Path(file_path_str).exists():
-                    message = f"Output file not found: {file_path_str}"
+                # --- Resolve the *expected* path from config to its actual filesystem location --- 
+                # Apply the same heuristic to the key from the config dict
+                expected_is_shared = False
+                if '/' not in expected_path_key and '\\\\' not in expected_path_key:
+                    expected_is_shared = True
+                # We assume the scope defined in the @stage decorator applies to all files under a dir declaration?
+                # Or should we check scope per file in config? Let's stick to the heuristic for now.
+
+                try:
+                    if expected_is_shared:
+                        actual_file_path_to_check = self.get_shared_data_path(expected_path_key)
+                    else:
+                        actual_file_path_to_check = self.get_output_path(expected_path_key)
+                except Exception:
+                    # If we can't even resolve the path from config, treat as validation failure
+                    message = f"Could not resolve expected path from config: {expected_path_key}"
                     success = False
-                    final_repro_mode = "N/A"  # Mode doesn't apply if file is missing
+                    final_repro_mode = "N/A"
+                    actual_file_path_display = expected_path_key # Display the problematic key
                 else:
-                    # Determine final validation parameters (File > Declaration > Stage)
-                    file_specific_repro_config = file_cfg.get("reproduction", {})
-                    final_repro_mode = file_specific_repro_config.get(
-                        "mode", output_specific_repro_config.get("mode", default_repro_mode)
-                    )
-                    final_tol_abs = file_specific_repro_config.get(
-                        "tolerance_absolute",
-                        output_specific_repro_config.get("tolerance_absolute", default_tol_abs),
-                    )
-                    final_tol_rel = file_specific_repro_config.get(
-                        "tolerance_relative",
-                        output_specific_repro_config.get("tolerance_relative", default_tol_rel),
-                    )
-                    final_sim_thresh = file_specific_repro_config.get(
-                        "similarity_threshold",
-                        output_specific_repro_config.get(
-                            "similarity_threshold", default_sim_thresh
-                        ),
-                    )
+                    actual_file_path_display = str(actual_file_path_to_check) # For logging
+                    # Check if the *actual* file exists on disk before attempting validation
+                    if not actual_file_path_to_check.exists():
+                        message = f"Output file not found: {actual_file_path_to_check}"
+                        success = False
+                        final_repro_mode = "N/A"  # Mode doesn't apply if file is missing
+                    else:
+                        # Determine final validation parameters (File > Declaration > Stage)
+                        file_specific_repro_config = file_cfg.get("reproduction", {})
+                        final_repro_mode = file_specific_repro_config.get(
+                            "mode", output_specific_repro_config.get("mode", default_repro_mode)
+                        )
+                        final_tol_abs = file_specific_repro_config.get(
+                            "tolerance_absolute",
+                            output_specific_repro_config.get("tolerance_absolute", default_tol_abs),
+                        )
+                        final_tol_rel = file_specific_repro_config.get(
+                            "tolerance_relative",
+                            output_specific_repro_config.get("tolerance_relative", default_tol_rel),
+                        )
+                        final_sim_thresh = file_specific_repro_config.get(
+                            "similarity_threshold",
+                            output_specific_repro_config.get(
+                                "similarity_threshold", default_sim_thresh
+                            ),
+                        )
 
-                    # Perform validation
-                    success, message = validate_artifact(
-                        file_path_str,
-                        file_cfg["hash"],
-                        validation_type=final_repro_mode,
-                        tolerance_absolute=final_tol_abs,
-                        tolerance_relative=final_tol_rel,
-                        similarity_threshold=final_sim_thresh,
-                    )
+                        # Perform validation using the ACTUAL file path
+                        success, message = validate_artifact(
+                            actual_file_path_to_check,
+                            file_cfg["hash"],
+                            validation_type=final_repro_mode,
+                            tolerance_absolute=final_tol_abs,
+                            tolerance_relative=final_tol_rel,
+                            similarity_threshold=final_sim_thresh,
+                        )
 
-                # --- Record validation result ---
+                # --- Record validation result --- 
                 self._validation_results.append(
                     {
                         "stage": stage_id,
-                        "file": file_path_str,
+                        "file": actual_file_path_display, # Report the actual path checked
                         "status": "Passed" if success else "Failed",
                         "mode": final_repro_mode,
                         "message": message,
                     }
                 )
 
-                # --- Update overall stage status and print result ---
+                # --- Update overall stage status and print result --- 
                 if self.use_rich:
                     if success:
-                        console.print(f"[green]  ✓ {file_path_str}: {message}[/green]")
+                        # Use the actual path in the success/fail message for clarity
+                        console.print(f"[green]  ✓ {actual_file_path_display}: {message}[/green]")
                     else:
-                        console.print(f"[red]  ✗ {file_path_str}: {message}[/red]")
+                        console.print(f"[red]  ✗ {actual_file_path_display}: {message}[/red]")
                         stage_validation_passed = False  # Mark stage as failed if any file fails
 
         # Check if any declared outputs were *not* found in the config for validation
@@ -1108,58 +1231,102 @@ class Workflow:
 
             # --- Print Final Summary ---
             console.print()  # Spacer
-            summary_table = Table(title="Workflow Execution Summary")
-            summary_table.add_column("Stage", style="cyan")
-            summary_table.add_column("Status", style="default")
+            summary_table = Table(
+                title="Workflow Execution Summary",
+                show_header=True,
+                header_style="bold magenta",
+                box=rich.box.ROUNDED,
+            )
+            summary_table.add_column("Stage", style="cyan", no_wrap=True)
+            summary_table.add_column("Status", style="default", justify="center")
             summary_table.add_column("Outputs", style="blue", overflow="fold")
             summary_table.add_column("Dependencies", style="yellow")
             if self.mode == "reproduction":
-                summary_table.add_column("Reproduction", style="default")
+                summary_table.add_column("Reproduction", style="default", justify="center")
 
-            for stage_id_summary in execution_plan:
+            # Use the original execution plan for the summary order
+            summary_stages = execution_plan
+
+            for stage_id_summary in summary_stages:
+                if stage_id_summary not in self._stages: continue # Should not happen normally
+
                 stage_func = self._stages[stage_id_summary]
                 final_status_str = "[grey50]Not run"
                 repro_status_str = "N/A"
 
-                if stage_id_summary in self._executed_stages:
-                    validation_status = self._stage_validation_status.get(stage_id_summary)
-                    # stage_failed_exec = validation_status is None and stage_id_summary not in self._executed_stages # Old heuristic
-                    # Need a better way to detect execution failure if possible, maybe via exception tracking?
-                    # For now, assume if it's in _executed_stages, it didn't fail catastrophically *before* adding itself.
-                    # Let's refine the status logic based on the validation_status sentinel/values:
+                # Determine status based on execution and validation results
+                validation_status = self._stage_validation_status.get(stage_id_summary)
+                stage_ran_or_skipped = stage_id_summary in self._executed_stages # Use this set
 
-                    # Check for SKIPPED first
+                if stage_ran_or_skipped:
                     if validation_status is SKIPPED:
                         final_status_str = "[yellow]Skipped"
                         repro_status_str = "⚪ Skipped"
-                    elif validation_status is False:
-                        final_status_str = "[green]Completed"  # Ran successfully, but failed repro
+                    elif validation_status is False: # Failed reproduction
+                        final_status_str = "[green]Ran" # The stage itself ran
                         repro_status_str = "❌ Failed"
-                    elif validation_status is True:
-                        final_status_str = "[green]Completed"
+                    elif validation_status is True: # Passed reproduction
+                        final_status_str = "[green]Ran"
                         repro_status_str = "✅ Passed"
-                    else:  # Completed in experiment mode or no validation happened/needed (validation_status is None)
-                        final_status_str = "[green]Completed"
+                    else: # Ran in experiment mode or no validation needed (validation_status is None)
+                        final_status_str = "[green]Ran"
                         repro_status_str = "N/A"
-                # else: Stage was not executed (e.g., workflow stopped early)
-                #     final_status_str = "[grey50]Not run"
-                #     repro_status_str = "N/A"
+                # else: Stage was not executed (e.g., workflow stopped early) - final_status_str remains "Not run"
 
                 # Get output paths from the StageFunction definition for display
-                output_paths = []
+                # output_paths = []
+                # if stage_func.outputs:
+                #     for out in stage_func.outputs:
+                #         if isinstance(out, str):
+                #             output_paths.append(out)
+                #         elif isinstance(out, dict) and "path" in out:
+                #             output_paths.append(out["path"])
+                # outputs_str = ", ".join(output_paths) if output_paths else "[dim]None"
+
+                # --- Construct resolved output paths for display ---
+                outputs_str_parts = []
                 if stage_func.outputs:
                     for out in stage_func.outputs:
+                        path_str = None
+                        description = None
+                        is_shared = False # Heuristic
+
                         if isinstance(out, str):
-                            output_paths.append(out)
+                            path_str = out
+                            # Apply heuristic: path without separator is likely shared
+                            if '/' not in path_str and '\\\\' not in path_str:
+                               is_shared = True
                         elif isinstance(out, dict) and "path" in out:
-                            output_paths.append(out["path"])
-                outputs_str = ", ".join(output_paths) if output_paths else "[dim]None"
+                            path_str = out["path"]
+                            description = out.get("description")
+                            # Check scope or apply heuristic
+                            if out.get("scope") == "shared": is_shared = True
+                            elif out.get("scope") == "output": is_shared = False
+                            elif path_str and '/' not in path_str and '\\\\' not in path_str: is_shared = True
+
+                        if path_str:
+                            # Construct the resolved path string for display
+                            if is_shared:
+                                # Use the relative path defined in the workflow init
+                                resolved_display_path = f"{self.shared_data_dir.as_posix()}/{path_str}"
+                            else:
+                                # Use the relative path defined in the workflow init
+                                resolved_display_path = f"{self.active_output_dir.as_posix()}/{path_str}"
+
+                            display_str = f"{resolved_display_path}"
+                            # Description part might be too verbose for the summary table, let's omit it here.
+                            # if description:
+                            #     display_str += f" ([dim]{description}[/dim])"
+                            outputs_str_parts.append(display_str)
+
+                outputs_display = ", ".join(outputs_str_parts) if outputs_str_parts else "[dim]None"
+                # --- End construct resolved output paths ---
 
                 # Get and format dependencies
                 deps_list = stage_func.dependencies
                 deps_str = ", ".join(deps_list) if deps_list else "[dim]None"
 
-                row_data = [stage_id_summary, final_status_str, outputs_str, deps_str]
+                row_data = [stage_id_summary, final_status_str, outputs_display, deps_str] # Use outputs_display
                 if self.mode == "reproduction":
                     row_data.append(repro_status_str)
 
@@ -1218,9 +1385,13 @@ class Workflow:
         # --- Final Actions ---
         # Save config potentially modified by hashing or stage registration updates
         # Do this even if the workflow failed mid-way to capture any hashes generated before failure
-        self.config.save()
-        if self.use_rich:
-            console.print(f"[dim]Configuration saved to [bold]{self.config.path}[/bold][/dim]")
+        # --- Only save config in experiment mode --- 
+        if self.mode == "experiment":
+            self.config.save()
+            if self.use_rich:
+                console.print(f"[dim]Configuration saved to [bold]{self.config.path}[/bold][/dim]")
+        elif self.use_rich:
+             console.print(f"[dim]Skipping configuration save in [bold]{self.mode}[/bold] mode.[/dim]")
 
         if workflow_failed:
             if self.reproduction_failure_mode == "continue":
@@ -1314,12 +1485,18 @@ class Workflow:
         try:
             execution_order = self._resolve_execution_order()
 
-            table = Table(title="Stage Execution Order & Details", show_lines=True)
+            table = Table(
+                title="Stage Execution Order & Details",
+                show_header=True,
+                header_style="bold magenta",
+                box=rich.box.ROUNDED,
+                show_lines=True
+            )
             table.add_column("Order", style="dim", justify="right")
             table.add_column("Stage ID", style="cyan", no_wrap=True)
             table.add_column("Description", style="blue")
             table.add_column("Dependencies", style="yellow")
-            table.add_column("Declared Outputs", style="green")
+            table.add_column("Declared Outputs", style="green", overflow="fold") # Added overflow
 
             for idx, stage_id in enumerate(execution_order):
                 if stage_id not in self._stages:
