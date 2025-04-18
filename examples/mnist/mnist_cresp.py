@@ -211,6 +211,9 @@ def prepare_data_loaders():
 )
 def train_model():
     """Train a simple CNN model on MNIST"""
+    
+    torch.use_deterministic_algorithms(True) 
+    
     # Check if we already have results cached
     if "train_model" in _stage_results_cache:
         return _stage_results_cache["train_model"]
@@ -230,7 +233,7 @@ def train_model():
     optimizer = optim.Adam(model.parameters(), lr=0.001)
     
     # Training loop
-    epochs = 1
+    epochs = 3
     train_losses = []
     
     for epoch in range(1, epochs + 1):

@@ -63,7 +63,7 @@ class CrespConfig:
         """Validate that the configuration data matches the model specification"""
         try:
             # Validate against the imported Pydantic model
-            self._model = CrespConfigModel(**self._data) 
+            self._model = CrespConfigModel(**self._data)
         except ValidationError as e:
             # Keep ValidationError import
             raise ValueError(f"Configuration validation failed: {e}")
@@ -85,7 +85,7 @@ class CrespConfig:
         config_path = cls._find_config_file(path)
         if not config_path:
             # Use class attribute directly
-            raise FileNotFoundError(f"Configuration file not found: {path or cls.DEFAULT_CONFIG_NAME}") 
+            raise FileNotFoundError(f"Configuration file not found: {path or cls.DEFAULT_CONFIG_NAME}")
         
         try:
             with open(config_path, 'r', encoding='utf-8') as f:
@@ -102,9 +102,9 @@ class CrespConfig:
         # Basic structure required by CrespConfigModel
         config_data = {
             "version": "1.0",
-            "metadata": metadata, 
+            "metadata": metadata,
             # Assume Environment default is handled by model, provide required fields
-            "environment": {"manager": "pixi", "file": "pixi.toml"}, 
+            "environment": {"manager": "pixi", "file": "pixi.toml"},
             "stages": []
         }
         # Validate against the model upon creation? Pydantic does this implicitly.
@@ -115,7 +115,7 @@ class CrespConfig:
             config._path = Path(path)
         else:
             # Use class attribute directly
-            config._path = Path(cls.DEFAULT_CONFIG_NAME) 
+            config._path = Path(cls.DEFAULT_CONFIG_NAME)
         config._modified = True # Mark as modified since it's newly created
         return config
     
@@ -136,7 +136,7 @@ class CrespConfig:
         # Search in current directory and parent directories
         current_dir = Path.cwd()
         # Use class attribute directly
-        config_name = CrespConfig.DEFAULT_CONFIG_NAME 
+        config_name = CrespConfig.DEFAULT_CONFIG_NAME
         
         while True:
             config_path = current_dir / config_name
@@ -185,7 +185,7 @@ class CrespConfig:
             save_path.parent.mkdir(parents=True, exist_ok=True)
         except Exception as e:
             raise IOError(f"Error creating directory for config file {save_path}: {e}")
-
+        
         # Save configuration
         try:
             with open(save_path, 'w', encoding=encoding) as f:
@@ -243,7 +243,7 @@ class CrespConfig:
         # Validate the provided stage data against the Pydantic Stage model
         try:
             # Use the imported Stage model for validation
-            Stage(**stage_data) 
+            Stage(**stage_data)
         except ValidationError as e:
             raise ValueError(f"Invalid stage data for ID '{stage_id}': {e}")
         
@@ -257,7 +257,7 @@ class CrespConfig:
         
         # Re-validate the entire config model after adding the stage
         # This ensures overall consistency (e.g., dependencies) if models had cross-validators
-        self._validate_model() 
+        self._validate_model()
         
         if not defer_save and self._path:
             self.save() # Save immediately if not deferred and path exists
@@ -305,9 +305,9 @@ class CrespConfig:
             stage["outputs"].append({
                 "path": artifact_path,
                 "hash": hash_value,
-                "hash_method": hash_method 
-                # Add description? Maybe optionally passed to update_hash?
-                # "description": f"Generated artifact for stage {stage_id}" 
+                "hash_method": hash_method
+                    # Add description? Maybe optionally passed to update_hash?
+                    # "description": f"Generated artifact for stage {stage_id}"
             })
             self._modified = True
             

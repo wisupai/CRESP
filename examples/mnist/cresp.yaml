@@ -59,7 +59,7 @@ stages:
     reproduction:
       mode: standard
       tolerance_relative: 1.0e-05
-    hash: 68f9b85dfe11b3bbd8a62737bd022732bc7b0c9eda01f89ffc4b015fcc938060
+    hash: c1dab9381f7a65e4941462d70e42dd18853de75a07c965d0c8ac0485ff0d766d
     hash_method: sha256
   code_handler: __main__.train_model
   parameters: {}
@@ -72,12 +72,12 @@ stages:
     reproduction:
       mode: standard
       tolerance_absolute: 0.5
-    hash: 85964993b6edf4adea6c61a08d2932e93c67b17bb52fe996adf903c4a30bdf2a
+    hash: 46df33f15db241ca09fac8ffc5c0af3fa2d54dcbdf6d0e539378d99f60c06fb4
     hash_method: sha256
   - path: outputs/loss_curve.png
     reproduction:
       mode: strict
-    hash: f111e6c39d2754ddd64135bb8bd183e889c226a9becb575eed95dc4d317951b1
+    hash: 09450cf977cfa05614e815f68151655ff6aed876f8e396829ec4b5256b7db504
     hash_method: sha256
   code_handler: __main__.evaluate_model
   parameters: {}
@@ -90,7 +90,7 @@ stages:
     reproduction:
       mode: tolerant
       similarity_threshold: 0.9
-    hash: 27731be53011565e363e01e92ff42fdeae823977be04670d15f2da18196e377d
+    hash: 3e5e05dee612727b08fa25f10c17d34b63bc9181bf17acc442f5dd0f96521bf2
     hash_method: sha256
   code_handler: __main__.generate_report
   parameters: {}

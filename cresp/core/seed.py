@@ -74,7 +74,7 @@ def set_numpy_seed(seed: int) -> None:
         logger.debug("NumPy not available, skipping seed setting")
 
 def set_torch_seed(seed: int) -> None:
-    """Set PyTorch random seeds.
+    """Set PyTorch random seeds, including CPU, CUDA, and MPS if available.
     
     Args:
         seed: The random seed to set
@@ -82,17 +82,25 @@ def set_torch_seed(seed: int) -> None:
     try:
         import torch
         torch.manual_seed(seed)
-        
+        logger.debug(f"Set PyTorch CPU seed to {seed}")
+
         # Set CUDA seeds if available
         if torch.cuda.is_available():
             torch.cuda.manual_seed(seed)
             torch.cuda.manual_seed_all(seed)  # For multi-GPU
-            
-            # Make CUDA deterministic
+
+            # Make CUDA deterministic (important for reproducibility)
+            # Note: Setting deterministic=True might impact performance
+            # and some operations may not have deterministic implementations.
             torch.backends.cudnn.deterministic = True
             torch.backends.cudnn.benchmark = False
-            logger.debug(f"Set PyTorch CUDA seeds to {seed}")
-        logger.debug(f"Set PyTorch seed to {seed}")
+            logger.debug(f"Set PyTorch CUDA seeds to {seed} and enabled CUDNN deterministic mode")
+        
+        # Set MPS seeds if available (Apple Silicon GPUs)
+        if torch.backends.mps.is_available():
+            torch.mps.manual_seed(seed)
+            logger.debug(f"Set PyTorch MPS seed to {seed}")
+
     except ImportError:
         logger.debug("PyTorch not available, skipping seed setting")
 
