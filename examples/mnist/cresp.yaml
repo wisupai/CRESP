@@ -1,0 +1,108 @@
+version: '1.0'
+metadata:
+  title: MNIST Classification with PyTorch
+  authors:
+  - name: John Doe
+    affiliation: Example University
+    email: john.doe@example.edu
+  description: A simple example of reproducible MNIST classification using CRESP
+environment:
+  manager: pixi
+  file: pixi.toml
+stages:
+- id: download_data
+  description: Download MNIST dataset
+  dependencies: []
+  outputs:
+  - path: data
+    reproduction:
+      mode: strict
+      tolerance_absolute: null
+      tolerance_relative: null
+      similarity_threshold: null
+  - path: data/MNIST/raw/t10k-images-idx3-ubyte
+    hash: 0fa7898d509279e482958e8ce81c8e77db3f2f8254e26661ceb7762c4d494ce7
+    hash_method: sha256
+  - path: data/MNIST/raw/t10k-labels-idx1-ubyte
+    hash: ff7bcfd416de33731a308c3f266cc351222c34898ecbeaf847f06e48f7ec33f2
+    hash_method: sha256
+  - path: data/MNIST/raw/train-images-idx3-ubyte
+    hash: ba891046e6505d7aadcbbe25680a0738ad16aec93bde7f9b65e87a2fc25776db
+    hash_method: sha256
+  - path: data/MNIST/raw/t10k-images-idx3-ubyte.gz
+    hash: 8d422c7b0a1c1c79245a5bcf07fe86e33eeafee792b84584aec276f5a2dbc4e6
+    hash_method: sha256
+  - path: data/MNIST/raw/train-images-idx3-ubyte.gz
+    hash: 440fcabf73cc546fa21475e81ea370265605f56be210a4024d2ca8f203523609
+    hash_method: sha256
+  - path: data/MNIST/raw/train-labels-idx1-ubyte.gz
+    hash: 3552534a0a558bbed6aed32b30c495cca23d567ec52cac8be1a0730e8010255c
+    hash_method: sha256
+  - path: data/MNIST/raw/train-labels-idx1-ubyte
+    hash: 65a50cbbf4e906d70832878ad85ccda5333a97f0f4c3dd2ef09a8a9eef7101c5
+    hash_method: sha256
+  - path: data/MNIST/raw/t10k-labels-idx1-ubyte.gz
+    hash: f7ae60f92e00ec6debd23a6088c31dbd2371eca3ffa0defaefb259924204aec6
+    hash_method: sha256
+  code_handler: __main__.download_mnist_data
+  parameters: {}
+- id: prepare_data
+  description: Prepare data loaders
+  dependencies:
+  - download_data
+  outputs: []
+  code_handler: __main__.prepare_data_loaders
+  parameters: {}
+- id: train_model
+  description: Train MNIST model
+  dependencies:
+  - prepare_data
+  outputs:
+  - path: outputs/mnist_model.pt
+    reproduction:
+      mode: standard
+      tolerance_absolute: null
+      tolerance_relative: 1.0e-05
+      similarity_threshold: null
+    hash: 68f9b85dfe11b3bbd8a62737bd022732bc7b0c9eda01f89ffc4b015fcc938060
+    hash_method: sha256
+  code_handler: __main__.train_model
+  parameters: {}
+- id: evaluate_model
+  description: Evaluate trained model
+  dependencies:
+  - train_model
+  outputs:
+  - path: outputs/accuracy.txt
+    reproduction:
+      mode: standard
+      tolerance_absolute: 0.5
+    hash: 85964993b6edf4adea6c61a08d2932e93c67b17bb52fe996adf903c4a30bdf2a
+    hash_method: sha256
+  - path: outputs/loss_curve.png
+    reproduction:
+      mode: strict
+      tolerance_absolute: null
+      tolerance_relative: null
+      similarity_threshold: null
+    hash: f111e6c39d2754ddd64135bb8bd183e889c226a9becb575eed95dc4d317951b1
+    hash_method: sha256
+  code_handler: __main__.evaluate_model
+  parameters: {}
+- id: generate_report
+  description: Generate experiment report
+  dependencies:
+  - evaluate_model
+  outputs:
+  - path: outputs/report.md
+    reproduction:
+      mode: tolerant
+      tolerance_absolute: null
+      tolerance_relative: null
+      similarity_threshold: 0.9
+    hash: 27731be53011565e363e01e92ff42fdeae823977be04670d15f2da18196e377d
+    hash_method: sha256
+  code_handler: __main__.generate_report
+  parameters: {}
+reproduction:
+  random_seed: 42

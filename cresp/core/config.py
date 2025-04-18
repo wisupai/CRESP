@@ -547,6 +547,7 @@ class Workflow:
         self._stages: Dict[str, StageFunction] = {}
         self._executed_stages: Set[str] = set()
         self._validation_results: List[Dict[str, Any]] = [] # Initialize validation results store
+        self._stage_validation_status: Dict[str, Optional[bool]] = {} # Store stage-level validation status
         config_file_path = Path(config_path)
         self.reproduction_failure_mode = reproduction_failure_mode
         self.save_reproduction_report = save_reproduction_report
@@ -856,6 +857,7 @@ class Workflow:
                   if self.use_rich:
                        console.print(f"[green]✓ Skipping stage [bold]{stage_id}[/bold] (outputs unchanged)[/green]")
                   self._executed_stages.add(stage_id) 
+                  self._stage_validation_status[stage_id] = None # Mark as skipped
                   return None, [], None # Return None result, empty hashes, None validation status
         # --- End Skip Check --- 
 
@@ -909,6 +911,7 @@ class Workflow:
             elif self.mode == "reproduction":
                 # Validate outputs and get stage status
                 stage_validation_passed = self._validate_outputs(stage_id)
+                self._stage_validation_status[stage_id] = stage_validation_passed # Store stage status
         
         return result, calculated_hashes, stage_validation_passed
 
@@ -1080,6 +1083,7 @@ class Workflow:
         """Run workflow stages"""
         results = {}
         self._validation_results = [] # Clear previous results at the start of a run
+        self._stage_validation_status = {} # Clear previous stage validation status
         workflow_failed = False # Track overall workflow failure
 
         if self.use_rich:
@@ -1123,17 +1127,24 @@ class Workflow:
                     calculated_hashes_for_stage = []
                     stage_validation_passed = None
                     try:
-                        stage_result, calculated_hashes_for_stage, stage_validation_passed = self._run_stage(curr_stage_id)
+                        # Run the stage (validation status will be stored in self._stage_validation_status)
+                        stage_result, calculated_hashes_for_stage, _ = self._run_stage(curr_stage_id)
                         results[curr_stage_id] = stage_result
                         
+                        # Retrieve the validation status for progress update
+                        stage_validation_passed = self._stage_validation_status.get(curr_stage_id)
+                        
                         # Update progress based on whether it was skipped or ran
-                        stage_skipped = stage_result is None and not calculated_hashes_for_stage and stage_validation_passed is None
+                        stage_skipped = stage_validation_passed is None and curr_stage_id in self._executed_stages # Check if skipped
+                        
                         if stage_skipped:
                             progress.update(stage_task, completed=1, description=f"[yellow]✓ {curr_stage_id} skipped (unchanged)")
                         elif stage_validation_passed is False:
                             progress.update(stage_task, completed=1, description=f"[red]✗ {curr_stage_id} failed reproduction")
                             workflow_failed = True # Mark workflow as failed
-                        else:
+                        elif stage_validation_passed is True:
+                            progress.update(stage_task, completed=1, description=f"[green]✓ {curr_stage_id} passed reproduction")
+                        else: # Completed in experiment mode or no validation happened
                             progress.update(stage_task, completed=1, description=f"[green]✓ {curr_stage_id} completed")
                         
                         progress.update(overall_task, advance=1)
@@ -1169,12 +1180,36 @@ class Workflow:
             table.add_column("Stage", style="cyan")
             table.add_column("Status", style="green")
             table.add_column("Outputs", style="blue")
+            if self.mode == "reproduction":
+                table.add_column("Reproduction", style="default") # Add column for reproduction
             
-            for stage_id in execution_plan:
-                stage = self._stages[stage_id]
-                status = "[green]Completed" if stage_id in self._executed_stages else "[red]Not run"
+            for stage_id_summary in execution_plan:
+                stage = self._stages[stage_id_summary]
+                status = "[red]Not run"
+                repro_status_str = "N/A"
+                
+                if stage_id_summary in self._executed_stages:
+                    validation_status = self._stage_validation_status.get(stage_id_summary)
+                    if validation_status is None: # Skipped
+                        status = "[yellow]Skipped"
+                        repro_status_str = "⚪ Skipped"
+                    elif validation_status is False:
+                        status = "[red]Failed"
+                        repro_status_str = "❌ Failed"
+                    elif validation_status is True:
+                        status = "[green]Completed"
+                        repro_status_str = "✅ Passed"
+                    else: # Completed in experiment mode or no validation
+                        status = "[green]Completed"
+                        repro_status_str = "N/A"
+                
                 outputs = ", ".join([o["path"] if isinstance(o, dict) else o for o in stage.outputs]) if stage.outputs else "None"
-                table.add_row(stage_id, status, outputs)
+                
+                row_data = [stage_id_summary, status, outputs]
+                if self.mode == "reproduction":
+                    row_data.append(repro_status_str)
+                    
+                table.add_row(*row_data)
             
             console.print(table)
             
@@ -1197,10 +1232,10 @@ class Workflow:
                 execution_order = self._resolve_execution_order()
                 print(f"Running workflow with {len(execution_order)} stages")
                 
-                for stage_id in execution_order:
-                    print(f"Running stage: {stage_id}")
-                    results[stage_id] = self._run_stage(stage_id)
-                    print(f"Stage {stage_id} completed")
+                for stage_id_summary in execution_order:
+                    print(f"Running stage: {stage_id_summary}")
+                    results[stage_id_summary] = self._run_stage(stage_id_summary)
+                    print(f"Stage {stage_id_summary} completed")
         
         self.config.save()
         
