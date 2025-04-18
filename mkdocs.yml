@@ -1,0 +1,5 @@
+site_name: cresp
+site_description: Computational Research Environment Standardization Protocol
+
+theme:
+  name: material 
