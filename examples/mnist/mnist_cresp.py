@@ -24,7 +24,7 @@ import time
 CRESP_ROOT = Path(__file__).parent.parent.parent
 sys.path.append(str(CRESP_ROOT))
 
-from cresp.core.config import Workflow, ReproductionError
+from cresp.core import Workflow, ReproductionError
 
 # Create output directory
 OUTPUT_DIR = Path("outputs")
