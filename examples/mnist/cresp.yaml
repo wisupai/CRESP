@@ -69,7 +69,7 @@ stages:
   - train
   outputs:
   - path: outputs/accuracy.json
-    hash: 7f14a2aa8b635465bb45ebf04fe09d086009298a62c260403db17348420d49e8
+    hash: 66a7a8f3be0a739a8a8ccdc23d11fa9b9388ef07e7548bb8d72d3eecad7d1a1f
     hash_method: sha256
     shared: false
   code_handler: __main__.evaluate
