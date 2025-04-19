@@ -20,6 +20,7 @@ import matplotlib.pyplot as plt
 import contextlib
 import io
 import argparse
+import json
 
 CRESP_ROOT = Path(__file__).parent.parent.parent
 sys.path.append(str(CRESP_ROOT))
@@ -130,7 +131,7 @@ def train():
     id="evaluate",
     description="Evaluate model accuracy",
     dependencies=["train"],
-    outputs=[{"path": "outputs/accuracy.txt", "shared": False}],
+    outputs=[{"path": "outputs/accuracy.json", "shared": False}],
     reproduction_mode="strict",
 )
 def evaluate():
@@ -147,8 +148,8 @@ def evaluate():
             pred = model(x).argmax(dim=1)
             correct += (pred == y).sum().item()
     acc = 100.0 * correct / len(test_loader.dataset)
-    with open(workflow.get_output_path("outputs/accuracy.txt"), "w") as f:
-        f.write(f"Test accuracy: {acc:.2f}%\n")
+    with open(workflow.get_output_path("outputs/accuracy.json"), "w") as f:
+        json.dump({"accuracy": acc}, f)
     return {"accuracy": acc}
 
 if __name__ == "__main__":
