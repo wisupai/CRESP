@@ -41,58 +41,64 @@ cresp --help
 
 ## Development Roadmap
 
-### Phase 1: Core Modules
+### Phase 1: Core Module
 
-- Configuration Management (core/config.py)
-  - YAML-based configuration schema
-  - Environment validation
-  - Path management
+- Workflow Management (`core/workflow.py`)
+  - [x] Stage definition and validation
+  - [x] Stage dependency resolution
+  - [x] Stage execution tracking
 
-- Hash Calculation (core/hashing.py)
-  - File hash computation
-  - Directory hash computation
-  - Hash comparison utilities
+- Configuration Management (`core/config.py`)
+  - [x] YAML-based configuration schema
+  - [x] Environment validation
+  - [x] Path management
 
-- Random Seed Management (core/seed.py)
-  - Global seed control
-  - Per-stage seed management
-  - Framework-specific seed handling
+- Validation Modes (`core/validation`)
+  - [x] Strict validation (`core/validation/strict.py`)
+  - [ ] Standard validation (`core/validation/standard.py`)
+  - [ ] Tolerant validation (`core/validation/tolerant.py`)
+  - [ ] Output data save and comparison (`core/validation/standard.py` & `core/validation/tolerant.py`)
+
+- Random Seed Management (`core/seed.py`)
+  - [x] Global seed control
+  - [x] Per-stage seed management
+  - [x] Framework-specific seed handling
 
 ### Phase 2: Functional Modules
 
-- Stage Management (core/stage.py)
-  - Stage definition and validation
-  - Stage dependency resolution
-  - Stage execution tracking
+- Stage Management (`core/stage.py`)
+  - [x] Stage definition and validation
+  - [x] Stage dependency resolution 
+  - [x] Stage execution tracking
 
 - Validation Logic (core/validation.py)
-  - Multi-level validation strategies
-  - Output comparison
-  - Tolerance handling
+  - [ ] Multi-level validation strategies
+  - [ ] Output comparison
+  - [ ] Tolerance handling
 
 ### Phase 3: Public API
 
-- Package Initialization (__init__.py)
-- Public Function Exposure
-- API Documentation
+- [ ] Package Initialization (__init__.py)
+- [ ] Public Function Exposure
+- [ ] API Documentation
 
 ### Phase 4: CLI Interface
 
-- Basic Command Structure
+- [ ] Basic Command Structure
 - Subcommand Implementation
-  - init
-  - validate
-  - run
-  - report
+  - [ ] init
+  - [ ] validate
+  - [ ] run
+  - [ ] report
 
 ### Phase 5: Extended Features
 
 - Report Generation
-  - HTML reports
-  - Markdown reports
-  - Validation summaries
+  - [ ] HTML reports
+  - [ ] Markdown reports
+  - [ ] Validation summaries
 
 - Tool Integration
-  - Pixi integration
-  - Git integration
-  - CI/CD support
+  - [ ] Pixi integration
+  - [ ] Git integration
+  - [ ] CI/CD support

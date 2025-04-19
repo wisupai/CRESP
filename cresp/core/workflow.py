@@ -185,8 +185,6 @@ class Workflow:
         mode: str = "experiment",
         skip_unchanged: bool = False,
         reproduction_failure_mode: str = "stop",
-        save_reproduction_report: bool = True,
-        reproduction_report_path: str = "reproduction_report.md",
         set_seed_at_init: bool = True,
         verbose_seed_setting: bool = True,
         experiment_output_dir: str = "experiment",
@@ -205,8 +203,6 @@ class Workflow:
             mode: Workflow mode ("experiment" or "reproduction").
             skip_unchanged: If True, skip stage execution if outputs match stored hashes.
             reproduction_failure_mode: Behavior on reproduction failure ("stop" or "continue").
-            save_reproduction_report: Whether to save a report in reproduction mode.
-            reproduction_report_path: Path for the reproduction report.
             set_seed_at_init: Whether to set random seeds at initialization.
             verbose_seed_setting: Whether to print seed setting information.
             experiment_output_dir: Directory for outputs in experiment mode.
@@ -223,8 +219,6 @@ class Workflow:
         self._stage_validation_status: dict[str, bool | object | None] = {}
         config_file_path = Path(config_path)
         self.reproduction_failure_mode = reproduction_failure_mode
-        self.save_reproduction_report = save_reproduction_report
-        self.reproduction_report_path = reproduction_report_path
         self._seed = seed
         self._verbose_seed_setting = verbose_seed_setting
         self._seed_initialized = False
@@ -1440,10 +1434,6 @@ class Workflow:
                 console.print("[dim]⚪ Skipped stages indicate outputs were unchanged from the previous run.[/dim]")
             console.print()  # Add spacing before report/save messages
 
-            # --- Save Reproduction Report (if applicable) ---
-            if self.mode == "reproduction" and self.save_reproduction_report and self._validation_results:
-                self._save_reproduction_report()
-
         else:
             # --- Non-Rich Execution Path ---
             print(f"Running Workflow: {self.title} (Mode: {self.mode})")
@@ -1625,115 +1615,3 @@ class Workflow:
             console.print(f"[red]Error resolving workflow order for visualization: {str(e)}[/red]")
         except Exception as e:
             console.print(f"[red]An unexpected error occurred during visualization: {str(e)}[/red]")
-
-    def _save_reproduction_report(self):
-        """Generate and save the reproduction report in Markdown format."""
-        if not self._validation_results:
-            if self.use_rich:
-                console.print("[dim]No validation results recorded, skipping report generation.[/dim]")
-            return
-
-        report_path = Path(self.reproduction_report_path)
-        if self.use_rich:
-            console.print(f"[dim]Generating reproduction report at [bold]{report_path}[/bold]...[/dim]")
-
-        # Group results by stage, maintaining order if possible (dicts are ordered in Python 3.7+)
-        results_by_stage: dict[str, list[dict[str, Any]]] = {}
-        processed_stages = set()  # Keep track of stages added to maintain run order
-        for stage_id_run in self._resolve_execution_order():  # Get order stages were run/attempted
-            results_for_stage = [r for r in self._validation_results if r["stage"] == stage_id_run]
-            if results_for_stage:
-                results_by_stage[stage_id_run] = results_for_stage
-                processed_stages.add(stage_id_run)
-        # Add any remaining stages that might have results but weren't in the resolved order (shouldn't happen)
-        for result in self._validation_results:
-            stage_id = result["stage"]
-            if stage_id not in processed_stages:
-                if stage_id not in results_by_stage:
-                    results_by_stage[stage_id] = []
-                results_by_stage[stage_id].append(result)
-
-        # Build Markdown report
-        report_lines = [
-            "# CRESP Reproduction Report",
-            "",
-            f"- **Workflow:** {self.title}",
-            f"- **Configuration:** `{self.config.path}`",
-            f"- **Timestamp:** {time.strftime('%Y-%m-%d %H:%M:%S')}",
-            f"- **Seed:** {self._seed if self._seed is not None else 'Not Set'}",
-            f"- **Failure Mode:** {self.reproduction_failure_mode}",
-        ]
-
-        overall_passed = True
-        passed_count = 0
-        failed_count = 0
-        details_exist = False  # Track if any messages exist
-
-        # --- Stage Summary Table ---
-        stage_summary_lines = [
-            "",
-            "## Stage Summary",
-            "",
-            "| Stage | Status | Files Passed | Files Failed |",
-        ]
-        stage_summary_lines.append("|-------|--------|--------------|--------------|")
-
-        for stage_id, results in results_by_stage.items():
-            stage_passed_count = sum(1 for r in results if r["status"] == "Passed")
-            stage_failed_count = sum(1 for r in results if r["status"] == "Failed")
-            passed_count += stage_passed_count
-            failed_count += stage_failed_count
-
-            stage_status = "✅ Passed" if stage_failed_count == 0 else "❌ Failed"
-            if stage_failed_count > 0:
-                overall_passed = False
-
-            stage_summary_lines.append(f"| `{stage_id}` | {stage_status} | {stage_passed_count} | {stage_failed_count} |")
-
-        report_lines.extend(stage_summary_lines)
-
-        # --- Overall Status ---
-        report_lines.insert(
-            7,
-            f"- **Overall Status:** {'✅ Passed' if overall_passed else '❌ Failed'} ({passed_count} passed, {failed_count} failed)",
-        )
-        report_lines.append("")  # Add blank line after overall status
-
-        # --- Detailed Results per Stage ---
-        report_lines.append("## Detailed Results")
-        report_lines.append("")
-
-        for stage_id, results in results_by_stage.items():
-            stage_status_icon = "✅" if all(r["status"] == "Passed" for r in results) else "❌"
-            report_lines.append(f"### {stage_status_icon} Stage: `{stage_id}`")
-            report_lines.append("")
-            report_lines.append("| File | Status | Mode | Details |")
-            report_lines.append("|------|--------|------|---------|")
-            for r in results:
-                status_symbol = "✅" if r["status"] == "Passed" else "❌"
-                message = r["message"].replace("|", "\\|")  # Escape pipe characters in message
-                if message and message != "Exact hash match":
-                    details_exist = True
-                report_lines.append(f"| `{r['file']}` | {status_symbol} {r['status']} | `{r['mode']}` | {message} |")
-            report_lines.append("")  # Blank line after each stage table
-
-        # Adjust header if no details were ever present
-        if not details_exist:
-            for i, line in enumerate(report_lines):
-                if "| File | Status | Mode | Details |" in line:
-                    report_lines[i] = "| File | Status | Mode |"
-                    report_lines[i + 1] = "|------|--------|------|"  # Adjust separator
-                elif re.match(r"\| `.*` \| .* \| `.*` \| .* \|", line):  # Match table rows
-                    parts = line.split("|")
-                    report_lines[i] = "|".join(parts[:4]) + "|"  # Keep only first 3 columns
-
-        # --- Save Report ---
-        try:
-            report_path.parent.mkdir(parents=True, exist_ok=True)
-            with open(report_path, "w", encoding="utf-8") as f:
-                f.write("\\n".join(report_lines))
-            if self.use_rich:
-                console.print("[green]✓ Reproduction report saved successfully.[/green]")
-        except Exception as e:
-            if self.use_rich:
-                console.print(f"[red]✗ Failed to save reproduction report to {report_path}: {e}[/red]")
