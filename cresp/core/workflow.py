@@ -7,6 +7,7 @@ import time
 import functools
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union, Callable, TypeVar, Set
+import re
 
 # Rich imports for visualization
 try:
@@ -1067,15 +1068,23 @@ class Workflow:
         if self._seed is not None:
             run_subtitle += f" | Seed: {self._seed}"
 
+        # Add authors to subtitle if they exist
+        authors_str = ", ".join([a.get("name", "Unknown") for a in self.config.data.get("authors", [])])
+        if authors_str:
+             run_subtitle += f" | Authors: {authors_str}"
+
         if self.use_rich:
             console.print(
                 Panel(
                     f"[bold blue]{self.title}[/bold blue]",
-                    title="CRESP Workflow Run",
-                    subtitle=run_subtitle,
-                    expand=False,
+                    title="🚀 CRESP Workflow Run",
+                    subtitle=f"[dim]{run_subtitle}[/dim]",
+                    expand=True,
+                    border_style="bold green", # Changed border style
+                    padding=(1, 2) # Add padding
                 )
             )
+            console.print() # Add spacing
 
             # Determine execution plan
             execution_plan: List[str]
@@ -1083,21 +1092,31 @@ class Workflow:
                 # Need to include dependencies if running a single stage
                 execution_plan = self._resolve_execution_order(target_stage=stage_id)
                 console.print(
-                    f"[yellow]Running target stage [bold]{stage_id}[/bold] and its dependencies:[/yellow]"
+                    f"[bold yellow]🎯 Running Target Stage [bold cyan]{stage_id}[/bold cyan] and Dependencies:[/bold yellow]"
                 )
             else:
                 execution_plan = self._resolve_execution_order()
-                console.print("[yellow]Execution plan (all stages):[/yellow]")
+                console.print("[bold yellow]📋 Workflow Execution Plan:[/bold yellow]")
 
-            # Display execution plan
-            plan_table = Table(show_header=False, box=None, padding=(0, 1))
-            plan_table.add_column()  # Index
-            plan_table.add_column()  # Stage ID
-            plan_table.add_column(style="dim")  # Description
+            # Display execution plan in a table
+            plan_table = Table(
+                title="Execution Order",
+                box=rich.box.ROUNDED, # Use rounded box
+                show_header=True,
+                header_style="bold magenta",
+                padding=(0, 1),
+                show_lines=True, # Show lines between rows
+                expand=True # Set expand to True
+            )
+            plan_table.add_column("Order", style="dim", justify="right", width=5)
+            plan_table.add_column("Stage ID", style="cyan", no_wrap=True, min_width=15)
+            plan_table.add_column("Description", style="blue")
             for i, stage_to_run in enumerate(execution_plan):
-                desc = self._stages[stage_to_run].description
+                desc = self._stages[stage_to_run].description or "[dim]No description[/dim]"
                 plan_table.add_row(
-                    f" {i+1}.".ljust(4), f"[bold cyan]{stage_to_run}[/bold cyan]", f": {desc}"
+                    f"{i+1}.",
+                    stage_to_run,
+                    desc
                 )
             console.print(plan_table)
             console.print()  # Spacer
@@ -1232,10 +1251,13 @@ class Workflow:
             # --- Print Final Summary ---
             console.print()  # Spacer
             summary_table = Table(
-                title="Workflow Execution Summary",
+                title="🏁 Workflow Execution Summary",
                 show_header=True,
                 header_style="bold magenta",
-                box=rich.box.ROUNDED,
+                box=rich.box.DOUBLE_EDGE, # Changed box style
+                padding=(0, 1),
+                show_lines=True,
+                expand=True # Set expand to True
             )
             summary_table.add_column("Stage", style="cyan", no_wrap=True)
             summary_table.add_column("Status", style="default", justify="center")
@@ -1247,12 +1269,16 @@ class Workflow:
             # Use the original execution plan for the summary order
             summary_stages = execution_plan
 
+            # Track if any stage was actually skipped
+            any_skipped = False
+
             for stage_id_summary in summary_stages:
                 if stage_id_summary not in self._stages: continue # Should not happen normally
 
                 stage_func = self._stages[stage_id_summary]
-                final_status_str = "[grey50]Not run"
-                repro_status_str = "N/A"
+                final_status_str = "[grey50]Not run[/grey50]"
+                repro_status_str = "[dim]N/A[/dim]"
+                status_style = "grey50" # Default style for not run
 
                 # Determine status based on execution and validation results
                 validation_status = self._stage_validation_status.get(stage_id_summary)
@@ -1260,30 +1286,25 @@ class Workflow:
 
                 if stage_ran_or_skipped:
                     if validation_status is SKIPPED:
-                        final_status_str = "[yellow]Skipped"
+                        final_status_str = "Skipped"
                         repro_status_str = "⚪ Skipped"
+                        status_style = "yellow"
+                        any_skipped = True
                     elif validation_status is False: # Failed reproduction
-                        final_status_str = "[green]Ran" # The stage itself ran
+                        final_status_str = "Ran" # The stage itself ran
                         repro_status_str = "❌ Failed"
+                        status_style = "red" # Mark Ran as red if repro failed
                     elif validation_status is True: # Passed reproduction
-                        final_status_str = "[green]Ran"
+                        final_status_str = "Ran"
                         repro_status_str = "✅ Passed"
+                        status_style = "green"
                     else: # Ran in experiment mode or no validation needed (validation_status is None)
-                        final_status_str = "[green]Ran"
-                        repro_status_str = "N/A"
+                        final_status_str = "Ran"
+                        repro_status_str = "[dim]N/A[/dim]"
+                        status_style = "green"
                 # else: Stage was not executed (e.g., workflow stopped early) - final_status_str remains "Not run"
 
                 # Get output paths from the StageFunction definition for display
-                # output_paths = []
-                # if stage_func.outputs:
-                #     for out in stage_func.outputs:
-                #         if isinstance(out, str):
-                #             output_paths.append(out)
-                #         elif isinstance(out, dict) and "path" in out:
-                #             output_paths.append(out["path"])
-                # outputs_str = ", ".join(output_paths) if output_paths else "[dim]None"
-
-                # --- Construct resolved output paths for display ---
                 outputs_str_parts = []
                 if stage_func.outputs:
                     for out in stage_func.outputs:
@@ -1324,15 +1345,29 @@ class Workflow:
 
                 # Get and format dependencies
                 deps_list = stage_func.dependencies
-                deps_str = ", ".join(deps_list) if deps_list else "[dim]None"
+                deps_str = ", ".join(deps_list) if deps_list else "[dim]None[/dim]"
 
-                row_data = [stage_id_summary, final_status_str, outputs_display, deps_str] # Use outputs_display
+                row_data = [
+                    f"[{status_style}]{stage_id_summary}[/]", # Apply style to stage ID
+                    f"[{status_style}]{final_status_str}[/]",
+                    outputs_display,
+                    deps_str
+                ]
                 if self.mode == "reproduction":
-                    row_data.append(repro_status_str)
+                    repro_style = "default"
+                    if repro_status_str == "❌ Failed": repro_style = "red"
+                    elif repro_status_str == "✅ Passed": repro_style = "green"
+                    elif repro_status_str == "⚪ Skipped": repro_style = "yellow"
+
+                    row_data.append(f"[{repro_style}]{repro_status_str}[/]")
 
                 summary_table.add_row(*row_data)
 
             console.print(summary_table)
+            # Add a footnote if stages were skipped
+            if any_skipped:
+                console.print("[dim]⚪ Skipped stages indicate outputs were unchanged from the previous run.[/dim]")
+            console.print() # Add spacing before report/save messages
 
             # --- Save Reproduction Report (if applicable) ---
             if (
@@ -1391,7 +1426,7 @@ class Workflow:
             if self.use_rich:
                 console.print(f"[dim]Configuration saved to [bold]{self.config.path}[/bold][/dim]")
         elif self.use_rich:
-             console.print(f"[dim]Skipping configuration save in [bold]{self.mode}[/bold] mode.[/dim]")
+             console.print(f"[dim]⚙️ Skipping configuration save in [bold]{self.mode}[/bold] mode.[/dim]")
 
         if workflow_failed:
             if self.reproduction_failure_mode == "continue":
@@ -1480,30 +1515,33 @@ class Workflow:
             # Basic text visualization could be added here as a fallback
             return
 
-        console.print(Panel(f"[bold]Workflow Structure: {self.title}[/bold]", expand=False))
+        console.print(Panel(f"[bold]Workflow Structure: {self.title}[/bold]", expand=True, border_style="blue"))
+        console.print() # Add spacing
 
         try:
             execution_order = self._resolve_execution_order()
 
             table = Table(
-                title="Stage Execution Order & Details",
+                title="Stage Overview", # Changed title
                 show_header=True,
                 header_style="bold magenta",
-                box=rich.box.ROUNDED,
-                show_lines=True
+                box=rich.box.ROUNDED, # Use rounded box
+                show_lines=True,
+                padding=(0,1),
+                expand=True # Set expand to True
             )
-            table.add_column("Order", style="dim", justify="right")
-            table.add_column("Stage ID", style="cyan", no_wrap=True)
+            table.add_column("Order", style="dim", justify="right", width=5)
+            table.add_column("Stage ID", style="cyan", no_wrap=True, min_width=15)
             table.add_column("Description", style="blue")
-            table.add_column("Dependencies", style="yellow")
-            table.add_column("Declared Outputs", style="green", overflow="fold") # Added overflow
+            table.add_column("Dependencies", style="yellow", overflow="fold") # Allow folding
+            table.add_column("Declared Outputs", style="green", overflow="fold") # Allow folding
 
             for idx, stage_id in enumerate(execution_order):
                 if stage_id not in self._stages:
                     continue  # Skip if somehow not registered
 
                 stage = self._stages[stage_id]
-                deps = ", ".join(stage.dependencies) if stage.dependencies else "[dim]None"
+                deps = ", ".join(stage.dependencies) if stage.dependencies else "[dim]None[/dim]"
 
                 # Format outputs nicely
                 outputs_str_parts = []
@@ -1516,9 +1554,15 @@ class Workflow:
                             if out.get("description"):
                                 out_str += f" ([dim]{out['description']}[/dim])"
                             outputs_str_parts.append(out_str)
-                outputs_display = "\n".join(outputs_str_parts) if outputs_str_parts else "[dim]None"
+                outputs_display = "\n".join(outputs_str_parts) if outputs_str_parts else "[dim]None[/dim]"
 
-                table.add_row(str(idx + 1), stage_id, stage.description, deps, outputs_display)
+                table.add_row(
+                    str(idx + 1),
+                    stage_id,
+                    stage.description,
+                    deps,
+                    outputs_display
+                )
 
             console.print(table)
 
