@@ -5,7 +5,6 @@ from pathlib import Path
 # Import necessary functions
 from ..utils import calculate_artifact_hash  # Updated import
 from .standard import validate_standard
-from .strict import validate_strict
 from .tolerant import validate_tolerant
 
 
@@ -75,14 +74,7 @@ def validate_artifact(
             # Pass similarity threshold to the tolerant validator
             return validate_tolerant(artifact_path, reference_hash, similarity_threshold)
 
-        # elif validation_type == "strict": # This case is already handled above
-        #    # This part should technically not be reached if strict validation failed hash check.
-        #    # If it somehow reaches here (e.g., hash calculation failed), re-validate?
-        #    # Let's rely on the check after initial hash calculation.
-        #    return validate_strict(artifact_path, reference_hash) # Already known to fail
-
         else:
-            # This handles unknown validation types
             return False, f"Unknown validation type: {validation_type}"
 
     except Exception as e:
