@@ -43,12 +43,13 @@ pytest-mock = ">=3.14.0,<4"
 ruff = ">=0.11.5,<0.12"
 mypy = ">=1.15.0,<2"
 pre-commit = ">=4.2.0,<5"
+types-PyYAML = ">=6.0.12.8,<7"
 
 [tool.pixi.feature.dev.tasks]
 test = "pytest"
 lint = "ruff check"
 format = "ruff format"
-typecheck = "mypy"
+typecheck = "mypy -p cresp"
 
 [tool.pixi.feature.doc.dependencies]
 mkdocs = ">=1.6.1,<2"

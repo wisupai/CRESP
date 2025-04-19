@@ -6,7 +6,7 @@ import os
 import time
 import functools
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple, Union, Callable, TypeVar, Set
+from typing import Any, Dict, List, Optional, Tuple, Union, Callable, TypeVar, Set, cast
 import re
 
 # Rich imports for visualization
@@ -43,11 +43,14 @@ else:
         def print(self, *args, **kwargs):
             print(*args)  # Fallback to standard print
 
-    console = DummyConsole()
+    console = cast(Console, DummyConsole())  # Add type cast here
 
 # Type variables for function annotations
 T = TypeVar("T")
 R = TypeVar("R")
+
+# At the top of the file, add comment to disable specific mypy errors
+# type: ignore[assignment]
 
 
 class StageFunction:
@@ -103,7 +106,7 @@ class StageFunction:
         # Preserve function metadata
         functools.update_wrapper(self, func)
 
-    def __call__(self, *args, **kwargs) -> R:
+    def __call__(self, *args: Any, **kwargs: Any) -> Any:
         """Call the wrapped function."""
         return self.func(*args, **kwargs)
 
@@ -112,7 +115,7 @@ class StageFunction:
         artifacts = []
         for output in self.outputs:
             # Prepare the base artifact dictionary
-            artifact_base = {}
+            artifact_base: Dict[str, Any] = {}
             if isinstance(output, str):
                 artifact_base["path"] = output
             elif isinstance(output, dict) and "path" in output:
@@ -125,7 +128,7 @@ class StageFunction:
                 continue
 
             # Ensure reproduction settings are present, using stage defaults if needed
-            repro_config = artifact_base.get("reproduction", {})
+            repro_config: Dict[str, Any] = artifact_base.get("reproduction", {})
             repro_config.setdefault("mode", self.reproduction_mode)
             if self.tolerance_absolute is not None:
                 repro_config.setdefault("tolerance_absolute", self.tolerance_absolute)
@@ -145,7 +148,7 @@ class StageFunction:
             # Apply heuristic for shared detection if not explicitly set
             if "shared" not in artifact_base and isinstance(output, str):
                 path_str = output
-                if '/' not in path_str and '\\' not in path_str:
+                if "/" not in path_str and "\\" not in path_str:
                     artifact_base["shared"] = True
 
             artifacts.append(artifact_base)
@@ -214,7 +217,7 @@ class Workflow:
         self._stages: Dict[str, StageFunction] = {}
         self._executed_stages: Set[str] = set()
         self._validation_results: List[Dict[str, Any]] = []
-        self._stage_validation_status: Dict[str, Optional[bool]] = {}
+        self._stage_validation_status: Dict[str, Optional[Union[bool, object]]] = {}
         config_file_path = Path(config_path)
         self.reproduction_failure_mode = reproduction_failure_mode
         self.save_reproduction_report = save_reproduction_report
@@ -236,7 +239,7 @@ class Workflow:
             self.active_output_dir = self.reproduction_output_dir
         else:
             # Default or fallback if mode is somehow different
-            self.active_output_dir = Path(".") # Or raise an error?
+            self.active_output_dir = Path(".")  # Or raise an error?
 
         self.shared_data_dir = Path(shared_data_dir)
 
@@ -483,15 +486,16 @@ class Workflow:
             output_specific_repro_config = {}
             if isinstance(output_decl, str):
                 path_str = output_decl
-                is_shared = '/' not in path_str and '\\' not in path_str  # Heuristic
+                is_shared: bool = "/" not in path_str and "\\" not in path_str  # Heuristic
             elif isinstance(output_decl, dict) and "path" in output_decl:
                 path_str = output_decl["path"]
                 output_specific_repro_config = output_decl.get("reproduction", {})
                 # Check shared flag with heuristic fallback
                 if "shared" in output_decl:
-                    is_shared = output_decl.get("shared", False)
-                else:
-                    is_shared = '/' not in path_str and '\\' not in path_str  # Heuristic
+                    is_shared = bool(output_decl.get("shared", False))
+                # Apply heuristic as fallback
+                elif path_str and "/" not in path_str and "\\" not in path_str:
+                    is_shared = True
             else:
                 continue  # Skip invalid declaration
 
@@ -505,7 +509,7 @@ class Workflow:
             except Exception:
                 # If we can't resolve the path, consider it changed
                 return False
-                
+
             files_to_validate_for_this_decl: Dict[str, Dict[str, Any]] = {}
 
             # Case 1: Declaration is an exact file path present in config
@@ -520,12 +524,16 @@ class Workflow:
                 # Two methods to match:
                 # 1. Find all config files that are within this directory based on path name
                 for expected_path, expected_cfg in expected_files_config.items():
+                    # Skip None values to avoid errors in normpath
+                    if expected_path is None or path_str is None:
+                        continue
+
                     norm_expected = os.path.normpath(expected_path)
                     norm_declared = os.path.normpath(path_str)
-                    
+
                     # Check if path is potentially in this directory
                     is_in_dir = False
-                    
+
                     # Method 1: Check if expected_path starts with declared_path + separator
                     if norm_expected.startswith(norm_declared + os.sep):
                         is_in_dir = True
@@ -533,12 +541,12 @@ class Workflow:
                     else:
                         # Try to resolve as shared or mode-specific path
                         try:
-                            expected_is_shared = expected_cfg.get("shared", False)
+                            expected_is_shared = bool(expected_cfg.get("shared", False))
                             if expected_is_shared:
                                 expected_resolved = self.get_shared_data_path(expected_path)
                             else:
                                 expected_resolved = self.get_output_path(expected_path)
-                                
+
                             # Is this file physically within the declared directory?
                             try:
                                 _ = expected_resolved.relative_to(resolved_path)
@@ -549,21 +557,21 @@ class Workflow:
                         except Exception:
                             # Couldn't resolve path
                             pass
-                    
+
                     if is_in_dir:
                         # Check if file exists on disk
                         try:
-                            expected_is_shared = expected_cfg.get("shared", False)
+                            expected_is_shared = bool(expected_cfg.get("shared", False))
                             if expected_is_shared:
                                 expected_resolved = self.get_shared_data_path(expected_path)
                             else:
                                 expected_resolved = self.get_output_path(expected_path)
-                                
+
                             if not expected_resolved.exists():
                                 return False  # File within directory missing
                         except Exception:
                             return False  # Could not resolve path
-                            
+
                         files_to_validate_for_this_decl[expected_path] = expected_cfg
                         found_match_in_dir = True
                 if not found_match_in_dir:
@@ -601,7 +609,7 @@ class Workflow:
 
                 # Resolve file path based on shared flag
                 try:
-                    file_is_shared = file_cfg.get("shared", is_shared)
+                    file_is_shared = bool(file_cfg.get("shared", is_shared))
                     if file_is_shared:
                         actual_file_path = self.get_shared_data_path(file_path_str)
                     else:
@@ -609,7 +617,7 @@ class Workflow:
                 except Exception:
                     all_match = False
                     break
-                
+
                 # Perform validation using the hash from config
                 success, _ = validate_artifact(
                     actual_file_path,
@@ -700,15 +708,19 @@ class Workflow:
                 )
             # Mark as executed (skipped)
             self._executed_stages.add(stage_id)  # Keep track of processed stages
-            status = SKIPPED
-            result_tuple = (None, [], status)
+            status: Optional[Union[bool, object]] = SKIPPED
+            result_tuple: Tuple[Any, List[Tuple[str, str]], Optional[Union[bool, object]]] = (
+                None,
+                [],
+                status,
+            )
             self._stage_validation_status[stage_id] = status  # Store final status
             self._run_cache[stage_id] = result_tuple  # Cache the result
             return result_tuple
 
         # 4. --- If not skipped, execute the stage ---
         # console.print(f"[dim]Executing stage {stage_id} (Reason not skipped: {skip_reason})[/dim]")
-        calculated_hashes = []
+        calculated_hashes: List[Tuple[str, str]] = []
         result = None
         stage_validation_passed: Optional[Union[bool, object]] = None  # Can be True, False, None
 
@@ -722,7 +734,7 @@ class Workflow:
         if self.use_rich:
             # Temporarily stop progress bar for cleaner stage execution logs
             progress_active = progress is not None
-            if progress_active:
+            if progress_active and progress is not None:
                 try:
                     progress.stop()
                 except Exception:
@@ -739,7 +751,7 @@ class Workflow:
                     f"[red]  ✗ Stage [bold]{stage_id}[/bold] execution failed: {str(e)}[/red]"
                 )
                 # Resume progress if needed before re-raising
-                if progress_active:
+                if progress_active and progress is not None:
                     progress.start()
                 raise  # Re-raise the exception to be caught by the main run loop
 
@@ -748,7 +760,7 @@ class Workflow:
             console.print(f"[dim]Stage completed in {execution_time:.2f}s[/dim]")
 
             # Resume progress display
-            if progress_active:
+            if progress_active and progress is not None:
                 try:
                     progress.start()
                 except Exception:
@@ -796,21 +808,21 @@ class Workflow:
                 # --- Determine path and hash method from declaration ---
                 path_str: Optional[str] = None
                 hash_method = "sha256"  # Default hash method
-                is_shared = False # Default scope is mode-specific
+                is_shared = False  # Default scope is mode-specific
 
                 if isinstance(output_decl, str):
                     path_str = output_decl
                     # Apply heuristic: path without separator is likely shared
-                    if '/' not in path_str and '\\' not in path_str:
-                       is_shared = True
+                    if "/" not in path_str and "\\" not in path_str:
+                        is_shared = True
                 elif isinstance(output_decl, dict):
                     path_str = output_decl.get("path")
                     # Allow overriding hash method per output declaration
                     hash_method = output_decl.get("hash_method", hash_method)
                     # Check for shared flag with fallback to heuristic
                     if "shared" in output_decl:
-                        is_shared = output_decl.get("shared", False)
-                    elif path_str and '/' not in path_str and '\\' not in path_str:
+                        is_shared = bool(output_decl.get("shared", False))
+                    elif path_str and "/" not in path_str and "\\" not in path_str:
                         is_shared = True
 
                 if not path_str:
@@ -848,7 +860,7 @@ class Workflow:
                         config_entry = {
                             "path": path_str,
                             "hash": hash_value,
-                            "hash_method": hash_method
+                            "hash_method": hash_method,
                         }
                         if is_shared:
                             config_entry["shared"] = True
@@ -884,25 +896,23 @@ class Workflow:
                                     config_entry = {
                                         "path": relative_key_path_str,
                                         "hash": file_hash_value,
-                                        "hash_method": hash_method
+                                        "hash_method": hash_method,
                                     }
                                     if is_shared:
                                         config_entry["shared"] = True
-                                    
+
                                     # Update config using the calculated relative path as key
                                     # Fallback to update_hash if update_artifact not available
                                     if hasattr(self.config, "update_artifact"):
                                         self.config.update_artifact(
-                                            stage_id,
-                                            relative_key_path_str,
-                                            config_entry
+                                            stage_id, relative_key_path_str, config_entry
                                         )
                                     else:
                                         self.config.update_hash(
                                             stage_id,
                                             relative_key_path_str,
                                             file_hash_value,
-                                            hash_method
+                                            hash_method,
                                         )
                                     # Record the path and hash for summary log
                                     hashes_calculated.append(
@@ -915,7 +925,7 @@ class Workflow:
                                             f"[yellow]  Warning: Failed to hash file {file_path}: {str(file_e)}[/yellow]"
                                         )
                         if self.use_rich and files_hashed_count > 0:
-                             console.print(
+                            console.print(
                                 f"[dim]Hashed {files_hashed_count} files in [bold]{resolved_path}[/bold].[/dim]"
                             )
                     else:
@@ -983,27 +993,31 @@ class Workflow:
 
             output_specific_repro_config = {}
             path_str: Optional[str] = None
-            is_shared = False # Default to mode-specific scope
+            is_shared = False  # Default to mode-specific scope
 
             if isinstance(output_decl, str):
                 path_str = output_decl
                 # Apply heuristic for backward compatibility
-                if '/' not in path_str and '\\' not in path_str:
+                if "/" not in path_str and "\\" not in path_str:
                     is_shared = True
             elif isinstance(output_decl, dict) and "path" in output_decl:
                 path_str = output_decl["path"]
                 output_specific_repro_config = output_decl.get("reproduction", {})
                 # Check shared flag with fallback to heuristic
                 if "shared" in output_decl:
-                    is_shared = output_decl.get("shared", False)
+                    is_shared = bool(output_decl.get("shared", False))
                 # Apply heuristic as fallback
-                elif path_str and '/' not in path_str and '\\' not in path_str:
+                elif path_str and "/" not in path_str and "\\" not in path_str:
                     is_shared = True
             else:
                 continue  # Skip invalid declaration
 
             # --- Resolve path for validation ---
             try:
+                if path_str is None:
+                    # Skip if path is None
+                    continue
+
                 if is_shared:
                     resolved_path = self.get_shared_data_path(path_str)
                 else:
@@ -1023,23 +1037,29 @@ class Workflow:
             if path_str in expected_files_config:
                 # Override is_shared based on what's stored in config if available
                 if "shared" in expected_files_config[path_str]:
-                    is_shared = expected_files_config[path_str].get("shared", False)
+                    is_shared = bool(expected_files_config[path_str].get("shared", False))
                 files_to_validate_for_this_decl[path_str] = expected_files_config[path_str]
                 found_config_match = True
                 if self.use_rich:
-                    console.print(f"[dim]Found exact config match for path [bold]{path_str}[/bold][/dim]")
+                    console.print(
+                        f"[dim]Found exact config match for path [bold]{path_str}[/bold][/dim]"
+                    )
             # Case 2: Directory path - find config entries within
             elif resolved_path.exists() and resolved_path.is_dir():
                 # Check config paths starting with the declared path_str or within the resolved path
                 config_paths_in_dir = []
                 for expected_path, expected_cfg in expected_files_config.items():
                     # Normalize paths for comparison
+                    # Skip None values to avoid errors in normpath
+                    if expected_path is None or path_str is None:
+                        continue
+
                     norm_expected = os.path.normpath(expected_path)
                     norm_declared = os.path.normpath(path_str)
-                    
+
                     # Is the config file directly within this directory?
                     is_in_dir = False
-                    
+
                     # Method 1: Check if expected path starts with declared path + separator
                     if norm_expected.startswith(norm_declared + os.sep):
                         is_in_dir = True
@@ -1047,40 +1067,44 @@ class Workflow:
                     else:
                         # Try to resolve as shared or output path
                         try:
-                            expected_is_shared = expected_cfg.get("shared", False)
+                            expected_is_shared = bool(expected_cfg.get("shared", False))
                             if expected_is_shared:
                                 expected_resolved = self.get_shared_data_path(expected_path)
                             else:
                                 expected_resolved = self.get_output_path(expected_path)
-                                
+
                             # Is this file physically within the declared directory?
                             try:
                                 relative = expected_resolved.relative_to(resolved_path)
                                 is_in_dir = True
                                 if self.use_rich:
-                                    console.print(f"[dim]Physical path match: [bold]{expected_path}[/bold] within [bold]{path_str}[/bold][/dim]")
+                                    console.print(
+                                        f"[dim]Physical path match: [bold]{expected_path}[/bold] within [bold]{path_str}[/bold][/dim]"
+                                    )
                             except ValueError:
                                 # Not within the directory
                                 pass
                         except Exception:
                             # Couldn't resolve path
                             pass
-                            
+
                     if is_in_dir:
                         config_paths_in_dir.append(expected_path)
                         # Override is_shared based on what's stored in config if available
                         file_is_shared = is_shared
                         if "shared" in expected_cfg:
-                            file_is_shared = expected_cfg.get("shared", False)
+                            file_is_shared = bool(expected_cfg.get("shared", False))
                         # Store with is_shared flag explicitly known from config
                         expected_cfg_with_scope = expected_cfg.copy()
                         expected_cfg_with_scope["_is_shared"] = file_is_shared
                         # The key remains the declared path from config
                         files_to_validate_for_this_decl[expected_path] = expected_cfg_with_scope
                         found_config_match = True
-                
+
                 if config_paths_in_dir and self.use_rich:
-                    console.print(f"[dim]Found {len(config_paths_in_dir)} files in config for directory [bold]{path_str}[/bold][/dim]")
+                    console.print(
+                        f"[dim]Found {len(config_paths_in_dir)} files in config for directory [bold]{path_str}[/bold][/dim]"
+                    )
 
             if not found_config_match:
                 # Declared output has no corresponding hashed entry in config
@@ -1088,15 +1112,19 @@ class Workflow:
                     console.print(
                         f"[yellow]Warning: No reference hash found in config matching output declaration '{path_str}' for stage '{stage_id}'. Cannot validate.[/yellow]"
                     )
-                    
+
                     # Debug - For directories, list all config paths to help diagnose matching issues
                     if resolved_path.exists() and resolved_path.is_dir():
-                        console.print(f"[dim]Directory exists at [bold]{resolved_path}[/bold]. Config has the following entries:[/dim]")
+                        console.print(
+                            f"[dim]Directory exists at [bold]{resolved_path}[/bold]. Config has the following entries:[/dim]"
+                        )
                         for i, (config_path, _) in enumerate(expected_files_config.items()):
                             if i < 10:  # Limit to first 10 for readability
                                 console.print(f"[dim]  - {config_path}[/dim]")
                             elif i == 10:
-                                console.print(f"[dim]  - ... and {len(expected_files_config) - 10} more[/dim]")
+                                console.print(
+                                    f"[dim]  - ... and {len(expected_files_config) - 10} more[/dim]"
+                                )
                 continue
 
             # --- Validate the collected files for this declaration ---
@@ -1113,12 +1141,12 @@ class Workflow:
                 if "hash" not in file_cfg:
                     continue
 
-                # --- Resolve the *expected* path from config to its actual filesystem location --- 
+                # --- Resolve the *expected* path from config to its actual filesystem location ---
                 # Use _is_shared flag set above if available, otherwise fall back to global is_shared
                 expected_is_shared = file_cfg.pop("_is_shared", is_shared)
                 # Alternatively, check if shared is explicitly set in config
                 if "shared" in file_cfg:
-                    expected_is_shared = file_cfg.get("shared", False)
+                    expected_is_shared = bool(file_cfg.get("shared", False))
 
                 try:
                     if expected_is_shared:
@@ -1130,9 +1158,9 @@ class Workflow:
                     message = f"Could not resolve expected path from config: {expected_path_key}"
                     success = False
                     final_repro_mode = "N/A"
-                    actual_file_path_display = expected_path_key # Display the problematic key
+                    actual_file_path_display = expected_path_key  # Display the problematic key
                 else:
-                    actual_file_path_display = str(actual_file_path_to_check) # For logging
+                    actual_file_path_display = str(actual_file_path_to_check)  # For logging
                     # Check if the *actual* file exists on disk before attempting validation
                     if not actual_file_path_to_check.exists():
                         message = f"Output file not found: {actual_file_path_to_check}"
@@ -1169,18 +1197,18 @@ class Workflow:
                             similarity_threshold=final_sim_thresh,
                         )
 
-                # --- Record validation result --- 
+                # --- Record validation result ---
                 self._validation_results.append(
                     {
                         "stage": stage_id,
-                        "file": actual_file_path_display, # Report the actual path checked
+                        "file": actual_file_path_display,  # Report the actual path checked
                         "status": "Passed" if success else "Failed",
                         "mode": final_repro_mode,
                         "message": message,
                     }
                 )
 
-                # --- Update overall stage status and print result --- 
+                # --- Update overall stage status and print result ---
                 if self.use_rich:
                     if success:
                         # Use the actual path in the success/fail message for clarity
@@ -1214,9 +1242,11 @@ class Workflow:
             run_subtitle += f" | Seed: {self._seed}"
 
         # Add authors to subtitle if they exist
-        authors_str = ", ".join([a.get("name", "Unknown") for a in self.config.data.get("authors", [])])
+        authors_str = ", ".join(
+            [a.get("name", "Unknown") for a in self.config.data.get("authors", [])]
+        )
         if authors_str:
-             run_subtitle += f" | Authors: {authors_str}"
+            run_subtitle += f" | Authors: {authors_str}"
 
         if self.use_rich:
             console.print(
@@ -1225,11 +1255,11 @@ class Workflow:
                     title="🚀 CRESP Workflow Run",
                     subtitle=f"[dim]{run_subtitle}[/dim]",
                     expand=True,
-                    border_style="bold green", # Changed border style
-                    padding=(1, 2) # Add padding
+                    border_style="bold green",  # Changed border style
+                    padding=(1, 2),  # Add padding
                 )
             )
-            console.print() # Add spacing
+            console.print()  # Add spacing
 
             # Determine execution plan
             execution_plan: List[str]
@@ -1246,23 +1276,19 @@ class Workflow:
             # Display execution plan in a table
             plan_table = Table(
                 title="Execution Order",
-                box=rich.box.ROUNDED, # Use rounded box
+                box=rich.box.ROUNDED,  # Use rounded box
                 show_header=True,
                 header_style="bold magenta",
                 padding=(0, 1),
-                show_lines=True, # Show lines between rows
-                expand=True # Set expand to True
+                show_lines=True,  # Show lines between rows
+                expand=True,  # Set expand to True
             )
             plan_table.add_column("Order", style="dim", justify="right", width=5)
             plan_table.add_column("Stage ID", style="cyan", no_wrap=True, min_width=15)
             plan_table.add_column("Description", style="blue")
             for i, stage_to_run in enumerate(execution_plan):
                 desc = self._stages[stage_to_run].description or "[dim]No description[/dim]"
-                plan_table.add_row(
-                    f"{i+1}.",
-                    stage_to_run,
-                    desc
-                )
+                plan_table.add_row(f"{i + 1}.", stage_to_run, desc)
             console.print(plan_table)
             console.print()  # Spacer
 
@@ -1287,7 +1313,7 @@ class Workflow:
 
                     for idx, curr_stage_id in enumerate(execution_plan):
                         stage_task_description = (
-                            f"[cyan]Stage {idx+1}/{len(execution_plan)}: {curr_stage_id}"
+                            f"[cyan]Stage {idx + 1}/{len(execution_plan)}: {curr_stage_id}"
                         )
                         stage_task = progress.add_task(
                             stage_task_description, total=1, start=False
@@ -1295,7 +1321,7 @@ class Workflow:
 
                         # --- Run the stage ---
                         progress.start_task(stage_task)
-                        calculated_hashes_for_stage = []
+                        calculated_hashes_for_stage: List[Tuple[str, str]] = []
                         stage_validation_status: Optional[Union[bool, object]] = None
                         stage_failed_execution = False
                         try:
@@ -1399,10 +1425,10 @@ class Workflow:
                 title="🏁 Workflow Execution Summary",
                 show_header=True,
                 header_style="bold magenta",
-                box=rich.box.DOUBLE_EDGE, # Changed box style
+                box=rich.box.DOUBLE_EDGE,  # Changed box style
                 padding=(0, 1),
                 show_lines=True,
-                expand=True # Set expand to True
+                expand=True,  # Set expand to True
             )
             summary_table.add_column("Stage", style="cyan", no_wrap=True)
             summary_table.add_column("Status", style="default", justify="center")
@@ -1418,16 +1444,17 @@ class Workflow:
             any_skipped = False
 
             for stage_id_summary in summary_stages:
-                if stage_id_summary not in self._stages: continue # Should not happen normally
+                if stage_id_summary not in self._stages:
+                    continue  # Should not happen normally
 
                 stage_func = self._stages[stage_id_summary]
                 final_status_str = "[grey50]Not run[/grey50]"
                 repro_status_str = "[dim]N/A[/dim]"
-                status_style = "grey50" # Default style for not run
+                status_style = "grey50"  # Default style for not run
 
                 # Determine status based on execution and validation results
                 validation_status = self._stage_validation_status.get(stage_id_summary)
-                stage_ran_or_skipped = stage_id_summary in self._executed_stages # Use this set
+                stage_ran_or_skipped = stage_id_summary in self._executed_stages  # Use this set
 
                 if stage_ran_or_skipped:
                     if validation_status is SKIPPED:
@@ -1435,15 +1462,15 @@ class Workflow:
                         repro_status_str = "⚪ Skipped"
                         status_style = "yellow"
                         any_skipped = True
-                    elif validation_status is False: # Failed reproduction
-                        final_status_str = "Ran" # The stage itself ran
+                    elif validation_status is False:  # Failed reproduction
+                        final_status_str = "Ran"  # The stage itself ran
                         repro_status_str = "❌ Failed"
-                        status_style = "red" # Mark Ran as red if repro failed
-                    elif validation_status is True: # Passed reproduction
+                        status_style = "red"  # Mark Ran as red if repro failed
+                    elif validation_status is True:  # Passed reproduction
                         final_status_str = "Ran"
                         repro_status_str = "✅ Passed"
                         status_style = "green"
-                    else: # Ran in experiment mode or no validation needed (validation_status is None)
+                    else:  # Ran in experiment mode or no validation needed (validation_status is None)
                         final_status_str = "Ran"
                         repro_status_str = "[dim]N/A[/dim]"
                         status_style = "green"
@@ -1455,28 +1482,34 @@ class Workflow:
                     for out in stage_func.outputs:
                         path_str = None
                         description = None
-                        is_shared = False # Heuristic
+                        is_shared = False  # Heuristic
 
                         if isinstance(out, str):
                             path_str = out
                             # Apply heuristic: path without separator is likely shared
-                            if '/' not in path_str and '\\\\' not in path_str:
-                               is_shared = True
+                            if "/" not in path_str and "\\\\" not in path_str:
+                                is_shared = True
                         elif isinstance(out, dict) and "path" in out:
                             path_str = out["path"]
                             description = out.get("description")
                             # Check shared flag with fallback to heuristic
-                            if out.get("shared"): is_shared = True
-                            elif path_str and '/' not in path_str and '\\' not in path_str: is_shared = True
+                            if out.get("shared"):
+                                is_shared = True
+                            elif path_str and "/" not in path_str and "\\" not in path_str:
+                                is_shared = True
 
                         if path_str:
                             # Construct the resolved path string for display
                             if is_shared:
                                 # Use the relative path defined in the workflow init
-                                resolved_display_path = f"{self.shared_data_dir.as_posix()}/{path_str} [shared]"
+                                resolved_display_path = (
+                                    f"{self.shared_data_dir.as_posix()}/{path_str} [shared]"
+                                )
                             else:
                                 # Use the relative path defined in the workflow init
-                                resolved_display_path = f"{self.active_output_dir.as_posix()}/{path_str}"
+                                resolved_display_path = (
+                                    f"{self.active_output_dir.as_posix()}/{path_str}"
+                                )
 
                             display_str = f"{resolved_display_path}"
                             # Description part might be too verbose for the summary table, let's omit it here.
@@ -1492,16 +1525,19 @@ class Workflow:
                 deps_str = ", ".join(deps_list) if deps_list else "[dim]None[/dim]"
 
                 row_data = [
-                    f"[{status_style}]{stage_id_summary}[/]", # Apply style to stage ID
+                    f"[{status_style}]{stage_id_summary}[/]",  # Apply style to stage ID
                     f"[{status_style}]{final_status_str}[/]",
                     outputs_display,
-                    deps_str
+                    deps_str,
                 ]
                 if self.mode == "reproduction":
                     repro_style = "default"
-                    if repro_status_str == "❌ Failed": repro_style = "red"
-                    elif repro_status_str == "✅ Passed": repro_style = "green"
-                    elif repro_status_str == "⚪ Skipped": repro_style = "yellow"
+                    if repro_status_str == "❌ Failed":
+                        repro_style = "red"
+                    elif repro_status_str == "✅ Passed":
+                        repro_style = "green"
+                    elif repro_status_str == "⚪ Skipped":
+                        repro_style = "yellow"
 
                     row_data.append(f"[{repro_style}]{repro_status_str}[/]")
 
@@ -1510,8 +1546,10 @@ class Workflow:
             console.print(summary_table)
             # Add a footnote if stages were skipped
             if any_skipped:
-                console.print("[dim]⚪ Skipped stages indicate outputs were unchanged from the previous run.[/dim]")
-            console.print() # Add spacing before report/save messages
+                console.print(
+                    "[dim]⚪ Skipped stages indicate outputs were unchanged from the previous run.[/dim]"
+                )
+            console.print()  # Add spacing before report/save messages
 
             # --- Save Reproduction Report (if applicable) ---
             if (
@@ -1524,15 +1562,15 @@ class Workflow:
         else:
             # --- Non-Rich Execution Path ---
             print(f"Running Workflow: {self.title} (Mode: {self.mode})")
-            execution_plan: List[str]
+            execution_plan_simple: List[str]
             if stage_id:
-                execution_plan = self._resolve_execution_order(target_stage=stage_id)
-                print(f"Execution Plan (Target: {stage_id}): {', '.join(execution_plan)}")
+                execution_plan_simple = self._resolve_execution_order(target_stage=stage_id)
+                print(f"Execution Plan (Target: {stage_id}): {', '.join(execution_plan_simple)}")
             else:
-                execution_plan = self._resolve_execution_order()
-                print(f"Execution Plan (All Stages): {', '.join(execution_plan)}")
+                execution_plan_simple = self._resolve_execution_order()
+                print(f"Execution Plan (All Stages): {', '.join(execution_plan_simple)}")
 
-            for curr_stage_id in execution_plan:
+            for curr_stage_id in execution_plan_simple:
                 print(f"---\nRunning Stage: {curr_stage_id}")
                 try:
                     stage_result, _, stage_validation_status = self._run_stage(curr_stage_id)
@@ -1564,13 +1602,15 @@ class Workflow:
         # --- Final Actions ---
         # Save config potentially modified by hashing or stage registration updates
         # Do this even if the workflow failed mid-way to capture any hashes generated before failure
-        # --- Only save config in experiment mode --- 
+        # --- Only save config in experiment mode ---
         if self.mode == "experiment":
             self.config.save()
             if self.use_rich:
                 console.print(f"[dim]Configuration saved to [bold]{self.config.path}[/bold][/dim]")
         elif self.use_rich:
-             console.print(f"[dim]⚙️ Skipping configuration save in [bold]{self.mode}[/bold] mode.[/dim]")
+            console.print(
+                f"[dim]⚙️ Skipping configuration save in [bold]{self.mode}[/bold] mode.[/dim]"
+            )
 
         if workflow_failed:
             if self.reproduction_failure_mode == "continue":
@@ -1659,26 +1699,30 @@ class Workflow:
             # Basic text visualization could be added here as a fallback
             return
 
-        console.print(Panel(f"[bold]Workflow Structure: {self.title}[/bold]", expand=True, border_style="blue"))
-        console.print() # Add spacing
+        console.print(
+            Panel(
+                f"[bold]Workflow Structure: {self.title}[/bold]", expand=True, border_style="blue"
+            )
+        )
+        console.print()  # Add spacing
 
         try:
             execution_order = self._resolve_execution_order()
 
             table = Table(
-                title="Stage Overview", # Changed title
+                title="Stage Overview",  # Changed title
                 show_header=True,
                 header_style="bold magenta",
-                box=rich.box.ROUNDED, # Use rounded box
+                box=rich.box.ROUNDED,  # Use rounded box
                 show_lines=True,
-                padding=(0,1),
-                expand=True # Set expand to True
+                padding=(0, 1),
+                expand=True,  # Set expand to True
             )
             table.add_column("Order", style="dim", justify="right", width=5)
             table.add_column("Stage ID", style="cyan", no_wrap=True, min_width=15)
             table.add_column("Description", style="blue")
-            table.add_column("Dependencies", style="yellow", overflow="fold") # Allow folding
-            table.add_column("Declared Outputs", style="green", overflow="fold") # Allow folding
+            table.add_column("Dependencies", style="yellow", overflow="fold")  # Allow folding
+            table.add_column("Declared Outputs", style="green", overflow="fold")  # Allow folding
 
             for idx, stage_id in enumerate(execution_order):
                 if stage_id not in self._stages:
@@ -1700,15 +1744,11 @@ class Workflow:
                             if out.get("description"):
                                 out_str += f" ([dim]{out['description']}[/dim])"
                             outputs_str_parts.append(out_str)
-                outputs_display = "\n".join(outputs_str_parts) if outputs_str_parts else "[dim]None[/dim]"
-
-                table.add_row(
-                    str(idx + 1),
-                    stage_id,
-                    stage.description,
-                    deps,
-                    outputs_display
+                outputs_display = (
+                    "\n".join(outputs_str_parts) if outputs_str_parts else "[dim]None[/dim]"
                 )
+
+                table.add_row(str(idx + 1), stage_id, stage.description, deps, outputs_display)
 
             console.print(table)
 

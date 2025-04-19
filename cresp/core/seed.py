@@ -86,7 +86,7 @@ def set_torch_seed(seed: int) -> None:
         seed: The random seed to set
     """
     try:
-        import torch
+        import torch  # type: ignore[import]
 
         torch.manual_seed(seed)
         logger.debug(f"Set PyTorch CPU seed to {seed}")
@@ -119,7 +119,7 @@ def set_tensorflow_seed(seed: int) -> None:
         seed: The random seed to set
     """
     try:
-        import tensorflow as tf
+        import tensorflow as tf  # type: ignore[import]
 
         tf.random.set_seed(seed)
         logger.debug(f"Set TensorFlow seed to {seed}")
@@ -134,8 +134,8 @@ def set_jax_seed(seed: int) -> None:
         seed: The random seed to set
     """
     try:
-        import jax
-        import jax.numpy as jnp
+        import jax  # type: ignore[import]
+        import jax.numpy as jnp  # type: ignore[import]
 
         jax.random.PRNGKey(seed)
         logger.debug(f"Set JAX seed to {seed}")
@@ -165,7 +165,7 @@ def detect_libraries() -> List[str]:
 
 def set_seed(
     seed: int, libraries: Optional[Union[List[str], str]] = None, verbose: bool = False
-) -> None:
+) -> List[str]:
     """Set random seed for all detected libraries or specified libraries.
 
     This function automatically detects available libraries and sets
@@ -176,6 +176,9 @@ def set_seed(
         libraries: Optional list of library names or single library name
                   If None, automatically detect and set all available libraries
         verbose: Whether to print information about seed setting
+
+    Returns:
+        List[str]: List of libraries that had seeds set
     """
     if libraries is None:
         # Automatically detect libraries
