@@ -136,7 +136,7 @@ else:
 @workflow.stage(
     id="download_data",
     description="Download MNIST dataset",
-    outputs=["data"],
+    outputs=[{"path": "data", "shared": True}],
     reproduction_mode="strict",
     # skip_if_unchanged uses workflow default (True)
 )
@@ -209,7 +209,7 @@ def prepare_data_loaders():
     id="train_model",
     description="Train MNIST model",
     dependencies=["prepare_data"],
-    outputs=["outputs/mnist_model.pt"],
+    outputs=[{"path": "outputs/mnist_model.pt", "shared": False}],
     reproduction_mode="strict",
     tolerance_relative=1e-5,
     skip_if_unchanged=False,  # Override: Always rerun training
@@ -296,9 +296,10 @@ def train_model():
     outputs=[
         {
             "path": "outputs/accuracy.txt",
+            "shared": False,  # 明确标记为模式特定输出
             "reproduction": {"mode": "standard", "tolerance_absolute": 0.5},
         },
-        "outputs/loss_curve.png",
+        {"path": "outputs/loss_curve.png", "shared": False},  # 明确标记为模式特定输出
     ],
     # skip_if_unchanged uses workflow default (True)
 )

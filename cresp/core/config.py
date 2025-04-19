@@ -329,6 +329,56 @@ class CrespConfig:
         # Note: This method does not automatically save. Saving is handled by run() or context manager.
         return True
 
+    def update_artifact(
+        self, stage_id: str, artifact_path: str, artifact_data: Dict[str, Any]
+    ) -> bool:
+        """Update or create an artifact entry with full configuration.
+        This is an enhanced version of update_hash that allows setting all artifact properties.
+
+        Args:
+            stage_id: Stage identifier.
+            artifact_path: Path of the artifact relative to the project root.
+            artifact_data: Dictionary with artifact properties (must include 'path' matching artifact_path).
+
+        Returns:
+            bool: True if the artifact was updated or added successfully.
+
+        Raises:
+            ValueError: If the specified stage does not exist or artifact_data is invalid.
+        """
+        if not isinstance(artifact_data, dict) or "path" not in artifact_data:
+            raise ValueError("artifact_data must be a dictionary with at least a 'path' key.")
+            
+        if artifact_data["path"] != artifact_path:
+            raise ValueError("artifact_path must match the 'path' in artifact_data.")
+            
+        stage = self.get_stage(stage_id)
+        if not stage:
+            raise ValueError(f"Cannot update artifact: Stage '{stage_id}' not found.")
+
+        # Ensure 'outputs' list exists within the stage dictionary
+        if "outputs" not in stage or not isinstance(stage.get("outputs"), list):
+            stage["outputs"] = []
+
+        # Find matching artifact by path
+        artifact_found = False
+        for i, output in enumerate(stage["outputs"]):
+            # Ensure output is a dict and has a 'path'
+            if isinstance(output, dict) and output.get("path") == artifact_path:
+                # Replace the entire output with new data
+                stage["outputs"][i] = artifact_data
+                self._modified = True
+                artifact_found = True
+                break  # Assume only one artifact per path within a stage
+
+        # If no matching artifact found, add a new one
+        if not artifact_found:
+            stage["outputs"].append(artifact_data)
+            self._modified = True
+
+        # Note: This method does not automatically save. Saving is handled by run() or context manager.
+        return True
+
     def validate(self) -> Tuple[bool, str]:
         """Validate if the current configuration data is valid according to the model.
 
@@ -371,26 +421,46 @@ class CrespConfig:
                 # If seed is None and section doesn't exist, do nothing
                 if "reproduction" in self._data:
                     # If section exists but seed is None, remove the key if present
-                    if self._data["reproduction"].pop("random_seed", None) is not None:
+                    if "random_seed" in self._data["reproduction"]:
+                        del self._data["reproduction"]["random_seed"]
                         self._modified = True
                 return
             else:
-                self._data["reproduction"] = {}  # Create the section
+                # Create section with seed if it doesn't exist
+                self._data["reproduction"] = {"random_seed": seed}
+                self._modified = True
+                return
 
-        # Update or remove the random_seed
-        current_seed = self._data["reproduction"].get("random_seed")
+        # Section exists, handle seed update
         if seed is None:
-            if current_seed is not None:
+            # Remove seed if present
+            if "random_seed" in self._data["reproduction"]:
                 del self._data["reproduction"]["random_seed"]
                 self._modified = True
-        elif current_seed != seed:
-            self._data["reproduction"]["random_seed"] = seed
-            self._modified = True
-        # No change if seed is the same or if setting None when it's already None/absent
-
+        else:
+            # Update seed
+            current_seed = self._data["reproduction"].get("random_seed")
+            if current_seed != seed:
+                self._data["reproduction"]["random_seed"] = seed
+                self._modified = True
+        # No need to re-validate model? Should be simple data type change.
+        
     def batch_update(self) -> "ConfigBatchUpdate":
-        """Return a context manager for performing batch updates to the config.
-        The configuration is saved only once upon exiting the context manager if modified.
+        """Get a context manager for batching updates to the configuration.
+        
+        This allows multiple updates to be made within a with block,
+        with automatic saving at the end if the path is set.
+        
+        Returns:
+            ConfigBatchUpdate: A context manager for batch updates.
+            
+        Example:
+            ```python
+            with config.batch_update():
+                for item in items:
+                    config.update_hash(...)
+            # Config is saved once at the end if modified
+            ```
         """
         return ConfigBatchUpdate(self)
 
