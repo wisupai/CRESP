@@ -3,7 +3,7 @@
 from .config import ConfigBatchUpdate, CrespConfig
 from .constants import DEFAULT_CONFIG_NAME
 from .exceptions import ReproductionError
-from .hashing import calculate_artifact_hash, validate_artifact
+from .validation import validate_artifact
 from .models import (
     Artifact,
     ArtifactValidation,
@@ -17,7 +17,7 @@ from .models import (
     ValidationRule,
 )
 from .seed import get_reproducible_dataloader_kwargs, set_seed
-from .utils import create_workflow_config, find_config
+from .utils import create_workflow_config, find_config, calculate_artifact_hash
 from .workflow import StageFunction, Workflow
 
 __all__ = [
@@ -43,8 +43,8 @@ __all__ = [
     # Utils
     "create_workflow_config",
     "find_config",
-    # Hashing
     "calculate_artifact_hash",
+    # Validation
     "validate_artifact",
     # Seed
     "set_seed",

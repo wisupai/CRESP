@@ -31,9 +31,9 @@ except ImportError:
 # Import related cresp modules
 from .config import CrespConfig
 from .exceptions import ReproductionError
-from .hashing import calculate_artifact_hash, validate_artifact
+from .validation import validate_artifact
 from .seed import get_reproducible_dataloader_kwargs, set_seed
-from .utils import create_workflow_config  # Used in Workflow.__init__
+from .utils import create_workflow_config, calculate_artifact_hash
 
 # Define sentinel object for skipped status
 SKIPPED = object()
