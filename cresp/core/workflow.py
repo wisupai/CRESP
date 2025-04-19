@@ -89,7 +89,8 @@ class StageFunction:
                      - "reproduction": Settings for reproduction validation
             dependencies: List of stage IDs that this stage depends on.
             parameters: Additional parameters for stage execution.
-            reproduction_mode: Reproduction mode (strict, standard, tolerant).
+            reproduction_mode: Reproduction mode (strict, standard, tolerant, ignore).
+                               Defaults to "strict". If "ignore", validation is skipped for outputs of this stage unless overridden per-output.
             tolerance_absolute: Absolute tolerance for numeric comparisons.
             tolerance_relative: Relative tolerance for numeric comparisons.
             similarity_threshold: Similarity threshold for content comparison.
@@ -102,6 +103,10 @@ class StageFunction:
         self.dependencies = dependencies or []
         self.parameters = parameters or {}
         self.code_handler = f"{func.__module__}.{func.__qualname__}"
+        # Validate reproduction_mode
+        allowed_modes = {"strict", "standard", "tolerant", "ignore"}
+        if reproduction_mode not in allowed_modes:
+            raise ValueError(f"Invalid reproduction_mode '{reproduction_mode}' for stage '{stage_id}'. Allowed modes are: {allowed_modes}")
         self.reproduction_mode = reproduction_mode
         self.tolerance_absolute = tolerance_absolute
         self.tolerance_relative = tolerance_relative
@@ -132,6 +137,7 @@ class StageFunction:
 
             # Ensure reproduction settings are present, using stage defaults if needed
             repro_config: dict[str, Any] = artifact_base.get("reproduction", {})
+            # --- Use stage's reproduction_mode as default ---
             repro_config.setdefault("mode", self.reproduction_mode)
             if self.tolerance_absolute is not None:
                 repro_config.setdefault("tolerance_absolute", self.tolerance_absolute)
@@ -141,7 +147,8 @@ class StageFunction:
                 repro_config.setdefault("similarity_threshold", self.similarity_threshold)
 
             # Only add reproduction section if it has non-default values or was explicitly defined
-            if repro_config or isinstance(output, dict) and "reproduction" in output:
+            # or if the mode is 'ignore' (to explicitly mark it)
+            if repro_config or isinstance(output, dict) and "reproduction" in output or repro_config.get("mode") == "ignore":
                 artifact_base["reproduction"] = repro_config
 
             # Ensure hash_method is present if hash exists
@@ -883,7 +890,9 @@ class Workflow:
         return hashes_calculated
 
     def _validate_outputs(self, stage_id: str) -> bool:
-        """Validate stage outputs against stored hashes in reproduction mode."""
+        """Validate stage outputs against stored hashes in reproduction mode.
+        Returns True if all non-ignored validations passed, False otherwise.
+        """
         stage_config = self.config.get_stage(stage_id)
         registered_stage = self._stages.get(stage_id)  # Should always exist if we got here
 
@@ -915,6 +924,7 @@ class Workflow:
             return True
 
         stage_validation_passed = True  # Assume success until proven otherwise
+        validation_performed = False  # Track if any actual validation occurred
 
         # Iterate through outputs declared in the @workflow.stage decorator
         for output_decl in declared_outputs:
@@ -971,8 +981,8 @@ class Workflow:
                     is_shared = bool(expected_files_config[path_str].get("shared", False))
                 files_to_validate_for_this_decl[path_str] = expected_files_config[path_str]
                 found_config_match = True
-                if self.use_rich:
-                    console.print(f"[dim]Found exact config match for path [bold]{path_str}[/bold][/dim]")
+                # if self.use_rich: # Too verbose
+                #     console.print(f"[dim]Found exact config match for path [bold]{path_str}[/bold][/dim]")
             # Case 2: Directory path - find config entries within
             elif resolved_path.exists() and resolved_path.is_dir():
                 # Check config paths starting with the declared path_str or within the resolved path
@@ -1024,8 +1034,8 @@ class Workflow:
                         files_to_validate_for_this_decl[expected_path] = expected_cfg_with_scope
                         found_config_match = True
 
-                if config_paths_in_dir and self.use_rich:
-                    console.print(f"[dim]Found {len(config_paths_in_dir)} files in config for directory [bold]{path_str}[/bold][/dim]")
+                # if config_paths_in_dir and self.use_rich: # Too verbose
+                #     console.print(f"[dim]Found {len(config_paths_in_dir)} files in config for directory [bold]{path_str}[/bold][/dim]")
 
             if not found_config_match:
                 # Declared output has no corresponding hashed entry in config
@@ -1047,13 +1057,15 @@ class Workflow:
             # --- Validate the collected files for this declaration ---
             if self.use_rich and files_to_validate_for_this_decl:
                 # Log validation attempt using the originally declared path
-                console.print(
-                    f"[dim]Validating output declaration [bold]{path_str}[/bold] ({len(files_to_validate_for_this_decl)} file(s) in config)...[/dim]"
-                )
+                # console.print( # Too verbose
+                #     f"[dim]Validating output declaration [bold]{path_str}[/bold] ({len(files_to_validate_for_this_decl)} file(s) in config)...[/dim]"
+                # )
+                pass  # Keep structure, remove print
 
             # Note: The loop below iterates through paths found in the config (expected_path)
             # We need to map these back to resolved paths on the filesystem for validation.
             for expected_path_key, file_cfg in files_to_validate_for_this_decl.items():
+                validation_performed = True  # Mark that we attempted validation/ignore
                 # Double check hash exists (should from earlier filter)
                 if "hash" not in file_cfg:
                     continue
@@ -1065,41 +1077,74 @@ class Workflow:
                 if "shared" in file_cfg:
                     expected_is_shared = bool(file_cfg.get("shared", False))
 
+                # --- Determine final validation parameters (File > Declaration > Stage) ---
+                file_specific_repro_config = file_cfg.get("reproduction", {})
+                final_repro_mode = file_specific_repro_config.get("mode", output_specific_repro_config.get("mode", default_repro_mode))
+                final_tol_abs = file_specific_repro_config.get(
+                    "tolerance_absolute",
+                    output_specific_repro_config.get("tolerance_absolute", default_tol_abs),
+                )
+                final_tol_rel = file_specific_repro_config.get(
+                    "tolerance_relative",
+                    output_specific_repro_config.get("tolerance_relative", default_tol_rel),
+                )
+                final_sim_thresh = file_specific_repro_config.get(
+                    "similarity_threshold",
+                    output_specific_repro_config.get("similarity_threshold", default_sim_thresh),
+                )
+
+                # --- Get actual file path for display/validation ---
+                actual_file_path_display: str
                 try:
                     if expected_is_shared:
                         actual_file_path_to_check = self.get_shared_data_path(expected_path_key)
                     else:
                         actual_file_path_to_check = self.get_output_path(expected_path_key)
+                    actual_file_path_display = str(actual_file_path_to_check)  # For logging
                 except Exception:
                     # If we can't even resolve the path from config, treat as validation failure
                     message = f"Could not resolve expected path from config: {expected_path_key}"
                     success = False
-                    final_repro_mode = "N/A"
+                    final_repro_mode = "N/A"  # Mode doesn't apply if path resolution failed
                     actual_file_path_display = expected_path_key  # Display the problematic key
+                    status_str = "Failed"
+                    status_symbol = "❌"
+                    log_style = "red"
+
+                    if self.use_rich:
+                        console.print(f"[{log_style}]  {status_symbol} {actual_file_path_display}: {message}[/{log_style}]")
+                    stage_validation_passed = False  # Mark stage as failed
+
+                    # Record result even on resolution failure
+                    self._validation_results.append(
+                        {
+                            "stage": stage_id,
+                            "file": actual_file_path_display,
+                            "status": status_str,
+                            "mode": final_repro_mode,
+                            "message": message,
+                        }
+                    )
+                    continue  # Skip to next file
+
+                # --- Handle 'ignore' mode ---
+                if final_repro_mode == "ignore":
+                    success = True  # Treat ignore as success for stage status
+                    message = "Validation skipped (ignore mode)"
+                    status_str = "Ignored"
+                    status_symbol = "⚪"
+                    log_style = "yellow"
                 else:
-                    actual_file_path_display = str(actual_file_path_to_check)  # For logging
+                    # --- Perform actual validation ---
                     # Check if the *actual* file exists on disk before attempting validation
                     if not actual_file_path_to_check.exists():
                         message = f"Output file not found: {actual_file_path_to_check}"
                         success = False
-                        final_repro_mode = "N/A"  # Mode doesn't apply if file is missing
+                        # Mode doesn't apply if file is missing, keep final_repro_mode determined above
+                        status_str = "Failed"
+                        status_symbol = "❌"
+                        log_style = "red"
                     else:
-                        # Determine final validation parameters (File > Declaration > Stage)
-                        file_specific_repro_config = file_cfg.get("reproduction", {})
-                        final_repro_mode = file_specific_repro_config.get("mode", output_specific_repro_config.get("mode", default_repro_mode))
-                        final_tol_abs = file_specific_repro_config.get(
-                            "tolerance_absolute",
-                            output_specific_repro_config.get("tolerance_absolute", default_tol_abs),
-                        )
-                        final_tol_rel = file_specific_repro_config.get(
-                            "tolerance_relative",
-                            output_specific_repro_config.get("tolerance_relative", default_tol_rel),
-                        )
-                        final_sim_thresh = file_specific_repro_config.get(
-                            "similarity_threshold",
-                            output_specific_repro_config.get("similarity_threshold", default_sim_thresh),
-                        )
-
                         # Perform validation using the ACTUAL file path
                         success, message = validate_artifact(
                             actual_file_path_to_check,
@@ -1109,13 +1154,21 @@ class Workflow:
                             tolerance_relative=final_tol_rel,
                             similarity_threshold=final_sim_thresh,
                         )
+                        if success:
+                            status_str = "Passed"
+                            status_symbol = "✅"
+                            log_style = "green"
+                        else:
+                            status_str = "Failed"
+                            status_symbol = "❌"
+                            log_style = "red"
 
                 # --- Record validation result ---
                 self._validation_results.append(
                     {
                         "stage": stage_id,
                         "file": actual_file_path_display,  # Report the actual path checked
-                        "status": "Passed" if success else "Failed",
+                        "status": status_str,
                         "mode": final_repro_mode,
                         "message": message,
                     }
@@ -1123,16 +1176,20 @@ class Workflow:
 
                 # --- Update overall stage status and print result ---
                 if self.use_rich:
-                    if success:
-                        # Use the actual path in the success/fail message for clarity
-                        console.print(f"[green]  ✓ {actual_file_path_display}: {message}[/green]")
-                    else:
-                        console.print(f"[red]  ✗ {actual_file_path_display}: {message}[/red]")
-                        stage_validation_passed = False  # Mark stage as failed if any file fails
+                    console.print(f"[{log_style}]  {status_symbol} {actual_file_path_display}: {message}[/{log_style}]")
+
+                if not success and final_repro_mode != "ignore":
+                    stage_validation_passed = False  # Mark stage as failed if any non-ignored file fails
 
         # Check if any declared outputs were *not* found in the config for validation
         # This might indicate an incomplete config or new outputs not yet hashed.
         # We handled this with a warning above, so stage_validation_passed reflects only actual comparisons.
+
+        # Return True only if validation was performed AND no failures occurred.
+        # If validation_performed is False, it means no outputs could be checked (e.g., missing config/hashes)
+        # In that case, we return True based on the initial checks.
+        if not validation_performed:
+            return True  # Return based on initial checks if no specific file validation happened
 
         return stage_validation_passed  # Return overall status for the stage
 
