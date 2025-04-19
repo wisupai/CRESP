@@ -1,17 +1,17 @@
 version: 0.1.0
 metadata:
-  title: MNIST Classification with PyTorch
+  title: MNIST Demo with CRESP
   authors:
-  - name: John Doe
-    affiliation: Example University
-    email: john.doe@example.edu
-  description: A simple example of reproducible MNIST classification using CRESP
+  - name: Wisup AI Team
+    affiliation: Wisup AI
+    email: team@wisup.ai
+  description: Minimal reproducible MNIST classification demo using CRESP
 environment:
   manager: pixi
   file: pixi.toml
 stages:
-- id: download_data
-  description: Download MNIST dataset
+- id: prepare_data
+  description: Download and prepare MNIST dataloaders
   dependencies: []
   outputs:
   - path: data
@@ -50,40 +50,29 @@ stages:
     hash: f7ae60f92e00ec6debd23a6088c31dbd2371eca3ffa0defaefb259924204aec6
     hash_method: sha256
     shared: true
-  code_handler: __main__.download_mnist_data
+  code_handler: __main__.prepare_data
   parameters: {}
-- id: prepare_data
-  description: Prepare data loaders
-  dependencies:
-  - download_data
-  outputs: []
-  code_handler: __main__.prepare_data_loaders
-  parameters: {}
-- id: train_model
-  description: Train MNIST model
+- id: train
+  description: Train CNN on MNIST
   dependencies:
   - prepare_data
   outputs:
   - path: outputs/mnist_model.pt
-    hash: 2fdc73104d44b8782c270fac12faa64483b9d39c29d9464b2d9f47e55cea6183
+    hash: cf5438141e5fbaf3b8599b149608f72f18b9da72eda29ade999813dd4167bb45
     hash_method: sha256
     shared: false
-  code_handler: __main__.train_model
+  code_handler: __main__.train
   parameters: {}
-- id: evaluate_model
-  description: Evaluate trained model
+- id: evaluate
+  description: Evaluate model accuracy
   dependencies:
-  - train_model
+  - train
   outputs:
   - path: outputs/accuracy.txt
-    hash: 490d1b53d323e119fb7af5e3dead24b1263b5c1e070201427ed460e018a94cc6
+    hash: cce2e666f073d88a808f50717487aae6cae8db1d3becbee345c53711677fc78d
     hash_method: sha256
     shared: false
-  - path: outputs/loss_curve.png
-    hash: 6f280e585a2609a5af74fc32b09e42c14574658c9c03c2b4bc8da125eb3bcd8d
-    hash_method: sha256
-    shared: false
-  code_handler: __main__.evaluate_model
+  code_handler: __main__.evaluate
   parameters: {}
 reproduction:
   random_seed: 42
