@@ -4,17 +4,14 @@ CRESP hashing module
 This module provides utilities for calculating and comparing hashes of files and directories.
 """
 
-import os
 import hashlib
-from pathlib import Path
-from typing import Union, Dict, Optional, Tuple
-import numpy as np
 import json
+from pathlib import Path
+
+import numpy as np
 
 
-def calculate_file_hash(
-    file_path: Union[str, Path], method: str = "sha256", chunk_size: int = 8192
-) -> str:
+def calculate_file_hash(file_path: str | Path, method: str = "sha256", chunk_size: int = 8192) -> str:
     """Calculate hash for a file
 
     Args:
@@ -34,7 +31,7 @@ def calculate_file_hash(
     return hash_func.hexdigest()
 
 
-def calculate_dir_hash(dir_path: Union[str, Path], method: str = "sha256") -> str:
+def calculate_dir_hash(dir_path: str | Path, method: str = "sha256") -> str:
     """Calculate hash for a directory by combining hashes of all files
 
     Args:
@@ -66,7 +63,7 @@ def calculate_dir_hash(dir_path: Union[str, Path], method: str = "sha256") -> st
     return hash_func.hexdigest()
 
 
-def calculate_artifact_hash(path: Union[str, Path], method: str = "sha256") -> str:
+def calculate_artifact_hash(path: str | Path, method: str = "sha256") -> str:
     """Calculate hash for an artifact (file or directory)
 
     Args:
@@ -88,8 +85,8 @@ def calculate_artifact_hash(path: Union[str, Path], method: str = "sha256") -> s
 def compare_numeric_values(
     value1: float,
     value2: float,
-    tolerance_absolute: Optional[float] = None,
-    tolerance_relative: Optional[float] = None,
+    tolerance_absolute: float | None = None,
+    tolerance_relative: float | None = None,
 ) -> bool:
     """Compare two numeric values with tolerances
 
@@ -117,8 +114,8 @@ def compare_numeric_values(
 def compare_arrays(
     arr1: np.ndarray,
     arr2: np.ndarray,
-    tolerance_absolute: Optional[float] = None,
-    tolerance_relative: Optional[float] = None,
+    tolerance_absolute: float | None = None,
+    tolerance_relative: float | None = None,
 ) -> bool:
     """Compare two numpy arrays with tolerances
 
@@ -146,13 +143,13 @@ def compare_arrays(
 
 
 def validate_artifact(
-    artifact_path: Union[str, Path],
+    artifact_path: str | Path,
     reference_hash: str,
     validation_type: str = "strict",
-    tolerance_absolute: Optional[float] = None,
-    tolerance_relative: Optional[float] = None,
-    similarity_threshold: Optional[float] = None,
-) -> Tuple[bool, str]:
+    tolerance_absolute: float | None = None,
+    tolerance_relative: float | None = None,
+    similarity_threshold: float | None = None,
+) -> tuple[bool, str]:
     """Validate an artifact against its reference hash
 
     Args:
@@ -182,7 +179,7 @@ def validate_artifact(
         elif validation_type == "standard":
             success = False
             message = ""
-            needs_hash_comparison = True # Default to hash comparison
+            needs_hash_comparison = True  # Default to hash comparison
 
             if artifact_path.is_file():
                 # Determine if specialized comparison should be attempted
@@ -196,15 +193,15 @@ def validate_artifact(
                         current_json = json.loads(current_data)
                         # Assuming reference_hash is the reference data/value for comparison (problematic)
                         reference_json = json.loads(reference_hash)
-                        if isinstance(current_json, (int, float)) and isinstance(reference_json, (int, float)):
+                        if isinstance(current_json, int | float) and isinstance(reference_json, int | float):
                             if compare_numeric_values(current_json, reference_json, tolerance_absolute, tolerance_relative):
                                 success = True
                                 message = "Standard validation passed: numeric match within tolerances"
-                                needs_hash_comparison = False # Specialized comparison succeeded
+                                needs_hash_comparison = False  # Specialized comparison succeeded
                         # Add more sophisticated json comparison logic here if needed
                     except Exception:
                         # Failed specialized comparison, will fallback to hash
-                        pass # Keep needs_hash_comparison = True
+                        pass  # Keep needs_hash_comparison = True
 
                 elif artifact_path.suffix in [".npy", ".npz"] and (tolerance_absolute is not None or tolerance_relative is not None):
                     attempt_specialized = True
@@ -216,10 +213,10 @@ def validate_artifact(
                         if compare_arrays(current_arr, reference_arr, tolerance_absolute, tolerance_relative):
                             success = True
                             message = "Standard validation passed: array match within tolerances"
-                            needs_hash_comparison = False # Specialized comparison succeeded
+                            needs_hash_comparison = False  # Specialized comparison succeeded
                     except Exception:
                         # Failed specialized comparison, will fallback to hash
-                        pass # Keep needs_hash_comparison = True
+                        pass  # Keep needs_hash_comparison = True
 
                 # If specialized comparison wasn't attempted (e.g. .txt, other types, or no tolerance set)
                 # OR if it was attempted but failed, proceed to hash comparison if needed.
@@ -232,20 +229,20 @@ def validate_artifact(
                             message = "Standard validation passed: exact hash match"
                     else:
                         success = False
-                        if attempt_specialized: # Specialized was tried but failed, and hash also failed
-                             message = "Standard validation failed: specialized comparison failed and hash mismatch"
-                        else: # Only hash comparison was performed (e.g. for .txt) and it failed
-                             message = "Standard validation failed: hash mismatch"
+                        if attempt_specialized:  # Specialized was tried but failed, and hash also failed
+                            message = "Standard validation failed: specialized comparison failed and hash mismatch"
+                        else:  # Only hash comparison was performed (e.g. for .txt) and it failed
+                            message = "Standard validation failed: hash mismatch"
 
-            else: # Artifact is a directory
-                 # Directories always use hash comparison in standard mode
-                 current_hash = calculate_artifact_hash(artifact_path)
-                 if current_hash == reference_hash:
-                      success = True
-                      message = "Standard validation passed: exact hash match for directory"
-                 else:
-                      success = False
-                      message = "Standard validation failed: directory hash mismatch"
+            else:  # Artifact is a directory
+                # Directories always use hash comparison in standard mode
+                current_hash = calculate_artifact_hash(artifact_path)
+                if current_hash == reference_hash:
+                    success = True
+                    message = "Standard validation passed: exact hash match for directory"
+                else:
+                    success = False
+                    message = "Standard validation failed: directory hash mismatch"
 
             return success, message
 
@@ -255,9 +252,7 @@ def validate_artifact(
                 # Implement similarity comparison based on file type
                 # This is a placeholder for more sophisticated comparison methods
                 current_hash = calculate_artifact_hash(artifact_path)
-                similarity = sum(a == b for a, b in zip(current_hash, reference_hash)) / len(
-                    reference_hash
-                )
+                similarity = sum(a == b for a, b in zip(current_hash, reference_hash, strict=False)) / len(reference_hash)
 
                 if similarity >= similarity_threshold:
                     return (

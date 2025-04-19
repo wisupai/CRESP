@@ -2,27 +2,28 @@
 
 """Pydantic models for defining the structure of cresp.yaml configuration."""
 
-from typing import Any, Dict, List, Optional
-from pydantic import BaseModel, Field, ValidationError, validator
+from typing import Any
+
+from pydantic import BaseModel
 
 
 class Author(BaseModel):
     """Author information model"""
 
     name: str
-    affiliation: Optional[str] = None
-    email: Optional[str] = None
-    orcid: Optional[str] = None
+    affiliation: str | None = None
+    email: str | None = None
+    orcid: str | None = None
 
 
 class Computing(BaseModel):
     """Computing resource requirements model"""
 
-    cpu: Optional[Dict[str, Any]] = None
-    memory: Optional[Dict[str, Any]] = None
-    gpu: Optional[Dict[str, Any]] = None
-    estimated_runtime: Optional[str] = None
-    estimated_storage: Optional[str] = None
+    cpu: dict[str, Any] | None = None
+    memory: dict[str, Any] | None = None
+    gpu: dict[str, Any] | None = None
+    estimated_runtime: str | None = None
+    estimated_storage: str | None = None
 
 
 class Environment(BaseModel):
@@ -30,69 +31,69 @@ class Environment(BaseModel):
 
     manager: str = "pixi"
     file: str = "pixi.toml"
-    python_version: Optional[str] = None
+    python_version: str | None = None
 
 
 class ValidationRule(BaseModel):
     """Validation rule model"""
 
-    field: Optional[str] = None
+    field: str | None = None
     operator: str
     value: Any
-    tolerance: Optional[float] = None
-    reference: Optional[str] = None
-    tolerance_absolute: Optional[float] = None
-    tolerance_relative: Optional[float] = None
-    similarity_threshold: Optional[float] = None
-    method: Optional[str] = None
+    tolerance: float | None = None
+    reference: str | None = None
+    tolerance_absolute: float | None = None
+    tolerance_relative: float | None = None
+    similarity_threshold: float | None = None
+    method: str | None = None
 
 
 class ArtifactValidation(BaseModel):
     """Artifact validation model"""
 
     type: str = "strict"  # strict, weak
-    rules: Optional[List[ValidationRule]] = None
+    rules: list[ValidationRule] | None = None
 
 
 class Artifact(BaseModel):
     """Artifact model"""
 
     path: str
-    description: Optional[str] = None
-    hash: Optional[str] = None
+    description: str | None = None
+    hash: str | None = None
     hash_method: str = "file"  # file, content, selective
-    validation: Optional[ArtifactValidation] = None
+    validation: ArtifactValidation | None = None
 
 
 class Stage(BaseModel):
     """Experiment stage model"""
 
     id: str
-    description: Optional[str] = None
-    dependencies: Optional[List[str]] = None
-    outputs: Optional[List[Artifact]] = None
+    description: str | None = None
+    dependencies: list[str] | None = None
+    outputs: list[Artifact] | None = None
     code_handler: str  # Now required as execution_type is always 'code' implicitly
-    parameters: Optional[Dict[str, Any]] = None
+    parameters: dict[str, Any] | None = None
 
 
 class ReproductionConfig(BaseModel):
     """Reproduction configuration model"""
 
     reproducibility_mode: str = "standard"  # strict, standard, tolerant
-    random_seed: Optional[int] = None
-    comparison_methods: Optional[List[Dict[str, Any]]] = None
+    random_seed: int | None = None
+    comparison_methods: list[dict[str, Any]] | None = None
 
 
 class Metadata(BaseModel):
     """Metadata model"""
 
     title: str
-    authors: List[Author]
-    description: Optional[str] = None
-    keywords: Optional[List[str]] = None
-    license: Optional[str] = None
-    repository: Optional[str] = None
-    created_date: Optional[str] = None
+    authors: list[Author]
+    description: str | None = None
+    keywords: list[str] | None = None
+    license: str | None = None
+    repository: str | None = None
+    created_date: str | None = None
 
 
 class CrespConfigModel(BaseModel):
@@ -101,6 +102,6 @@ class CrespConfigModel(BaseModel):
     version: str = "1.0"
     metadata: Metadata
     environment: Environment
-    computing: Optional[Computing] = None
-    stages: List[Stage]
-    reproduction: Optional[ReproductionConfig] = None
+    computing: Computing | None = None
+    stages: list[Stage]
+    reproduction: ReproductionConfig | None = None

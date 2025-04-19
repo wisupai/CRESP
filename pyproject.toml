@@ -47,7 +47,7 @@ types-PyYAML = ">=6.0.12.8,<7"
 
 [tool.pixi.feature.dev.tasks]
 test = "pytest"
-lint = "ruff check"
+lint = "ruff check --fix"
 format = "ruff format"
 typecheck = "mypy -p cresp"
 
@@ -63,5 +63,13 @@ serve = "mkdocs serve"
 dev = ["dev", "doc"]
 
 [tool.ruff]
+target-version = "py312"
+line-length = 150
+exclude = ["examples/**"]
+
+[tool.ruff.lint]
 select = ["E", "F", "I", "N", "W", "B", "UP"]
-line-length = 100
+ignore = ["E501"]
+
+[tool.mypy]
+exclude = ["examples/"]

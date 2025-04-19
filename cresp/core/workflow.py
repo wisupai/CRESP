@@ -2,22 +2,27 @@
 
 """Manages the definition, execution, and reproduction of computational workflows."""
 
-import os
-import time
 import functools
-from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple, Union, Callable, TypeVar, Set, cast
+import os
 import re
+import time
+from collections.abc import Callable
+from pathlib import Path
+from typing import Any, TypeVar, cast
 
 # Rich imports for visualization
 try:
+    import rich.box
     from rich.console import Console
     from rich.panel import Panel
-    from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TimeElapsedColumn
+    from rich.progress import (
+        BarColumn,
+        Progress,
+        SpinnerColumn,
+        TextColumn,
+        TimeElapsedColumn,
+    )
     from rich.table import Table
-    from rich.style import Style
-    from rich import print as rich_print
-    import rich.box
 
     RICH_AVAILABLE = True
 except ImportError:
@@ -25,9 +30,9 @@ except ImportError:
 
 # Import related cresp modules
 from .config import CrespConfig
-from .hashing import calculate_artifact_hash, validate_artifact
-from .seed import set_seed, get_reproducible_dataloader_kwargs
 from .exceptions import ReproductionError
+from .hashing import calculate_artifact_hash, validate_artifact
+from .seed import get_reproducible_dataloader_kwargs, set_seed
 from .utils import create_workflow_config  # Used in Workflow.__init__
 
 # Define sentinel object for skipped status
@@ -60,14 +65,14 @@ class StageFunction:
         self,
         func: Callable[..., R],
         stage_id: str,
-        description: Optional[str] = None,
-        outputs: Optional[List[Union[str, Dict[str, Any]]]] = None,
-        dependencies: Optional[List[str]] = None,
-        parameters: Optional[Dict[str, Any]] = None,
+        description: str | None = None,
+        outputs: list[str | dict[str, Any]] | None = None,
+        dependencies: list[str] | None = None,
+        parameters: dict[str, Any] | None = None,
         reproduction_mode: str = "strict",
-        tolerance_absolute: Optional[float] = None,
-        tolerance_relative: Optional[float] = None,
-        similarity_threshold: Optional[float] = None,
+        tolerance_absolute: float | None = None,
+        tolerance_relative: float | None = None,
+        similarity_threshold: float | None = None,
         skip_if_unchanged: bool = False,
     ):
         """Initialize a stage function.
@@ -110,25 +115,23 @@ class StageFunction:
         """Call the wrapped function."""
         return self.func(*args, **kwargs)
 
-    def to_stage_config(self) -> Dict[str, Any]:
+    def to_stage_config(self) -> dict[str, Any]:
         """Convert to stage configuration dictionary suitable for CrespConfig."""
         artifacts = []
         for output in self.outputs:
             # Prepare the base artifact dictionary
-            artifact_base: Dict[str, Any] = {}
+            artifact_base: dict[str, Any] = {}
             if isinstance(output, str):
                 artifact_base["path"] = output
             elif isinstance(output, dict) and "path" in output:
                 artifact_base = output.copy()  # Start with the user-provided dict
             else:
                 # Skip invalid output definitions
-                console.print(
-                    f"[yellow]Warning: Skipping invalid output definition in stage '{self.stage_id}': {output}[/yellow]"
-                )
+                console.print(f"[yellow]Warning: Skipping invalid output definition in stage '{self.stage_id}': {output}[/yellow]")
                 continue
 
             # Ensure reproduction settings are present, using stage defaults if needed
-            repro_config: Dict[str, Any] = artifact_base.get("reproduction", {})
+            repro_config: dict[str, Any] = artifact_base.get("reproduction", {})
             repro_config.setdefault("mode", self.reproduction_mode)
             if self.tolerance_absolute is not None:
                 repro_config.setdefault("tolerance_absolute", self.tolerance_absolute)
@@ -165,7 +168,7 @@ class StageFunction:
 
 # Global variable to hold the rich progress instance during run
 # This allows nested functions like _run_stage to interact with it
-progress: Optional[Progress] = None
+progress: Progress | None = None
 
 
 class Workflow:
@@ -174,10 +177,10 @@ class Workflow:
     def __init__(
         self,
         title: str,
-        authors: List[Dict[str, str]],
-        description: Optional[str] = None,
+        authors: list[dict[str, str]],
+        description: str | None = None,
         config_path: str = "cresp.yaml",
-        seed: Optional[int] = None,
+        seed: int | None = None,
         use_rich: bool = True,
         mode: str = "experiment",
         skip_unchanged: bool = False,
@@ -214,10 +217,10 @@ class Workflow:
         self.use_rich = use_rich and RICH_AVAILABLE
         self.mode = mode
         self.skip_unchanged = skip_unchanged
-        self._stages: Dict[str, StageFunction] = {}
-        self._executed_stages: Set[str] = set()
-        self._validation_results: List[Dict[str, Any]] = []
-        self._stage_validation_status: Dict[str, Optional[Union[bool, object]]] = {}
+        self._stages: dict[str, StageFunction] = {}
+        self._executed_stages: set[str] = set()
+        self._validation_results: list[dict[str, Any]] = []
+        self._stage_validation_status: dict[str, bool | object | None] = {}
         config_file_path = Path(config_path)
         self.reproduction_failure_mode = reproduction_failure_mode
         self.save_reproduction_report = save_reproduction_report
@@ -226,9 +229,7 @@ class Workflow:
         self._verbose_seed_setting = verbose_seed_setting
         self._seed_initialized = False
         # Cache for storing results of _run_stage within a single workflow.run() call
-        self._run_cache: Dict[
-            str, Tuple[Any, List[Tuple[str, str]], Optional[Union[bool, object]]]
-        ] = {}
+        self._run_cache: dict[str, tuple[Any, list[tuple[str, str]], bool | object | None]] = {}
 
         # --- Determine active output directory based on mode ---
         self.experiment_output_dir = Path(experiment_output_dir)
@@ -246,29 +247,21 @@ class Workflow:
         try:
             self.config = CrespConfig.load(config_file_path)
             if self.use_rich:
-                console.print(
-                    f"[dim]Loaded existing configuration from [bold]{self.config.path}[/bold][/dim]"
-                )
-        except FileNotFoundError:
+                console.print(f"[dim]Loaded existing configuration from [bold]{self.config.path}[/bold][/dim]")
+        except FileNotFoundError as e:
             if mode == "reproduction":
-                raise FileNotFoundError(
-                    f"Configuration file '{config_file_path}' not found, required for reproduction mode."
-                )
+                raise FileNotFoundError(f"Configuration file '{config_file_path}' not found, required for reproduction mode.") from e
             # Use the helper function from utils
             self.config = create_workflow_config(title, authors, description, str(config_file_path))
             if self.use_rich:
-                console.print(
-                    f"[dim]Creating new configuration at [bold]{self.config.path}[/bold][/dim]"
-                )
+                console.print(f"[dim]Creating new configuration at [bold]{self.config.path}[/bold][/dim]")
         except Exception as e:
-            raise ValueError(f"Error loading or creating configuration '{config_file_path}': {e}")
+            raise ValueError(f"Error loading or creating configuration '{config_file_path}': {e}") from e
 
         current_config_seed = self.config.data.get("reproduction", {}).get("random_seed")
         if seed is not None:
             if current_config_seed is not None and seed != current_config_seed and self.use_rich:
-                console.print(
-                    f"[yellow]Warning: Overriding random seed from config ({current_config_seed}) with provided seed ({seed})[/yellow]"
-                )
+                console.print(f"[yellow]Warning: Overriding random seed from config ({current_config_seed}) with provided seed ({seed})[/yellow]")
             self.config.set_seed(seed)  # This method exists in CrespConfig
             if self.use_rich and self._verbose_seed_setting:
                 console.print(f"[dim]Using random seed: {seed}[/dim]")
@@ -286,24 +279,20 @@ class Workflow:
         """Set random seeds for all detected libraries."""
         if self._seed is None:
             if self.use_rich and verbose:
-                console.print(
-                    "[yellow]Warning: No random seed set. Skipping seed initialization.[/yellow]"
-                )
+                console.print("[yellow]Warning: No random seed set. Skipping seed initialization.[/yellow]")
             return
 
         libraries = set_seed(self._seed, verbose=verbose)
 
         if self.use_rich and verbose:
-            console.print(
-                f"[dim]Random seeds set to {self._seed} for: {', '.join(libraries)}[/dim]"
-            )
+            console.print(f"[dim]Random seeds set to {self._seed} for: {', '.join(libraries)}[/dim]")
 
     @property
-    def seed(self) -> Optional[int]:
+    def seed(self) -> int | None:
         """Get the current random seed."""
         return self._seed
 
-    def get_output_path(self, relative_path: Union[str, Path]) -> Path:
+    def get_output_path(self, relative_path: str | Path) -> Path:
         """Construct the full output path based on the current mode.
 
         Args:
@@ -317,7 +306,7 @@ class Workflow:
         full_path.parent.mkdir(parents=True, exist_ok=True)
         return full_path
 
-    def get_shared_data_path(self, relative_path: Union[str, Path]) -> Path:
+    def get_shared_data_path(self, relative_path: str | Path) -> Path:
         """Construct the full path for shared data.
 
         Args:
@@ -331,7 +320,7 @@ class Workflow:
         full_path.parent.mkdir(parents=True, exist_ok=True)
         return full_path
 
-    def get_dataloader_kwargs(self) -> Dict[str, Any]:
+    def get_dataloader_kwargs(self) -> dict[str, Any]:
         """Get kwargs for PyTorch DataLoader to ensure reproducibility."""
         if self._seed is None:
             return {}
@@ -340,24 +329,22 @@ class Workflow:
 
     def stage(
         self,
-        id: Optional[str] = None,
-        description: Optional[str] = None,
-        outputs: Optional[List[Union[str, Dict[str, Any]]]] = None,
-        dependencies: Optional[List[str]] = None,
-        parameters: Optional[Dict[str, Any]] = None,
+        id: str | None = None,
+        description: str | None = None,
+        outputs: list[str | dict[str, Any]] | None = None,
+        dependencies: list[str] | None = None,
+        parameters: dict[str, Any] | None = None,
         reproduction_mode: str = "strict",
-        tolerance_absolute: Optional[float] = None,
-        tolerance_relative: Optional[float] = None,
-        similarity_threshold: Optional[float] = None,
-        skip_if_unchanged: Optional[bool] = None,
+        tolerance_absolute: float | None = None,
+        tolerance_relative: float | None = None,
+        similarity_threshold: float | None = None,
+        skip_if_unchanged: bool | None = None,
     ) -> Callable[[Callable[..., R]], StageFunction]:
         """Decorator for registering a stage function."""
 
         def decorator(func: Callable[..., R]) -> StageFunction:
             stage_id = id or func.__name__
-            final_skip_setting = (
-                self.skip_unchanged if skip_if_unchanged is None else skip_if_unchanged
-            )
+            final_skip_setting = self.skip_unchanged if skip_if_unchanged is None else skip_if_unchanged
 
             stage_func = StageFunction(
                 func=func,
@@ -381,9 +368,7 @@ class Workflow:
     def _register_stage(self, stage_func: StageFunction) -> None:
         """Register a stage function and add/update it in the config."""
         if stage_func.stage_id in self._stages:
-            raise ValueError(
-                f"Stage ID '{stage_func.stage_id}' already registered for this workflow instance."
-            )
+            raise ValueError(f"Stage ID '{stage_func.stage_id}' already registered for this workflow instance.")
 
         self._stages[stage_func.stage_id] = stage_func
 
@@ -395,17 +380,13 @@ class Workflow:
             if existing_stage_data is None:
                 # Add new stage if it doesn't exist in the config file
                 try:
-                    self.config.add_stage(
-                        stage_config_data, defer_save=True
-                    )  # defer_save is implicit in batch_update
+                    self.config.add_stage(stage_config_data, defer_save=True)  # defer_save is implicit in batch_update
                     # Log addition if needed (rich only)
                     # if self.use_rich:
                     #     console.print(f"[dim]Added new stage '{stage_func.stage_id}' to configuration.[/dim]")
                 except ValueError as e:
                     if self.use_rich:
-                        console.print(
-                            f"[yellow]Warning: Could not add stage '{stage_func.stage_id}' to config object: {e}[/yellow]"
-                        )
+                        console.print(f"[yellow]Warning: Could not add stage '{stage_func.stage_id}' to config object: {e}[/yellow]")
             else:
                 # Stage exists, potentially update non-hashed fields if they differ?
                 # For now, we assume the code definition is the source of truth for
@@ -418,9 +399,7 @@ class Workflow:
                         needs_update = True
                 # Handle outputs: only update paths/descriptions, not hashes/validation from code
                 # This is tricky. Let's just ensure all declared output paths exist in config.
-                config_output_paths = {
-                    o.get("path") for o in existing_stage_data.get("outputs", []) if o.get("path")
-                }
+                config_output_paths = {o.get("path") for o in existing_stage_data.get("outputs", []) if o.get("path")}
                 code_outputs = stage_config_data.get("outputs", [])
                 for code_out in code_outputs:
                     if code_out["path"] not in config_output_paths:
@@ -462,7 +441,7 @@ class Workflow:
             return False  # Outputs declared in code, but none found in config (e.g., first run)
 
         # Create a lookup for config outputs by path
-        expected_files_config: Dict[str, Dict[str, Any]] = {
+        expected_files_config: dict[str, dict[str, Any]] = {
             cfg_out["path"]: cfg_out
             for cfg_out in config_outputs
             if "path" in cfg_out and "hash" in cfg_out  # Only consider items with path and hash
@@ -510,7 +489,7 @@ class Workflow:
                 # If we can't resolve the path, consider it changed
                 return False
 
-            files_to_validate_for_this_decl: Dict[str, Dict[str, Any]] = {}
+            files_to_validate_for_this_decl: dict[str, dict[str, Any]] = {}
 
             # Case 1: Declaration is an exact file path present in config
             if path_str in expected_files_config:
@@ -549,7 +528,6 @@ class Workflow:
 
                             # Is this file physically within the declared directory?
                             try:
-                                _ = expected_resolved.relative_to(resolved_path)
                                 is_in_dir = True
                             except ValueError:
                                 # Not within the directory
@@ -568,7 +546,9 @@ class Workflow:
                                 expected_resolved = self.get_output_path(expected_path)
 
                             if not expected_resolved.exists():
-                                return False  # File within directory missing
+                                msg = f"Warning: Cannot validate path declaration '{path_str}' for stage '{stage_id}'. Cannot validate."
+                                console.print(f"[yellow]{msg}[/yellow]")
+                            return False  # File within directory missing
                         except Exception:
                             return False  # Could not resolve path
 
@@ -591,9 +571,7 @@ class Workflow:
                 # Determine final validation parameters (File > Declaration > Stage)
                 file_specific_repro_config = file_cfg.get("reproduction", {})
 
-                final_repro_mode = file_specific_repro_config.get(
-                    "mode", output_specific_repro_config.get("mode", default_repro_mode)
-                )
+                final_repro_mode = file_specific_repro_config.get("mode", output_specific_repro_config.get("mode", default_repro_mode))
                 final_tol_abs = file_specific_repro_config.get(
                     "tolerance_absolute",
                     output_specific_repro_config.get("tolerance_absolute", default_tol_abs),
@@ -639,9 +617,7 @@ class Workflow:
         # at least one file was checked, and all matched.
         return all_match and files_checked_count > 0
 
-    def _run_stage(
-        self, stage_id: str
-    ) -> Tuple[Any, List[Tuple[str, str]], Optional[Union[bool, object]]]:
+    def _run_stage(self, stage_id: str) -> tuple[Any, list[tuple[str, str]], bool | object | None]:
         """Run a specific stage, handling dependencies, execution, hashing/validation.
 
         Returns:
@@ -676,19 +652,16 @@ class Workflow:
                     dependencies_were_run_or_failed = True
             except Exception as dep_e:
                 # If a dependency raised an error during its execution
-                console.print(
-                    f"[red]Error running dependency '{dep_id}' for stage '{stage_id}': {dep_e}[/red]"
-                )
+                console.print(f"[red]Error running dependency '{dep_id}' for stage '{stage_id}': {dep_e}[/red]")
                 # Re-raise to halt the current stage processing
                 raise
 
         # 3. --- Skip Check for current stage ---
         should_skip = False
-        skip_reason = ""
         if stage_func.skip_if_unchanged:
             if dependencies_were_run_or_failed:
                 # console.print(f"[dim]Cannot skip {stage_id}: Dependencies were run/failed.[/dim]")
-                skip_reason = "dependencies changed"
+                pass
             else:
                 # console.print(f"[dim]Checking outputs unchanged for {stage_id}...[/dim]")
                 outputs_unchanged = self._check_outputs_unchanged(stage_id)
@@ -696,20 +669,18 @@ class Workflow:
                     should_skip = True
                 else:
                     # console.print(f"[dim]Cannot skip {stage_id}: Outputs changed.[/dim]")
-                    skip_reason = "outputs changed"
+                    pass
         else:
             # console.print(f"[dim]Cannot skip {stage_id}: skip_if_unchanged is False.[/dim]")
-            skip_reason = "skip_if_unchanged=False"
+            pass
 
         if should_skip:
             if self.use_rich:
-                console.print(
-                    f"[green]✓ Skipping stage [bold]{stage_id}[/bold] (outputs unchanged, dependencies OK)[/green]"
-                )
+                console.print(f"[green]✓ Skipping stage [bold]{stage_id}[/bold] (outputs unchanged, dependencies OK)[/green]")
             # Mark as executed (skipped)
             self._executed_stages.add(stage_id)  # Keep track of processed stages
-            status: Optional[Union[bool, object]] = SKIPPED
-            result_tuple: Tuple[Any, List[Tuple[str, str]], Optional[Union[bool, object]]] = (
+            status: bool | object | None = SKIPPED
+            result_tuple: tuple[Any, list[tuple[str, str]], bool | object | None] = (
                 None,
                 [],
                 status,
@@ -720,9 +691,9 @@ class Workflow:
 
         # 4. --- If not skipped, execute the stage ---
         # console.print(f"[dim]Executing stage {stage_id} (Reason not skipped: {skip_reason})[/dim]")
-        calculated_hashes: List[Tuple[str, str]] = []
+        calculated_hashes: list[tuple[str, str]] = []
         result = None
-        stage_validation_passed: Optional[Union[bool, object]] = None  # Can be True, False, None
+        stage_validation_passed: bool | object | None = None  # Can be True, False, None
 
         # --- Set random seeds ---
         if self._seed is not None:
@@ -747,9 +718,7 @@ class Workflow:
             try:
                 result = stage_func()  # Call the __call__ method of StageFunction
             except Exception as e:
-                console.print(
-                    f"[red]  ✗ Stage [bold]{stage_id}[/bold] execution failed: {str(e)}[/red]"
-                )
+                console.print(f"[red]  ✗ Stage [bold]{stage_id}[/bold] execution failed: {str(e)}[/red]")
                 # Resume progress if needed before re-raising
                 if progress_active and progress is not None:
                     progress.start()
@@ -797,16 +766,14 @@ class Workflow:
         self._run_cache[stage_id] = result_tuple  # Cache the result
         return result_tuple
 
-    def _update_output_hashes(
-        self, stage_id: str, declared_outputs: List[Union[str, Dict[str, Any]]]
-    ) -> List[Tuple[str, str]]:
+    def _update_output_hashes(self, stage_id: str, declared_outputs: list[str | dict[str, Any]]) -> list[tuple[str, str]]:
         """Calculate and store hashes for stage outputs in experiment mode."""
         hashes_calculated = []
         # Use batch update for efficiency when hashing multiple files/directories
         with self.config.batch_update():
             for output_decl in declared_outputs:
                 # --- Determine path and hash method from declaration ---
-                path_str: Optional[str] = None
+                path_str: str | None = None
                 hash_method = "sha256"  # Default hash method
                 is_shared = False  # Default scope is mode-specific
 
@@ -826,9 +793,7 @@ class Workflow:
                         is_shared = True
 
                 if not path_str:
-                    console.print(
-                        f"[yellow]Warning: Invalid output declaration in stage '{stage_id}': {output_decl}[/yellow]"
-                    )
+                    console.print(f"[yellow]Warning: Invalid output declaration in stage '{stage_id}': {output_decl}[/yellow]")
                     continue
 
                 # --- Resolve path based on scope ---
@@ -838,18 +803,15 @@ class Workflow:
                     else:
                         resolved_path = self.get_output_path(path_str)
                 except Exception as path_resolve_e:
-                    console.print(
-                        f"[yellow]Warning: Could not resolve path '{path_str}' for stage '{stage_id}': {path_resolve_e}[/yellow]"
-                    )
+                    console.print(f"[yellow]Warning: Could not resolve path '{path_str}' for stage '{stage_id}': {path_resolve_e}[/yellow]")
                     continue
 
                 # --- Check existence using the RESOLVED path ---
                 try:
                     if not resolved_path.exists():
                         if self.use_rich:
-                            console.print(
-                                f"[yellow]Warning: Output path does not exist after running stage '{stage_id}': {resolved_path} (declared as '{path_str}')[/yellow]"
-                            )
+                            msg = f"Warning: Output path does not exist after running stage '{stage_id}': {resolved_path} (declared as '{path_str}')"
+                            console.print(f"[yellow]{msg}[/yellow]")
                         continue
 
                     # --- Hash File or Directory Contents using RESOLVED path ---
@@ -863,7 +825,7 @@ class Workflow:
                             "hash_method": hash_method,
                         }
                         if is_shared:
-                            config_entry["shared"] = True
+                            config_entry["shared"] = "true"
                         # Fallback to update_hash if update_artifact not available (backward compatibility)
                         if hasattr(self.config, "update_artifact"):
                             self.config.update_artifact(stage_id, path_str, config_entry)
@@ -873,22 +835,16 @@ class Workflow:
                         # Minimal logging here, summary printed later
                     elif resolved_path.is_dir():
                         if self.use_rich:
-                            console.print(
-                                f"[dim]Hashing contents of directory [bold]{resolved_path}[/bold] (declared as '{path_str}')...[/dim]"
-                            )
+                            console.print(f"[dim]Hashing contents of directory [bold]{resolved_path}[/bold] (declared as '{path_str}')...[/dim]")
                         files_hashed_count = 0
                         for file_path in resolved_path.rglob("*"):
                             if file_path.is_file():
                                 try:
                                     # Use the hash_method determined for the directory declaration
-                                    file_hash_value = calculate_artifact_hash(
-                                        file_path, method=hash_method
-                                    )
+                                    file_hash_value = calculate_artifact_hash(file_path, method=hash_method)
                                     # calculate relative path from CWD for the config key
                                     try:
-                                        relative_key_path_str = str(
-                                            file_path.resolve().relative_to(Path.cwd().resolve())
-                                        )
+                                        relative_key_path_str = str(file_path.resolve().relative_to(Path.cwd().resolve()))
                                     except ValueError:
                                         relative_key_path_str = str(file_path.resolve())
 
@@ -899,14 +855,12 @@ class Workflow:
                                         "hash_method": hash_method,
                                     }
                                     if is_shared:
-                                        config_entry["shared"] = True
+                                        config_entry["shared"] = "true"
 
                                     # Update config using the calculated relative path as key
                                     # Fallback to update_hash if update_artifact not available
                                     if hasattr(self.config, "update_artifact"):
-                                        self.config.update_artifact(
-                                            stage_id, relative_key_path_str, config_entry
-                                        )
+                                        self.config.update_artifact(stage_id, relative_key_path_str, config_entry)
                                     else:
                                         self.config.update_hash(
                                             stage_id,
@@ -915,31 +869,22 @@ class Workflow:
                                             hash_method,
                                         )
                                     # Record the path and hash for summary log
-                                    hashes_calculated.append(
-                                        (relative_key_path_str, file_hash_value)
-                                    )
+                                    hashes_calculated.append((relative_key_path_str, file_hash_value))
                                     files_hashed_count += 1
                                 except Exception as file_e:
                                     if self.use_rich:
-                                        console.print(
-                                            f"[yellow]  Warning: Failed to hash file {file_path}: {str(file_e)}[/yellow]"
-                                        )
+                                        console.print(f"[yellow]  Warning: Failed to hash file {file_path}: {str(file_e)}[/yellow]")
                         if self.use_rich and files_hashed_count > 0:
-                            console.print(
-                                f"[dim]Hashed {files_hashed_count} files in [bold]{resolved_path}[/bold].[/dim]"
-                            )
+                            console.print(f"[dim]Hashed {files_hashed_count} files in [bold]{resolved_path}[/bold].[/dim]")
                     else:
                         # Handle other path types? Symlinks?
                         if self.use_rich:
-                            console.print(
-                                f"[yellow]Warning: Resolved output path is not a file or directory: {resolved_path}[/yellow]"
-                            )
+                            console.print(f"[yellow]Warning: Resolved output path is not a file or directory: {resolved_path}[/yellow]")
 
                 except Exception as e:
                     if self.use_rich:
-                        console.print(
-                            f"[yellow]Warning: Failed to process output {resolved_path} (declared as '{path_str}') for stage '{stage_id}': {str(e)}[/yellow]"
-                        )
+                        msg = f"Warning: Failed to process output {resolved_path} (declared as '{path_str}') for stage '{stage_id}': {str(e)}"
+                        console.print(f"[yellow]{msg}[/yellow]")
 
         return hashes_calculated
 
@@ -957,26 +902,20 @@ class Workflow:
             # If outputs declared in code but none in config (maybe first run?), treat as warning/pass?
             # If no outputs declared in code, it's fine.
             if declared_outputs and self.use_rich:
-                console.print(
-                    f"[yellow]Warning: No reference outputs/hashes found in config for stage '{stage_id}' to validate against.[/yellow]"
-                )
+                console.print(f"[yellow]Warning: No reference outputs/hashes found in config for stage '{stage_id}' to validate against.[/yellow]")
             return True  # Consider valid if nothing to compare against
 
         if not declared_outputs:
             return True  # Nothing declared in code, nothing to validate here.
 
         # Create a lookup for config outputs by path (must have hash)
-        expected_files_config: Dict[str, Dict[str, Any]] = {
-            cfg_out["path"]: cfg_out
-            for cfg_out in stage_config.get("outputs", [])
-            if cfg_out.get("path") and cfg_out.get("hash")
+        expected_files_config: dict[str, dict[str, Any]] = {
+            cfg_out["path"]: cfg_out for cfg_out in stage_config.get("outputs", []) if cfg_out.get("path") and cfg_out.get("hash")
         }
 
         if not expected_files_config:
             if self.use_rich:
-                console.print(
-                    f"[yellow]Warning: Outputs found in config for stage '{stage_id}', but none have recorded hashes.[/yellow]"
-                )
+                console.print(f"[yellow]Warning: Outputs found in config for stage '{stage_id}', but none have recorded hashes.[/yellow]")
             # If outputs declared in code, this should probably be a failure? Or at least warning.
             # Let's treat it as pass for now, as we can't validate.
             return True
@@ -992,7 +931,7 @@ class Workflow:
             default_sim_thresh = registered_stage.similarity_threshold
 
             output_specific_repro_config = {}
-            path_str: Optional[str] = None
+            path_str: str | None = None
             is_shared = False  # Default to mode-specific scope
 
             if isinstance(output_decl, str):
@@ -1023,14 +962,12 @@ class Workflow:
                 else:
                     resolved_path = self.get_output_path(path_str)
             except Exception as path_resolve_e:
-                console.print(
-                    f"[yellow]Warning: Could not resolve path '{path_str}' for validation in stage '{stage_id}': {path_resolve_e}[/yellow]"
-                )
+                console.print(f"[yellow]Warning: Could not resolve path '{path_str}' for validation in stage '{stage_id}': {path_resolve_e}[/yellow]")
                 continue
 
             # --- Find corresponding files in config based on ORIGINAL path_str ---
             # We still use path_str to lookup in expected_files_config which uses declared paths as keys
-            files_to_validate_for_this_decl: Dict[str, Dict[str, Any]] = {}
+            files_to_validate_for_this_decl: dict[str, dict[str, Any]] = {}
             found_config_match = False
 
             # Case 1: Exact file path match in config
@@ -1041,9 +978,7 @@ class Workflow:
                 files_to_validate_for_this_decl[path_str] = expected_files_config[path_str]
                 found_config_match = True
                 if self.use_rich:
-                    console.print(
-                        f"[dim]Found exact config match for path [bold]{path_str}[/bold][/dim]"
-                    )
+                    console.print(f"[dim]Found exact config match for path [bold]{path_str}[/bold][/dim]")
             # Case 2: Directory path - find config entries within
             elif resolved_path.exists() and resolved_path.is_dir():
                 # Check config paths starting with the declared path_str or within the resolved path
@@ -1069,18 +1004,13 @@ class Workflow:
                         try:
                             expected_is_shared = bool(expected_cfg.get("shared", False))
                             if expected_is_shared:
-                                expected_resolved = self.get_shared_data_path(expected_path)
+                                expected_path_obj = self.get_shared_data_path(expected_path)
                             else:
-                                expected_resolved = self.get_output_path(expected_path)
+                                expected_path_obj = self.get_output_path(expected_path)
 
                             # Is this file physically within the declared directory?
                             try:
-                                relative = expected_resolved.relative_to(resolved_path)
                                 is_in_dir = True
-                                if self.use_rich:
-                                    console.print(
-                                        f"[dim]Physical path match: [bold]{expected_path}[/bold] within [bold]{path_str}[/bold][/dim]"
-                                    )
                             except ValueError:
                                 # Not within the directory
                                 pass
@@ -1102,9 +1032,7 @@ class Workflow:
                         found_config_match = True
 
                 if config_paths_in_dir and self.use_rich:
-                    console.print(
-                        f"[dim]Found {len(config_paths_in_dir)} files in config for directory [bold]{path_str}[/bold][/dim]"
-                    )
+                    console.print(f"[dim]Found {len(config_paths_in_dir)} files in config for directory [bold]{path_str}[/bold][/dim]")
 
             if not found_config_match:
                 # Declared output has no corresponding hashed entry in config
@@ -1115,16 +1043,12 @@ class Workflow:
 
                     # Debug - For directories, list all config paths to help diagnose matching issues
                     if resolved_path.exists() and resolved_path.is_dir():
-                        console.print(
-                            f"[dim]Directory exists at [bold]{resolved_path}[/bold]. Config has the following entries:[/dim]"
-                        )
+                        console.print(f"[dim]Directory exists at [bold]{resolved_path}[/bold]. Config has the following entries:[/dim]")
                         for i, (config_path, _) in enumerate(expected_files_config.items()):
                             if i < 10:  # Limit to first 10 for readability
                                 console.print(f"[dim]  - {config_path}[/dim]")
                             elif i == 10:
-                                console.print(
-                                    f"[dim]  - ... and {len(expected_files_config) - 10} more[/dim]"
-                                )
+                                console.print(f"[dim]  - ... and {len(expected_files_config) - 10} more[/dim]")
                 continue
 
             # --- Validate the collected files for this declaration ---
@@ -1169,9 +1093,7 @@ class Workflow:
                     else:
                         # Determine final validation parameters (File > Declaration > Stage)
                         file_specific_repro_config = file_cfg.get("reproduction", {})
-                        final_repro_mode = file_specific_repro_config.get(
-                            "mode", output_specific_repro_config.get("mode", default_repro_mode)
-                        )
+                        final_repro_mode = file_specific_repro_config.get("mode", output_specific_repro_config.get("mode", default_repro_mode))
                         final_tol_abs = file_specific_repro_config.get(
                             "tolerance_absolute",
                             output_specific_repro_config.get("tolerance_absolute", default_tol_abs),
@@ -1182,9 +1104,7 @@ class Workflow:
                         )
                         final_sim_thresh = file_specific_repro_config.get(
                             "similarity_threshold",
-                            output_specific_repro_config.get(
-                                "similarity_threshold", default_sim_thresh
-                            ),
+                            output_specific_repro_config.get("similarity_threshold", default_sim_thresh),
                         )
 
                         # Perform validation using the ACTUAL file path
@@ -1223,7 +1143,7 @@ class Workflow:
 
         return stage_validation_passed  # Return overall status for the stage
 
-    def run(self, stage_id: Optional[str] = None) -> Dict[str, Any]:
+    def run(self, stage_id: str | None = None) -> dict[str, Any]:
         """Run workflow stages, either a single one or all in order."""
         global progress  # Use the global progress variable
 
@@ -1234,7 +1154,6 @@ class Workflow:
         self._run_cache = {}  # Clear run cache for this run
         workflow_failed = False  # Track if any stage failed execution or reproduction
 
-        run_title = f"Workflow: {self.title}"
         run_subtitle = f"Mode: {self.mode.capitalize()}"
         if self.mode == "reproduction":
             run_subtitle += f" (Fail on: {self.reproduction_failure_mode})"
@@ -1242,9 +1161,7 @@ class Workflow:
             run_subtitle += f" | Seed: {self._seed}"
 
         # Add authors to subtitle if they exist
-        authors_str = ", ".join(
-            [a.get("name", "Unknown") for a in self.config.data.get("authors", [])]
-        )
+        authors_str = ", ".join([a.get("name", "Unknown") for a in self.config.data.get("authors", [])])
         if authors_str:
             run_subtitle += f" | Authors: {authors_str}"
 
@@ -1262,13 +1179,11 @@ class Workflow:
             console.print()  # Add spacing
 
             # Determine execution plan
-            execution_plan: List[str]
+            execution_plan: list[str]
             if stage_id:
                 # Need to include dependencies if running a single stage
                 execution_plan = self._resolve_execution_order(target_stage=stage_id)
-                console.print(
-                    f"[bold yellow]🎯 Running Target Stage [bold cyan]{stage_id}[/bold cyan] and Dependencies:[/bold yellow]"
-                )
+                console.print(f"[bold yellow]🎯 Running Target Stage [bold cyan]{stage_id}[/bold cyan] and Dependencies:[/bold yellow]")
             else:
                 execution_plan = self._resolve_execution_order()
                 console.print("[bold yellow]📋 Workflow Execution Plan:[/bold yellow]")
@@ -1312,26 +1227,20 @@ class Workflow:
                     )
 
                     for idx, curr_stage_id in enumerate(execution_plan):
-                        stage_task_description = (
-                            f"[cyan]Stage {idx + 1}/{len(execution_plan)}: {curr_stage_id}"
-                        )
-                        stage_task = progress.add_task(
-                            stage_task_description, total=1, start=False
-                        )  # Don't start task immediately
+                        stage_task_description = f"[cyan]Stage {idx + 1}/{len(execution_plan)}: {curr_stage_id}"
+                        stage_task = progress.add_task(stage_task_description, total=1, start=False)  # Don't start task immediately
 
                         # --- Run the stage ---
                         progress.start_task(stage_task)
-                        calculated_hashes_for_stage: List[Tuple[str, str]] = []
-                        stage_validation_status: Optional[Union[bool, object]] = None
+                        calculated_hashes_for_stage: list[tuple[str, str]] = []
+                        stage_validation_status: bool | object | None = None
                         stage_failed_execution = False
                         try:
                             # This call handles execution, dependency runs, hashing/validation
-                            stage_result, calculated_hashes_for_stage, stage_validation_status = (
-                                self._run_stage(curr_stage_id)
-                            )
+                            stage_result, calculated_hashes_for_stage, stage_validation_status = self._run_stage(curr_stage_id)
                             results[curr_stage_id] = stage_result
 
-                        except ReproductionError as repro_err:
+                        except ReproductionError:
                             # Specific error raised by _run_stage if repro failed and mode is 'stop'
                             stage_validation_status = False  # Mark as failed
                             workflow_failed = True
@@ -1340,11 +1249,9 @@ class Workflow:
                                 completed=1,
                                 description=f"[red]✗ {curr_stage_id} failed reproduction (STOPPED)",
                             )
-                            console.print(
-                                f"  [bold red]Workflow stopped due to reproduction failure in stage '{curr_stage_id}'.[/bold red]"
-                            )
+                            console.print(f"  [bold red]Workflow stopped due to reproduction failure in stage '{curr_stage_id}'.[/bold red]")
                             break  # Exit the loop
-                        except Exception as exec_err:
+                        except Exception:
                             # General execution error within the stage function itself
                             stage_failed_execution = True
                             workflow_failed = True
@@ -1354,12 +1261,8 @@ class Workflow:
                                 description=f"[red]✗ {curr_stage_id} failed execution",
                             )
                             # Error details already printed in _run_stage
-                            if (
-                                self.reproduction_failure_mode == "stop"
-                            ):  # Stop on execution errors too?
-                                console.print(
-                                    f"  [bold red]Workflow stopped due to execution error in stage '{curr_stage_id}'.[/bold red]"
-                                )
+                            if self.reproduction_failure_mode == "stop":  # Stop on execution errors too?
+                                console.print(f"  [bold red]Workflow stopped due to execution error in stage '{curr_stage_id}'.[/bold red]")
                                 break  # Exit the loop
                             # Otherwise, continue if mode is 'continue'
 
@@ -1402,18 +1305,11 @@ class Workflow:
                             if self.mode == "experiment" and calculated_hashes_for_stage:
                                 console.print(f"  [dim]Recorded Hashes for {curr_stage_id}:[/dim]")
                                 for path_hash, hash_val in calculated_hashes_for_stage:
-                                    console.print(
-                                        f"    [cyan dim]{path_hash}:[/cyan dim] [dim]{hash_val[:8]}...[/dim]"
-                                    )
+                                    console.print(f"    [cyan dim]{path_hash}:[/cyan dim] [dim]{hash_val[:8]}...[/dim]")
 
                             # Check for reproduction failure *after* logging, if continuing
-                            if (
-                                stage_validation_status is False
-                                and self.reproduction_failure_mode == "continue"
-                            ):
-                                console.print(
-                                    f"  [yellow]Continuing workflow after reproduction failure in stage '{curr_stage_id}'.[/yellow]"
-                                )
+                            if stage_validation_status is False and self.reproduction_failure_mode == "continue":
+                                console.print(f"  [yellow]Continuing workflow after reproduction failure in stage '{curr_stage_id}'.[/yellow]")
 
             finally:
                 # Ensure global progress is cleared after the run
@@ -1502,14 +1398,10 @@ class Workflow:
                             # Construct the resolved path string for display
                             if is_shared:
                                 # Use the relative path defined in the workflow init
-                                resolved_display_path = (
-                                    f"{self.shared_data_dir.as_posix()}/{path_str} [shared]"
-                                )
+                                resolved_display_path = f"{self.shared_data_dir.as_posix()}/{path_str} [shared]"
                             else:
                                 # Use the relative path defined in the workflow init
-                                resolved_display_path = (
-                                    f"{self.active_output_dir.as_posix()}/{path_str}"
-                                )
+                                resolved_display_path = f"{self.active_output_dir.as_posix()}/{path_str}"
 
                             display_str = f"{resolved_display_path}"
                             # Description part might be too verbose for the summary table, let's omit it here.
@@ -1546,23 +1438,17 @@ class Workflow:
             console.print(summary_table)
             # Add a footnote if stages were skipped
             if any_skipped:
-                console.print(
-                    "[dim]⚪ Skipped stages indicate outputs were unchanged from the previous run.[/dim]"
-                )
+                console.print("[dim]⚪ Skipped stages indicate outputs were unchanged from the previous run.[/dim]")
             console.print()  # Add spacing before report/save messages
 
             # --- Save Reproduction Report (if applicable) ---
-            if (
-                self.mode == "reproduction"
-                and self.save_reproduction_report
-                and self._validation_results
-            ):
+            if self.mode == "reproduction" and self.save_reproduction_report and self._validation_results:
                 self._save_reproduction_report()
 
         else:
             # --- Non-Rich Execution Path ---
             print(f"Running Workflow: {self.title} (Mode: {self.mode})")
-            execution_plan_simple: List[str]
+            execution_plan_simple: list[str]
             if stage_id:
                 execution_plan_simple = self._resolve_execution_order(target_stage=stage_id)
                 print(f"Execution Plan (Target: {stage_id}): {', '.join(execution_plan_simple)}")
@@ -1583,7 +1469,7 @@ class Workflow:
                         status_msg += "Completed (Reproduction FAILED)"
                         workflow_failed = True
                         if self.reproduction_failure_mode == "stop":
-                            print(f"  ERROR: Reproduction failed. Stopping workflow.")
+                            print("  ERROR: Reproduction failed. Stopping workflow.")
                             break
                     elif stage_validation_status is True:
                         status_msg += "Completed (Reproduction PASSED)"
@@ -1595,7 +1481,7 @@ class Workflow:
                     print(f"  ERROR: Stage {curr_stage_id} execution failed: {e}")
                     workflow_failed = True
                     if self.reproduction_failure_mode == "stop":
-                        print(f"  ERROR: Stopping workflow due to execution error.")
+                        print("  ERROR: Stopping workflow due to execution error.")
                         break
             print("---")
 
@@ -1608,16 +1494,12 @@ class Workflow:
             if self.use_rich:
                 console.print(f"[dim]Configuration saved to [bold]{self.config.path}[/bold][/dim]")
         elif self.use_rich:
-            console.print(
-                f"[dim]⚙️ Skipping configuration save in [bold]{self.mode}[/bold] mode.[/dim]"
-            )
+            console.print(f"[dim]⚙️ Skipping configuration save in [bold]{self.mode}[/bold] mode.[/dim]")
 
         if workflow_failed:
             if self.reproduction_failure_mode == "continue":
                 if self.use_rich:
-                    console.print(
-                        "[bold yellow]Workflow completed with failures (check summary and report).[/bold yellow]"
-                    )
+                    console.print("[bold yellow]Workflow completed with failures (check summary and report).[/bold yellow]")
                 else:
                     print("WARNING: Workflow completed with failures.")
             # If failure mode was 'stop', the loop was already broken.
@@ -1626,7 +1508,7 @@ class Workflow:
 
         return results
 
-    def _resolve_execution_order(self, target_stage: Optional[str] = None) -> List[str]:
+    def _resolve_execution_order(self, target_stage: str | None = None) -> list[str]:
         """Resolve execution order using topological sort.
         If target_stage is provided, returns the order needed to run that stage.
         """
@@ -1670,25 +1552,19 @@ class Workflow:
 
         return order
 
-    def save_config(self, path: Optional[str] = None) -> bool:
+    def save_config(self, path: str | None = None) -> bool:
         """Save workflow configuration to file."""
         save_path = Path(path) if path else self.config.path
         if not save_path:
-            console.print(
-                "[red]Error: Cannot save configuration, no path specified or loaded.[/red]"
-            )
+            console.print("[red]Error: Cannot save configuration, no path specified or loaded.[/red]")
             return False
 
         success = self.config.save(save_path)
 
         if success and self.use_rich:
-            console.print(
-                f"[green]Configuration explicitly saved to [bold]{save_path}[/bold][/green]"
-            )
+            console.print(f"[green]Configuration explicitly saved to [bold]{save_path}[/bold][/green]")
         elif not success and self.use_rich:
-            console.print(
-                f"[red]Failed to explicitly save configuration to [bold]{save_path}[/bold][/red]"
-            )
+            console.print(f"[red]Failed to explicitly save configuration to [bold]{save_path}[/bold][/red]")
 
         return success
 
@@ -1699,11 +1575,7 @@ class Workflow:
             # Basic text visualization could be added here as a fallback
             return
 
-        console.print(
-            Panel(
-                f"[bold]Workflow Structure: {self.title}[/bold]", expand=True, border_style="blue"
-            )
-        )
+        console.print(Panel(f"[bold]Workflow Structure: {self.title}[/bold]", expand=True, border_style="blue"))
         console.print()  # Add spacing
 
         try:
@@ -1744,9 +1616,7 @@ class Workflow:
                             if out.get("description"):
                                 out_str += f" ([dim]{out['description']}[/dim])"
                             outputs_str_parts.append(out_str)
-                outputs_display = (
-                    "\n".join(outputs_str_parts) if outputs_str_parts else "[dim]None[/dim]"
-                )
+                outputs_display = "\n".join(outputs_str_parts) if outputs_str_parts else "[dim]None[/dim]"
 
                 table.add_row(str(idx + 1), stage_id, stage.description, deps, outputs_display)
 
@@ -1761,19 +1631,15 @@ class Workflow:
         """Generate and save the reproduction report in Markdown format."""
         if not self._validation_results:
             if self.use_rich:
-                console.print(
-                    "[dim]No validation results recorded, skipping report generation.[/dim]"
-                )
+                console.print("[dim]No validation results recorded, skipping report generation.[/dim]")
             return
 
         report_path = Path(self.reproduction_report_path)
         if self.use_rich:
-            console.print(
-                f"[dim]Generating reproduction report at [bold]{report_path}[/bold]...[/dim]"
-            )
+            console.print(f"[dim]Generating reproduction report at [bold]{report_path}[/bold]...[/dim]")
 
         # Group results by stage, maintaining order if possible (dicts are ordered in Python 3.7+)
-        results_by_stage: Dict[str, List[Dict[str, Any]]] = {}
+        results_by_stage: dict[str, list[dict[str, Any]]] = {}
         processed_stages = set()  # Keep track of stages added to maintain run order
         for stage_id_run in self._resolve_execution_order():  # Get order stages were run/attempted
             results_for_stage = [r for r in self._validation_results if r["stage"] == stage_id_run]
@@ -1790,8 +1656,8 @@ class Workflow:
 
         # Build Markdown report
         report_lines = [
-            f"# CRESP Reproduction Report",
-            f"",
+            "# CRESP Reproduction Report",
+            "",
             f"- **Workflow:** {self.title}",
             f"- **Configuration:** `{self.config.path}`",
             f"- **Timestamp:** {time.strftime('%Y-%m-%d %H:%M:%S')}",
@@ -1823,9 +1689,7 @@ class Workflow:
             if stage_failed_count > 0:
                 overall_passed = False
 
-            stage_summary_lines.append(
-                f"| `{stage_id}` | {stage_status} | {stage_passed_count} | {stage_failed_count} |"
-            )
+            stage_summary_lines.append(f"| `{stage_id}` | {stage_status} | {stage_passed_count} | {stage_failed_count} |")
 
         report_lines.extend(stage_summary_lines)
 
@@ -1851,9 +1715,7 @@ class Workflow:
                 message = r["message"].replace("|", "\\|")  # Escape pipe characters in message
                 if message and message != "Exact hash match":
                     details_exist = True
-                report_lines.append(
-                    f"| `{r['file']}` | {status_symbol} {r['status']} | `{r['mode']}` | {message} |"
-                )
+                report_lines.append(f"| `{r['file']}` | {status_symbol} {r['status']} | `{r['mode']}` | {message} |")
             report_lines.append("")  # Blank line after each stage table
 
         # Adjust header if no details were ever present
@@ -1872,9 +1734,7 @@ class Workflow:
             with open(report_path, "w", encoding="utf-8") as f:
                 f.write("\\n".join(report_lines))
             if self.use_rich:
-                console.print(f"[green]✓ Reproduction report saved successfully.[/green]")
+                console.print("[green]✓ Reproduction report saved successfully.[/green]")
         except Exception as e:
             if self.use_rich:
-                console.print(
-                    f"[red]✗ Failed to save reproduction report to {report_path}: {e}[/red]"
-                )
+                console.print(f"[red]✗ Failed to save reproduction report to {report_path}: {e}[/red]")

@@ -1,9 +1,7 @@
 """Utility functions for the cresp package."""
 
-from typing import Any, Dict, List, Optional
-
 # Import CrespConfig lazily or type hint with string to avoid circular import
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Optional
 
 if TYPE_CHECKING:
     from .config import CrespConfig
@@ -11,8 +9,8 @@ if TYPE_CHECKING:
 
 def create_workflow_config(
     title: str,
-    authors: List[Dict[str, str]],
-    description: Optional[str] = None,
+    authors: list[dict[str, str]],
+    description: str | None = None,
     path: str = "cresp.yaml",  # Changed default from workflow.yaml to cresp.yaml
 ) -> "CrespConfig":
     """Create a new workflow configuration with better defaults."""

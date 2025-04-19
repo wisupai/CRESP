@@ -8,11 +8,10 @@ This module provides utilities for setting random seeds consistently
 across different libraries to ensure reproducibility.
 """
 
-import os
-import random
 import importlib
 import logging
-from typing import Dict, List, Optional, Set, Union
+import os
+import random
 
 # Create logger
 logger = logging.getLogger("cresp.seed")
@@ -135,7 +134,6 @@ def set_jax_seed(seed: int) -> None:
     """
     try:
         import jax  # type: ignore[import]
-        import jax.numpy as jnp  # type: ignore[import]
 
         jax.random.PRNGKey(seed)
         logger.debug(f"Set JAX seed to {seed}")
@@ -143,7 +141,7 @@ def set_jax_seed(seed: int) -> None:
         logger.debug("JAX not available, skipping seed setting")
 
 
-def detect_libraries() -> List[str]:
+def detect_libraries() -> list[str]:
     """Detect which random number libraries are available in the environment.
 
     Returns:
@@ -163,9 +161,7 @@ def detect_libraries() -> List[str]:
     return available_libs
 
 
-def set_seed(
-    seed: int, libraries: Optional[Union[List[str], str]] = None, verbose: bool = False
-) -> List[str]:
+def set_seed(seed: int, libraries: list[str] | str | None = None, verbose: bool = False) -> list[str]:
     """Set random seed for all detected libraries or specified libraries.
 
     This function automatically detects available libraries and sets
@@ -216,7 +212,7 @@ def set_seed(
     return libs_to_set
 
 
-def get_reproducible_dataloader_kwargs(seed: int) -> Dict:
+def get_reproducible_dataloader_kwargs(seed: int) -> dict:
     """Get kwargs for PyTorch DataLoader to ensure reproducibility.
 
     Args:

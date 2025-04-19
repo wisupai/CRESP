@@ -6,14 +6,13 @@ CRESP config module
 This module handles the reading, validation, and updating of the cresp.yaml configuration file.
 """
 
-import os
 import shutil
 
 # import inspect # No longer needed?
 # import functools # No longer needed?
 # import time # No longer needed?
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple, Union  # Keep basic types
+from typing import Any  # Keep basic types
 
 import yaml
 
@@ -22,10 +21,11 @@ from pydantic import ValidationError  # Still needed for CrespConfig._validate_m
 from yaml.parser import ParserError
 
 # Rich imports removed
-
 # Import specific models and constants needed
-from .models import CrespConfigModel, Stage  # Import base model and Stage for add_stage validation
-from .constants import DEFAULT_CONFIG_NAME  # Import constant for default name
+from .models import (  # Import base model and Stage for add_stage validation
+    CrespConfigModel,
+    Stage,
+)
 
 # hashing and seed imports removed, assumed handled by Workflow
 
@@ -41,7 +41,7 @@ class CrespConfig:
     # DEFAULT_CONFIG_NAME = DEFAULT_CONFIG_NAME # Option 1: Use imported
     DEFAULT_CONFIG_NAME = "cresp.yaml"  # Option 2: Keep as is
 
-    def __init__(self, config_data: Dict[str, Any], path: Optional[Path] = None):
+    def __init__(self, config_data: dict[str, Any], path: Path | None = None):
         """Initialize the configuration object
 
         Args:
@@ -50,7 +50,7 @@ class CrespConfig:
         """
         self._data = config_data
         self._path = path
-        self._model: Optional[CrespConfigModel] = None  # Type hint with imported model
+        self._model: CrespConfigModel | None = None  # Type hint with imported model
         self._modified = False
         self._validate_model()
 
@@ -68,10 +68,10 @@ class CrespConfig:
             self._model = CrespConfigModel(**self._data)
         except ValidationError as e:
             # Keep ValidationError import
-            raise ValueError(f"Configuration validation failed: {e}")
+            raise ValueError(f"Configuration validation failed: {e}") from e
 
     @classmethod
-    def load(cls, path: Optional[Union[str, Path]] = None) -> "CrespConfig":
+    def load(cls, path: str | Path | None = None) -> "CrespConfig":
         """Load configuration from file
 
         Args:
@@ -87,23 +87,19 @@ class CrespConfig:
         config_path = cls._find_config_file(path)
         if not config_path:
             # Use class attribute directly
-            raise FileNotFoundError(
-                f"Configuration file not found: {path or cls.DEFAULT_CONFIG_NAME}"
-            )
+            raise FileNotFoundError(f"Configuration file not found: {path or cls.DEFAULT_CONFIG_NAME}")
 
         try:
-            with open(config_path, "r", encoding="utf-8") as f:
+            with open(config_path, encoding="utf-8") as f:
                 config_data = yaml.safe_load(f) or {}
                 return cls(config_data, config_path)
         except ParserError as e:  # Keep ParserError import
-            raise ValueError(f"YAML parsing error: {e}")
+            raise ValueError(f"YAML parsing error: {e}") from e
         except Exception as e:
-            raise ValueError(f"Error loading configuration file: {e}")
+            raise ValueError(f"Error loading configuration file: {e}") from e
 
     @classmethod
-    def create(
-        cls, metadata: Dict[str, Any], path: Optional[Union[str, Path]] = None
-    ) -> "CrespConfig":
+    def create(cls, metadata: dict[str, Any], path: str | Path | None = None) -> "CrespConfig":
         """Create new configuration with context manager support"""
         # Basic structure required by CrespConfigModel
         config_data = {
@@ -126,7 +122,7 @@ class CrespConfig:
         return config
 
     @staticmethod
-    def _find_config_file(path: Optional[Union[str, Path]] = None) -> Optional[Path]:
+    def _find_config_file(path: str | Path | None = None) -> Path | None:
         """Find configuration file
 
         Args:
@@ -155,7 +151,7 @@ class CrespConfig:
 
             current_dir = current_dir.parent
 
-    def save(self, path: Optional[Union[str, Path]] = None, encoding: str = "utf-8") -> bool:
+    def save(self, path: str | Path | None = None, encoding: str = "utf-8") -> bool:
         """Save configuration to file
 
         Args:
@@ -190,7 +186,7 @@ class CrespConfig:
         try:
             save_path.parent.mkdir(parents=True, exist_ok=True)
         except Exception as e:
-            raise IOError(f"Error creating directory for config file {save_path}: {e}")
+            raise OSError(f"Error creating directory for config file {save_path}: {e}") from e
 
         # Save configuration
         try:
@@ -207,9 +203,9 @@ class CrespConfig:
             self._modified = False
             return True
         except Exception as e:
-            raise IOError(f"Error saving configuration file to {save_path}: {e}")
+            raise OSError(f"Error saving configuration file to {save_path}: {e}") from e
 
-    def get_stage(self, stage_id: str) -> Optional[Dict[str, Any]]:
+    def get_stage(self, stage_id: str) -> dict[str, Any] | None:
         """Get configuration dictionary for a specific stage
 
         Args:
@@ -229,7 +225,7 @@ class CrespConfig:
                 return stage
         return None
 
-    def add_stage(self, stage_data: Dict[str, Any], defer_save: bool = False) -> bool:
+    def add_stage(self, stage_data: dict[str, Any], defer_save: bool = False) -> bool:
         """Add a new stage configuration dictionary.
 
         Args:
@@ -254,7 +250,7 @@ class CrespConfig:
             # Use the imported Stage model for validation
             Stage(**stage_data)
         except ValidationError as e:
-            raise ValueError(f"Invalid stage data for ID '{stage_id}': {e}")
+            raise ValueError(f"Invalid stage data for ID '{stage_id}': {e}") from e
 
         # Ensure 'stages' list exists in the main data dictionary
         if "stages" not in self._data or not isinstance(self._data.get("stages"), list):
@@ -272,9 +268,7 @@ class CrespConfig:
             self.save()  # Save immediately if not deferred and path exists
         return True
 
-    def update_hash(
-        self, stage_id: str, artifact_path: str, hash_value: str, hash_method: str = "sha256"
-    ) -> bool:  # Default to sha256
+    def update_hash(self, stage_id: str, artifact_path: str, hash_value: str, hash_method: str = "sha256") -> bool:  # Default to sha256
         """Update hash value for a specific artifact within a stage.
            Adds the artifact entry if it does not exist.
 
@@ -329,9 +323,7 @@ class CrespConfig:
         # Note: This method does not automatically save. Saving is handled by run() or context manager.
         return True
 
-    def update_artifact(
-        self, stage_id: str, artifact_path: str, artifact_data: Dict[str, Any]
-    ) -> bool:
+    def update_artifact(self, stage_id: str, artifact_path: str, artifact_data: dict[str, Any]) -> bool:
         """Update or create an artifact entry with full configuration.
         This is an enhanced version of update_hash that allows setting all artifact properties.
 
@@ -348,10 +340,10 @@ class CrespConfig:
         """
         if not isinstance(artifact_data, dict) or "path" not in artifact_data:
             raise ValueError("artifact_data must be a dictionary with at least a 'path' key.")
-            
+
         if artifact_data["path"] != artifact_path:
             raise ValueError("artifact_path must match the 'path' in artifact_data.")
-            
+
         stage = self.get_stage(stage_id)
         if not stage:
             raise ValueError(f"Cannot update artifact: Stage '{stage_id}' not found.")
@@ -379,7 +371,7 @@ class CrespConfig:
         # Note: This method does not automatically save. Saving is handled by run() or context manager.
         return True
 
-    def validate(self) -> Tuple[bool, str]:
+    def validate(self) -> tuple[bool, str]:
         """Validate if the current configuration data is valid according to the model.
 
         Returns:
@@ -394,7 +386,7 @@ class CrespConfig:
             return False, f"An unexpected error occurred during validation: {str(e)}"
 
     @property
-    def data(self) -> Dict[str, Any]:
+    def data(self) -> dict[str, Any]:
         """Get the raw configuration data dictionary."""
         return self._data
 
@@ -404,11 +396,11 @@ class CrespConfig:
         return self._modified
 
     @property
-    def path(self) -> Optional[Path]:
+    def path(self) -> Path | None:
         """Get the configuration file path, if available."""
         return self._path
 
-    def set_seed(self, seed: Optional[int]) -> None:  # Allow setting seed to None
+    def set_seed(self, seed: int | None) -> None:  # Allow setting seed to None
         """Set the random seed in the configuration's reproduction section.
 
         Args:
@@ -444,16 +436,16 @@ class CrespConfig:
                 self._data["reproduction"]["random_seed"] = seed
                 self._modified = True
         # No need to re-validate model? Should be simple data type change.
-        
+
     def batch_update(self) -> "ConfigBatchUpdate":
         """Get a context manager for batching updates to the configuration.
-        
+
         This allows multiple updates to be made within a with block,
         with automatic saving at the end if the path is set.
-        
+
         Returns:
             ConfigBatchUpdate: A context manager for batch updates.
-            
+
         Example:
             ```python
             with config.batch_update():
