@@ -716,9 +716,6 @@ class Workflow:
             pass
 
         if should_skip:
-            if self.use_rich:
-                console.print(f"[green]✓ Skipping stage [bold]{stage_id}[/bold] (outputs unchanged, dependencies OK)[/green]")
-            # Mark as executed (skipped)
             self._executed_stages.add(stage_id)  # Keep track of processed stages
             status: bool | object | None = SKIPPED
             result_tuple: tuple[Any, list[tuple[str, str]], bool | object | None] = (
@@ -731,7 +728,6 @@ class Workflow:
             return result_tuple
 
         # 4. --- If not skipped, execute the stage ---
-        # console.print(f"[dim]Executing stage {stage_id} (Reason not skipped: {skip_reason})[/dim]")
         calculated_hashes: list[tuple[str, str]] = []
         result = None
         stage_validation_passed: bool | object | None = None  # Can be True, False, None
@@ -744,47 +740,21 @@ class Workflow:
 
         # --- Stage Execution ---
         if self.use_rich:
-            # Temporarily stop progress bar for cleaner stage execution logs
-            progress_active = progress is not None
-            if progress_active and progress is not None:
-                try:
-                    progress.stop()
-                except Exception:
-                    progress_active = False  # Handle cases where progress might be finished
-
-            console.print(f"[bold blue]Executing {stage_id}...[/bold blue]")
             start_time = time.time()
-
-            # Actually run the user's stage function
             try:
                 result = stage_func()  # Call the __call__ method of StageFunction
             except Exception as e:
                 console.print(f"[red]  ✗ Stage [bold]{stage_id}[/bold] execution failed: {str(e)}[/red]")
-                # Resume progress if needed before re-raising
-                if progress_active and progress is not None:
-                    progress.start()
                 raise  # Re-raise the exception to be caught by the main run loop
-
             end_time = time.time()
-            execution_time = end_time - start_time
-            console.print(f"[dim]Stage completed in {execution_time:.2f}s[/dim]")
-
-            # Resume progress display
-            if progress_active and progress is not None:
-                try:
-                    progress.start()
-                except Exception:
-                    pass  # Ignore errors if progress finished
+            # 不再输出Stage completed信息
         else:
             # Non-rich execution
-            print(f"Executing {stage_id}...")
-            # Need similar error handling for non-rich mode
             try:
                 result = stage_func()
             except Exception as e:
                 print(f"  Error: Stage {stage_id} execution failed: {str(e)}")
                 raise  # Re-raise
-            print(f"Stage {stage_id} completed.")
 
         self._executed_stages.add(stage_id)  # Mark as executed (run)
 

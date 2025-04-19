@@ -20,6 +20,8 @@ import yaml
 from pydantic import ValidationError  # Still needed for CrespConfig._validate_model
 from yaml.parser import ParserError
 
+from cresp import __version__
+
 # Rich imports removed
 # Import specific models and constants needed
 from .models import (  # Import base model and Stage for add_stage validation
@@ -103,7 +105,7 @@ class CrespConfig:
         """Create new configuration with context manager support"""
         # Basic structure required by CrespConfigModel
         config_data = {
-            "version": "1.0",
+            "version": __version__,
             "metadata": metadata,
             # Assume Environment default is handled by model, provide required fields
             "environment": {"manager": "pixi", "file": "pixi.toml"},
