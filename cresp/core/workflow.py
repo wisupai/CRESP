@@ -31,9 +31,9 @@ except ImportError:
 # Import related cresp modules
 from .config import CrespConfig
 from .exceptions import ReproductionError
-from .validation import validate_artifact
 from .seed import get_reproducible_dataloader_kwargs, set_seed
-from .utils import create_workflow_config, calculate_artifact_hash
+from .utils import calculate_artifact_hash, create_workflow_config
+from .validation import validate_artifact
 
 # Define sentinel object for skipped status
 SKIPPED = object()
@@ -452,7 +452,7 @@ class Workflow:
             else:
                 resolved_path = self.get_output_path(path_str)
             return resolved_path, is_shared, path_str
-        except Exception as path_resolve_e:
+        except Exception:
             # console.print(f"[yellow]Warning: Could not resolve path '{path_str}' (shared={is_shared}): {path_resolve_e}[/yellow]")
             return None
 
@@ -589,7 +589,7 @@ class Workflow:
                     except ValueError:
                         # Config path not relative to declared directory path
                         continue
-                    except Exception as e:
+                    except Exception:
                         # Error resolving or checking path
                         # console.print(f"[yellow]Warning: Error checking config entry '{config_key}' against directory '{path_str}': {e}[/yellow]")
                         return False  # Error, assume changed
@@ -740,14 +740,11 @@ class Workflow:
 
         # --- Stage Execution ---
         if self.use_rich:
-            start_time = time.time()
             try:
                 result = stage_func()  # Call the __call__ method of StageFunction
             except Exception as e:
                 console.print(f"[red]  ✗ Stage [bold]{stage_id}[/bold] execution failed: {str(e)}[/red]")
                 raise  # Re-raise the exception to be caught by the main run loop
-            end_time = time.time()
-            # 不再输出Stage completed信息
         else:
             # Non-rich execution
             try:
@@ -1007,10 +1004,9 @@ class Workflow:
                         try:
                             expected_is_shared = bool(expected_cfg.get("shared", False))
                             if expected_is_shared:
-                                expected_path_obj = self.get_shared_data_path(expected_path)
+                                self.get_shared_data_path(expected_path)
                             else:
-                                expected_path_obj = self.get_output_path(expected_path)
-
+                                self.get_output_path(expected_path)
                             # Is this file physically within the declared directory?
                             try:
                                 is_in_dir = True
@@ -1390,7 +1386,7 @@ class Workflow:
                                 is_shared = True
                         elif isinstance(out, dict) and "path" in out:
                             path_str = out["path"]
-                            description = out.get("description")
+                            # description = out.get("description")  # Removed unused variable
                             # Check shared flag with fallback to heuristic
                             if out.get("shared"):
                                 is_shared = True

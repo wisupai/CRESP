@@ -1,6 +1,5 @@
 """Standard validation implementation with tolerance options."""
 
-import json
 from pathlib import Path
 
 import numpy as np
@@ -79,11 +78,7 @@ def validate_standard(
             try:
                 # Attempt specialized comparison for csv/json
                 with open(artifact_path) as f:
-                    current_data = f.read()
-                current_json = json.loads(current_data)
-                # Specialized comparison logic for JSON would go here.
-                # Current implementation falls back to hash comparison.
-                pass  # Fallback to hash
+                    pass  # Fallback to hash
             except Exception:
                 # Failed specialized comparison, will fallback to hash
                 pass  # Keep needs_hash_comparison = True
@@ -92,7 +87,6 @@ def validate_standard(
             attempt_specialized = True
             try:
                 # Attempt specialized comparison for npy/npz
-                current_arr = np.load(artifact_path)
                 # Specialized comparison logic for NumPy arrays would go here.
                 # Current implementation falls back to hash comparison.
                 pass  # Fallback to hash
