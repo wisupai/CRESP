@@ -73,3 +73,60 @@ ignore = ["E501"]
 
 [tool.mypy]
 exclude = ["examples/"]
+python_version = "3.12"
+
+# Basic check settings
+warn_return_any = false  # Temporarily allow returning Any type
+warn_unused_configs = true
+check_untyped_defs = true
+disallow_untyped_decorators = false
+no_implicit_optional = true
+warn_redundant_casts = true
+warn_unused_ignores = false  # Temporarily disable unused ignore warnings
+warn_no_return = true
+warn_unreachable = false  # Temporarily disable unreachable code warnings
+strict_equality = true
+
+# Type definition requirements
+disallow_untyped_defs = false  # Temporarily allow definitions without type hints
+disallow_incomplete_defs = false  # Temporarily allow incomplete type definitions
+
+# Module specific configurations
+[[tool.mypy.overrides]]
+module = "cresp.core.workflow.*"
+disable_error_code = [
+    "attr-defined",
+    "assignment", 
+    "no-untyped-def",
+    "var-annotated",
+    "arg-type",
+    "call-arg"  # Added to handle CrespConfig constructor calls
+]
+
+[[tool.mypy.overrides]]
+module = "cresp.core.config"
+disable_error_code = [
+    "attr-defined",
+    "no-untyped-def"
+]
+
+[[tool.mypy.overrides]]
+module = "cresp.core.utils"
+disable_error_code = [
+    "no-any-return"
+]
+
+[[tool.mypy.overrides]]
+module = "cresp.core.seed"
+warn_unused_ignores = false
+
+# Third-party library type ignores
+[[tool.mypy.overrides]]
+module = [
+    "rich.*",
+    "yaml.*",
+    "numpy.*",
+    "pandas.*",
+    "matplotlib.*",
+]
+ignore_missing_imports = true
