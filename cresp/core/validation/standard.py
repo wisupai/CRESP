@@ -77,7 +77,7 @@ def validate_standard(
             attempt_specialized = True
             try:
                 # Attempt specialized comparison for csv/json
-                with open(artifact_path) as f:
+                with open(artifact_path):
                     pass  # Fallback to hash
             except Exception:
                 # Failed specialized comparison, will fallback to hash

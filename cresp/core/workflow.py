@@ -1376,7 +1376,7 @@ class Workflow:
                 if stage_func.outputs:
                     for out in stage_func.outputs:
                         path_str = None
-                        description = None
+
                         is_shared = False  # Heuristic
 
                         if isinstance(out, str):
