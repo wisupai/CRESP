@@ -421,6 +421,41 @@ class Workflow:
                     #     console.print(f"[dim]Updated configuration for stage '{stage_func.stage_id}' based on code definition.[/dim]")
                     pass
 
+    def _resolve_declared_output(self, output_decl: str | dict[str, Any]) -> tuple[Path, bool, str] | None:
+        """Resolve a declared output into its full path, scope, and original string path.
+
+        Args:
+            output_decl: An item from the stage's 'outputs' list (str or dict).
+
+        Returns:
+            A tuple (resolved_path, is_shared, declared_path_str) or None if invalid.
+        """
+        path_str: str | None = None
+        is_shared: bool = False  # Default scope is mode-specific
+
+        if isinstance(output_decl, str):
+            path_str = output_decl
+            # String declarations are always considered mode-specific unless overridden later?
+            # Let's stick to the rule: only dicts with shared=True are shared.
+        elif isinstance(output_decl, dict):
+            path_str = output_decl.get("path")
+            # Explicit 'shared' flag takes precedence
+            is_shared = bool(output_decl.get("shared", False))
+
+        if not path_str:
+            # console.print(f"[yellow]Warning: Invalid output declaration structure: {output_decl}[/yellow]")
+            return None
+
+        try:
+            if is_shared:
+                resolved_path = self.get_shared_data_path(path_str)
+            else:
+                resolved_path = self.get_output_path(path_str)
+            return resolved_path, is_shared, path_str
+        except Exception as path_resolve_e:
+            # console.print(f"[yellow]Warning: Could not resolve path '{path_str}' (shared={is_shared}): {path_resolve_e}[/yellow]")
+            return None
+
     def _check_outputs_unchanged(self, stage_id: str) -> bool:
         """Check if stage outputs exist and match stored hashes."""
         stage_config = self.config.get_stage(stage_id)
@@ -465,21 +500,24 @@ class Workflow:
             output_specific_repro_config = {}
             if isinstance(output_decl, str):
                 path_str = output_decl
-                is_shared: bool = "/" not in path_str and "\\" not in path_str  # Heuristic
+                is_shared: bool = False  # Default to non-shared for strings
             elif isinstance(output_decl, dict) and "path" in output_decl:
                 path_str = output_decl["path"]
                 output_specific_repro_config = output_decl.get("reproduction", {})
-                # Check shared flag with heuristic fallback
-                if "shared" in output_decl:
-                    is_shared = bool(output_decl.get("shared", False))
-                # Apply heuristic as fallback
-                elif path_str and "/" not in path_str and "\\" not in path_str:
-                    is_shared = True
+                # Check shared flag EXPLICITLY
+                is_shared = bool(output_decl.get("shared", False))
             else:
                 continue  # Skip invalid declaration
 
+            resolved_output = self._resolve_declared_output(output_decl)
+            if resolved_output is None:
+                # If we can't resolve the path, consider it changed
+                # console.print(f"[yellow]Warning: Could not resolve declared output '{output_decl}' for stage '{stage_id}' during skip check.[/yellow]")
+                return False
+
+            resolved_path, is_shared, path_str = resolved_output
+
             # --- Find corresponding files in config and validate them ---
-            resolved_path = None
             try:
                 if is_shared:
                     resolved_path = self.get_shared_data_path(path_str)
@@ -489,75 +527,78 @@ class Workflow:
                 # If we can't resolve the path, consider it changed
                 return False
 
-            files_to_validate_for_this_decl: dict[str, dict[str, Any]] = {}
+            files_to_validate_for_this_decl: dict[str, dict[str, Any]] = {}  # Key is config key (relative path str)
 
             # Case 1: Declaration is an exact file path present in config
-            if path_str in expected_files_config:
-                # Check if file exists on disk
-                if not Path(resolved_path).exists():
-                    return False  # Exact file missing
-                files_to_validate_for_this_decl[path_str] = expected_files_config[path_str]
-            # Case 2: Declaration is a directory path
+            # --- REVISED LOGIC for config key matching ---
+            # Config keys are now relative to base dirs. We need to check if the resolved path
+            # corresponds to any config entry.
+
+            # --- Determine the base directory for comparison ---
+            base_dir = self.shared_data_dir if is_shared else self.active_output_dir
+
+            # Calculate the relative path key this declaration would correspond to
+            try:
+                relative_key = resolved_path.relative_to(base_dir)
+                relative_key_str = str(relative_key)
+            except ValueError:
+                # Path is not relative to the expected base, something is wrong
+                # console.print(f"[yellow]Warning: Resolved path '{resolved_path}' not relative to base '{base_dir}' for stage '{stage_id}'. Cannot check if unchanged.[/yellow]")
+                return False  # Cannot determine, assume changed
+
+            # Case 1: Declared path is a file
+            if resolved_path.exists() and resolved_path.is_file():
+                if relative_key_str in expected_files_config:
+                    config_entry = expected_files_config[relative_key_str]
+                    # Check if scope matches (config should store 'shared' flag)
+                    config_is_shared = bool(config_entry.get("shared", False))
+                    if config_is_shared == is_shared:
+                        files_to_validate_for_this_decl[relative_key_str] = config_entry
+                    else:
+                        # Mismatch in scope between declaration and config, assume changed
+                        # console.print(f"[yellow]Warning: Scope mismatch for '{relative_key_str}' in stage '{stage_id}'. Declared shared={is_shared}, config shared={config_is_shared}.[/yellow]")
+                        return False
+                else:
+                    # Declared file exists but not found in config (with hash)
+                    return False
+
+            # Case 2: Declared path is a directory
             elif resolved_path.exists() and resolved_path.is_dir():
                 found_match_in_dir = False
-                # Two methods to match:
-                # 1. Find all config files that are within this directory based on path name
-                for expected_path, expected_cfg in expected_files_config.items():
-                    # Skip None values to avoid errors in normpath
-                    if expected_path is None or path_str is None:
+                # Iterate through config entries and see if they fall under this directory
+                for config_key, config_entry in expected_files_config.items():
+                    config_is_shared = bool(config_entry.get("shared", False))
+                    config_base_dir = self.shared_data_dir if config_is_shared else self.active_output_dir
+                    try:
+                        # Construct full path from config key
+                        config_full_path = (config_base_dir / config_key).resolve()
+
+                        # Check if config file path is within the declared directory path
+                        if config_full_path.is_relative_to(resolved_path.resolve()):
+                            # Check if file exists on disk
+                            if not config_full_path.exists():
+                                return False  # File listed in config (under dir) is missing
+
+                            # Check scope consistency (config file must have same scope as declared dir)
+                            if config_is_shared != is_shared:
+                                # console.print(f"[yellow]Warning: Scope mismatch for file '{config_key}' within directory '{path_str}' for stage '{stage_id}'.[/yellow]")
+                                return False  # Scope mismatch
+
+                            files_to_validate_for_this_decl[config_key] = config_entry
+                            found_match_in_dir = True
+                    except ValueError:
+                        # Config path not relative to declared directory path
                         continue
+                    except Exception as e:
+                        # Error resolving or checking path
+                        # console.print(f"[yellow]Warning: Error checking config entry '{config_key}' against directory '{path_str}': {e}[/yellow]")
+                        return False  # Error, assume changed
 
-                    norm_expected = os.path.normpath(expected_path)
-                    norm_declared = os.path.normpath(path_str)
-
-                    # Check if path is potentially in this directory
-                    is_in_dir = False
-
-                    # Method 1: Check if expected_path starts with declared_path + separator
-                    if norm_expected.startswith(norm_declared + os.sep):
-                        is_in_dir = True
-                    # Method 2: Physically check if the file is in the resolved directory
-                    else:
-                        # Try to resolve as shared or mode-specific path
-                        try:
-                            expected_is_shared = bool(expected_cfg.get("shared", False))
-                            if expected_is_shared:
-                                expected_resolved = self.get_shared_data_path(expected_path)
-                            else:
-                                expected_resolved = self.get_output_path(expected_path)
-
-                            # Is this file physically within the declared directory?
-                            try:
-                                is_in_dir = True
-                            except ValueError:
-                                # Not within the directory
-                                pass
-                        except Exception:
-                            # Couldn't resolve path
-                            pass
-
-                    if is_in_dir:
-                        # Check if file exists on disk
-                        try:
-                            expected_is_shared = bool(expected_cfg.get("shared", False))
-                            if expected_is_shared:
-                                expected_resolved = self.get_shared_data_path(expected_path)
-                            else:
-                                expected_resolved = self.get_output_path(expected_path)
-
-                            if not expected_resolved.exists():
-                                msg = f"Warning: Cannot validate path declaration '{path_str}' for stage '{stage_id}'. Cannot validate."
-                                console.print(f"[yellow]{msg}[/yellow]")
-                            return False  # File within directory missing
-                        except Exception:
-                            return False  # Could not resolve path
-
-                        files_to_validate_for_this_decl[expected_path] = expected_cfg
-                        found_match_in_dir = True
                 if not found_match_in_dir:
-                    return False  # Directory declared, but no known files within found in config
+                    # Directory declared, but no known/hashed files within found in config
+                    return False
             else:
-                # Declared path is not in config directly and not an existing directory
+                # Declared path does not exist (as file or dir)
                 return False
 
             # --- Validate the collected files for this declaration ---
@@ -817,48 +858,42 @@ class Workflow:
                     # --- Hash File or Directory Contents using RESOLVED path ---
                     if resolved_path.is_file():
                         hash_value = calculate_artifact_hash(resolved_path, method=hash_method)
-                        # Update config using the ORIGINAL declared path_str as the key
-                        # Also store the scope information
+                        # Update config using the RELATIVE path as the key
+                        base_dir = self.shared_data_dir if is_shared else self.active_output_dir
+                        try:
+                            relative_key = str(resolved_path.relative_to(base_dir))
+                        except ValueError:
+                            relative_key = str(resolved_path)
                         config_entry = {
-                            "path": path_str,
+                            "path": relative_key,
                             "hash": hash_value,
                             "hash_method": hash_method,
+                            "shared": is_shared,
                         }
-                        if is_shared:
-                            config_entry["shared"] = "true"
-                        # Fallback to update_hash if update_artifact not available (backward compatibility)
                         if hasattr(self.config, "update_artifact"):
-                            self.config.update_artifact(stage_id, path_str, config_entry)
+                            self.config.update_artifact(stage_id, relative_key, config_entry)
                         else:
-                            self.config.update_hash(stage_id, path_str, hash_value, hash_method)
-                        hashes_calculated.append((path_str, hash_value))
-                        # Minimal logging here, summary printed later
+                            self.config.update_hash(stage_id, relative_key, hash_value, hash_method)
+                        hashes_calculated.append((relative_key, hash_value))
                     elif resolved_path.is_dir():
                         if self.use_rich:
                             console.print(f"[dim]Hashing contents of directory [bold]{resolved_path}[/bold] (declared as '{path_str}')...[/dim]")
                         files_hashed_count = 0
+                        base_dir = self.shared_data_dir if is_shared else self.active_output_dir
                         for file_path in resolved_path.rglob("*"):
                             if file_path.is_file():
                                 try:
-                                    # Use the hash_method determined for the directory declaration
                                     file_hash_value = calculate_artifact_hash(file_path, method=hash_method)
-                                    # calculate relative path from CWD for the config key
                                     try:
-                                        relative_key_path_str = str(file_path.resolve().relative_to(Path.cwd().resolve()))
+                                        relative_key_path_str = str(file_path.relative_to(base_dir))
                                     except ValueError:
                                         relative_key_path_str = str(file_path.resolve())
-
-                                    # Store scope information in config
                                     config_entry = {
                                         "path": relative_key_path_str,
                                         "hash": file_hash_value,
                                         "hash_method": hash_method,
+                                        "shared": is_shared,
                                     }
-                                    if is_shared:
-                                        config_entry["shared"] = "true"
-
-                                    # Update config using the calculated relative path as key
-                                    # Fallback to update_hash if update_artifact not available
                                     if hasattr(self.config, "update_artifact"):
                                         self.config.update_artifact(stage_id, relative_key_path_str, config_entry)
                                     else:
@@ -868,7 +903,6 @@ class Workflow:
                                             file_hash_value,
                                             hash_method,
                                         )
-                                    # Record the path and hash for summary log
                                     hashes_calculated.append((relative_key_path_str, file_hash_value))
                                     files_hashed_count += 1
                                 except Exception as file_e:
@@ -877,7 +911,6 @@ class Workflow:
                         if self.use_rich and files_hashed_count > 0:
                             console.print(f"[dim]Hashed {files_hashed_count} files in [bold]{resolved_path}[/bold].[/dim]")
                     else:
-                        # Handle other path types? Symlinks?
                         if self.use_rich:
                             console.print(f"[yellow]Warning: Resolved output path is not a file or directory: {resolved_path}[/yellow]")
 
