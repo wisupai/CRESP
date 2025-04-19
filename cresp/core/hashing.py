@@ -180,48 +180,74 @@ def validate_artifact(
             return False, "Strict validation failed: hash mismatch"
 
         elif validation_type == "standard":
-            # Standard mode: compare content with numeric tolerances
+            success = False
+            message = ""
+            needs_hash_comparison = True # Default to hash comparison
+
             if artifact_path.is_file():
-                # For numeric data files
-                if artifact_path.suffix in [".txt", ".csv", ".json"]:
-                    with open(artifact_path) as f:
-                        current_data = f.read()
-
+                # Determine if specialized comparison should be attempted
+                attempt_specialized = False
+                if artifact_path.suffix in [".csv", ".json"] and (tolerance_absolute is not None or tolerance_relative is not None):
+                    attempt_specialized = True
                     try:
-                        # Try parsing as JSON
+                        # Attempt specialized comparison for csv/json
+                        with open(artifact_path) as f:
+                            current_data = f.read()
                         current_json = json.loads(current_data)
+                        # Assuming reference_hash is the reference data/value for comparison (problematic)
                         reference_json = json.loads(reference_hash)
+                        if isinstance(current_json, (int, float)) and isinstance(reference_json, (int, float)):
+                            if compare_numeric_values(current_json, reference_json, tolerance_absolute, tolerance_relative):
+                                success = True
+                                message = "Standard validation passed: numeric match within tolerances"
+                                needs_hash_comparison = False # Specialized comparison succeeded
+                        # Add more sophisticated json comparison logic here if needed
+                    except Exception:
+                        # Failed specialized comparison, will fallback to hash
+                        pass # Keep needs_hash_comparison = True
 
-                        # Compare numeric values with tolerances
-                        if isinstance(current_json, (int, float)) and isinstance(
-                            reference_json, (int, float)
-                        ):
-                            if compare_numeric_values(
-                                current_json, reference_json, tolerance_absolute, tolerance_relative
-                            ):
-                                return (
-                                    True,
-                                    "Standard validation passed: numeric match within tolerances",
-                                )
-                    except:
-                        pass
+                elif artifact_path.suffix in [".npy", ".npz"] and (tolerance_absolute is not None or tolerance_relative is not None):
+                    attempt_specialized = True
+                    try:
+                        # Attempt specialized comparison for npy/npz
+                        current_arr = np.load(artifact_path)
+                        # Assuming reference_hash is path to reference array (problematic)
+                        reference_arr = np.load(reference_hash)
+                        if compare_arrays(current_arr, reference_arr, tolerance_absolute, tolerance_relative):
+                            success = True
+                            message = "Standard validation passed: array match within tolerances"
+                            needs_hash_comparison = False # Specialized comparison succeeded
+                    except Exception:
+                        # Failed specialized comparison, will fallback to hash
+                        pass # Keep needs_hash_comparison = True
 
-                # For numpy arrays
-                elif artifact_path.suffix in [".npy", ".npz"]:
-                    current_arr = np.load(artifact_path)
-                    reference_arr = np.load(reference_hash)
-
-                    if compare_arrays(
-                        current_arr, reference_arr, tolerance_absolute, tolerance_relative
-                    ):
-                        return True, "Standard validation passed: array match within tolerances"
-                else:
-                    # For other file types (e.g., .pt, .bin), use direct hash comparison
+                # If specialized comparison wasn't attempted (e.g. .txt, other types, or no tolerance set)
+                # OR if it was attempted but failed, proceed to hash comparison if needed.
+                if needs_hash_comparison:
                     current_hash = calculate_artifact_hash(artifact_path)
                     if current_hash == reference_hash:
-                        return True, "Standard validation passed: exact hash match"
+                        success = True
+                        # Use hash match message only if no specialized success message exists
+                        if not message:
+                            message = "Standard validation passed: exact hash match"
+                    else:
+                        success = False
+                        if attempt_specialized: # Specialized was tried but failed, and hash also failed
+                             message = "Standard validation failed: specialized comparison failed and hash mismatch"
+                        else: # Only hash comparison was performed (e.g. for .txt) and it failed
+                             message = "Standard validation failed: hash mismatch"
 
-            return False, "Standard validation failed: content mismatch"
+            else: # Artifact is a directory
+                 # Directories always use hash comparison in standard mode
+                 current_hash = calculate_artifact_hash(artifact_path)
+                 if current_hash == reference_hash:
+                      success = True
+                      message = "Standard validation passed: exact hash match for directory"
+                 else:
+                      success = False
+                      message = "Standard validation failed: directory hash mismatch"
+
+            return success, message
 
         elif validation_type == "tolerant":
             # Tolerant mode: allow partial matches or similarity-based comparison
