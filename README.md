@@ -4,6 +4,9 @@ CRESP is a toolkit for standardizing and validating reproducibility of computati
 
 ## Features
 
+![Experiment Demo](./docs/crsep-experiment-demo.gif)
+![Reproduction Demo](./docs/crsep-reproduction-demo.gif)
+
 - Provides standardized configuration schemes for describing computational experiment environments and workflows
 - Automatically records and validates outputs at each stage of the experiment
 - Three validation levels:
